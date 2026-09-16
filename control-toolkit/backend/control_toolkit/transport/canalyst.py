@@ -434,7 +434,9 @@ class CanalystTransportAdapter:
             with self._lock:
                 self._retry_count += 1
                 attempt = self._retry_count
-                self._health = AdapterHealth.RECOVERING
+                # Only report recovering if not already declared absent or degraded
+                if self._health not in (AdapterHealth.ABSENT, AdapterHealth.CLOSED):
+                    self._health = AdapterHealth.RECOVERING
             base = min(
                 self._reconnect_initial_s * (2 ** min(attempt - 1, 8)),
                 self._reconnect_max_s,
@@ -445,8 +447,17 @@ class CanalystTransportAdapter:
             bus, detail = self._try_make_bus()
             if bus is None:
                 assert detail is not None
+                is_absent = (
+                    "no canalyst" in detail.lower()
+                    or "not found" in detail.lower()
+                    or "no device" in detail.lower()
+                )
                 with self._lock:
-                    self._health = AdapterHealth.DEGRADED
+                    self._health = (
+                        AdapterHealth.ABSENT
+                        if is_absent or attempt >= 2
+                        else AdapterHealth.DEGRADED
+                    )
                     self._last_error = f"reconnect {attempt} failed: {detail}"
                     self._worker_heartbeat_ns = time.monotonic_ns()
                 continue

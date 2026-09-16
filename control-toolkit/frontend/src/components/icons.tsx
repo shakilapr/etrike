@@ -88,6 +88,17 @@ export function IconGauge() {
   )
 }
 
+/** Dashboard speed meter icon */
+export function IconDashboard() {
+  return (
+    <NavIcon>
+      <path d="M12 2a10 10 0 0 0-10 10c0 4.42 2.87 8.17 6.84 9.5.5.08.66-.23.66-.5v-1.69" />
+      <path d="M12 6v6l4 2" />
+      <path d="M22 12A10 10 0 0 0 12 2" />
+    </NavIcon>
+  )
+}
+
 /** Lucide terminal */
 export function IconTerminal() {
   return (
@@ -201,11 +212,120 @@ export function IconCable() {
   )
 }
 
+/** Lucide cpu — Host / Backend system */
+export function IconCpu() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="14"
+      height="14"
+      stroke="currentColor"
+      strokeWidth="2"
+      fill="none"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <rect x="4" y="4" width="16" height="16" rx="2" />
+      <rect x="9" y="9" width="6" height="6" />
+      <path d="M15 2v2M9 2v2M20 15h2M20 9h2M9 20v2M15 20v2M2 9h2M2 15h2" />
+    </svg>
+  )
+}
+
+/** ISO 2575 / ISO 7010-E007 — Emergency Stop Telltale */
+export function IconOctagonAlert() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="14"
+      height="14"
+      stroke="currentColor"
+      strokeWidth="2"
+      fill="none"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <polygon points="7.86 2 16.14 2 22 7.86 22 16.14 16.14 22 7.86 22 2 16.14 2 7.86 7.86 2" />
+      <line x1="12" y1="8" x2="12" y2="12" />
+      <line x1="12" y1="16" x2="12.01" y2="16" />
+    </svg>
+  )
+}
+
+/** Lucide radio — Bench TX transmission broadcast */
+export function IconRadio() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="14"
+      height="14"
+      stroke="currentColor"
+      strokeWidth="2"
+      fill="none"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <path d="M4.9 19.1C1 15.2 1 8.8 4.9 4.9" />
+      <path d="M7.8 16.2c-2.3-2.3-2.3-6.1 0-8.5" />
+      <circle cx="12" cy="12" r="2" />
+      <path d="M16.2 7.8c2.3 2.3 2.3 6.1 0 8.5" />
+      <path d="M19.1 4.9C23 8.8 23 15.1 19.1 19" />
+    </svg>
+  )
+}
+
+/** Lucide network — Dual-bus CAN differential network */
+export function IconNetwork() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="14"
+      height="14"
+      stroke="currentColor"
+      strokeWidth="2"
+      fill="none"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <rect x="16" y="16" width="6" height="6" rx="1" />
+      <rect x="2" y="16" width="6" height="6" rx="1" />
+      <rect x="9" y="2" width="6" height="6" rx="1" />
+      <path d="M5 16v-3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v3" />
+      <path d="M12 12V8" />
+    </svg>
+  )
+}
+
+/** IEC 60417-5009 — Main Power / Contactor symbol */
+export function IconPower() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="14"
+      height="14"
+      stroke="currentColor"
+      strokeWidth="2"
+      fill="none"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <path d="M18.36 6.64a9 9 0 1 1-12.73 0" />
+      <line x1="12" y1="2" x2="12" y2="12" />
+    </svg>
+  )
+}
+
 export const NAV_SECTIONS: NavSection[] = [
   {
     label: 'Observe',
     items: [
       { id: 'overview', label: 'Overview', icon: <IconLayoutGrid /> },
+      { id: 'dashboard', label: 'Dashboard', icon: <IconDashboard /> },
       { id: 'network', label: 'Network', icon: <IconShare2 /> },
       { id: 'live', label: 'Live CAN', icon: <IconActivity /> },
     ],

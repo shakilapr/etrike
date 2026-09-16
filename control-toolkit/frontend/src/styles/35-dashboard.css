@@ -1,0 +1,1143 @@
+/**
+ * Dashboard & Minimalist MultiMeter Styles
+ * Replicates the clean, minimalist digital meter aesthetic.
+ */
+
+.dashboard-container {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding: var(--page-pad);
+  max-width: 1400px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+/* ── HUD Status Strip ── */
+.dashboard-hud-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 18px;
+  box-shadow: var(--shadow-sm);
+}
+
+.dashboard-hud-group {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  flex-wrap: wrap;
+}
+
+.dashboard-hud-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.dashboard-hud-k {
+  font-size: var(--font-size-label);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-secondary);
+}
+
+.dashboard-hud-v {
+  font-size: var(--font-size-body);
+  font-weight: 700;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.dashboard-gear-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 4px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  font-weight: 800;
+  font-size: 14px;
+  font-family: var(--font-mono);
+  color: var(--primary);
+}
+
+/* ── Dashboard Meters Grid ── */
+.dashboard-meters-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+  gap: 20px;
+}
+
+@media (min-width: 1200px) {
+  .dashboard-meters-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+/* ── MultiMeter Card ── */
+.multi-meter-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 24px 20px 20px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  position: relative;
+  transition: border-color var(--transition), box-shadow var(--transition);
+}
+
+.multi-meter-card:hover {
+  border-color: var(--border-strong);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
+}
+
+/* Subtle tone indicators */
+.multi-meter-card.tone-warn {
+  border-left: 3px solid var(--warning);
+}
+.multi-meter-card.tone-danger {
+  border-left: 3px solid var(--danger);
+}
+.multi-meter-card.tone-ok {
+  border-left: 3px solid var(--success);
+}
+
+.multi-meter-header {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.multi-meter-title {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--text);
+  text-transform: uppercase;
+}
+
+.multi-meter-subtitle {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  margin-left: 6px;
+}
+
+/* Gauge SVG Container */
+.multi-meter-gauge-wrap {
+  position: relative;
+  width: 100%;
+  max-width: 340px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.multi-meter-svg {
+  width: 100%;
+  height: auto;
+  overflow: visible;
+  display: block;
+}
+
+.multi-meter-track {
+  stroke: #e4e4e7;
+  stroke-width: 5.5px;
+  stroke-linecap: round;
+}
+
+.multi-meter-tick-minor {
+  stroke: #d4d4d8;
+  stroke-width: 1.2px;
+}
+
+.multi-meter-tick-major {
+  stroke: #71717a;
+  stroke-width: 1.8px;
+}
+
+.multi-meter-tick-text {
+  fill: #71717a;
+  font-family: var(--font-ui);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+
+.multi-meter-active-arc {
+  stroke: #18181b;
+  stroke-width: 8px;
+  stroke-linecap: round;
+  transition: stroke-dashoffset 200ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.multi-meter-tip-needle {
+  stroke: #18181b;
+  stroke-width: 3.5px;
+  stroke-linecap: round;
+  transition: all 200ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+/* Center Digital Readout (Nested inside the arc) */
+.multi-meter-center-readout {
+  position: absolute;
+  top: 48%;
+  left: 50%;
+  transform: translate(-50%, -30%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  pointer-events: none;
+}
+
+.multi-meter-center-label {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #52525b;
+  margin-bottom: 2px;
+}
+
+.can-id-tag {
+  display: inline-flex;
+  align-items: center;
+  font-size: 9.5px;
+  font-family: var(--font-mono);
+  color: #94a3b8;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 3px;
+  padding: 0 4px;
+  font-weight: 600;
+  cursor: help;
+  transition: all var(--transition);
+}
+
+.can-id-tag:hover {
+  color: #0f172a;
+  background: #e2e8f0;
+  border-color: #cbd5e1;
+}
+
+.protocol-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.protocol-pill.tone-conforming {
+  background: var(--success-soft);
+  color: var(--success);
+  border: 1px solid rgba(33, 132, 90, 0.25);
+}
+
+.protocol-pill.tone-warning {
+  background: var(--warning-soft);
+  color: var(--warning);
+  border: 1px solid rgba(154, 103, 0, 0.25);
+}
+
+.protocol-pill.tone-error {
+  background: var(--danger-soft);
+  color: var(--danger);
+  border: 1px solid rgba(186, 45, 54, 0.25);
+}
+
+.protocol-pill.tone-unverified {
+  background: var(--surface-2);
+  color: var(--text-tertiary);
+  border: 1px solid var(--border);
+}
+
+.protocol-dot {
+  display: none;
+}
+
+.multi-meter-center-value {
+  font-size: 58px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -0.03em;
+  font-family: var(--font-mono);
+  color: #09090b;
+}
+
+.multi-meter-center-unit {
+  font-size: 14px;
+  font-weight: 500;
+  color: #71717a;
+  margin-top: 2px;
+}
+
+/* Sub-meters Split Strip */
+.multi-meter-sub-strip {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-around;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.multi-meter-sub-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+.multi-meter-sub-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  margin-bottom: 2px;
+}
+
+.multi-meter-sub-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #71717a;
+}
+
+.multi-meter-sub-value {
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  font-family: var(--font-mono);
+  color: #09090b;
+}
+
+.multi-meter-sub-unit {
+  font-size: 11px;
+  font-weight: 500;
+  color: #71717a;
+}
+
+.multi-meter-sub-divider {
+  width: 1px;
+  height: 44px;
+  background: #e4e4e7;
+  flex-shrink: 0;
+  margin: 0 10px;
+}
+
+/* Integrated Secondary Metrics (e.g. Steering Yaw/Torque, Brake Stroke) */
+.multi-meter-integrated-strip {
+  width: 100%;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--border);
+}
+
+.multi-meter-integrated-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  text-align: center;
+}
+
+.integrated-label-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.integrated-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.integrated-value {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+/* ── Steering Meter Bespoke Styles ── */
+.steering-meter-card .steering-gauge-wrap {
+  position: relative;
+  width: 100%;
+  max-width: 340px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+/* Multi-Tier Legend */
+.steering-tier-legend {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  width: 100%;
+  padding: 4px 8px 6px;
+  border-bottom: 1px solid var(--border-soft, #f4f4f5);
+  margin-bottom: 4px;
+}
+
+.tier-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.tier-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+.tier-dot.actual {
+  background: #18181b;
+}
+
+.tier-dot.host {
+  background: #2563eb;
+}
+
+.tier-dot.rt {
+  background: #059669;
+}
+
+.text-host {
+  color: #2563eb !important;
+}
+
+.text-rt {
+  color: #059669 !important;
+}
+
+/* 3 Concentric Layered Tracks & Cursors */
+/* Layer 1: Actual Angle (Outer, Black/Charcoal) */
+.steering-track-actual {
+  stroke: #e4e4e7;
+  stroke-width: 4px;
+}
+
+.steering-arc-actual {
+  stroke: #18181b;
+  stroke-width: 5.5px;
+  stroke-linecap: round;
+  transition: all 180ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.steering-cursor-actual {
+  stroke: #18181b;
+  stroke-width: 3.5px;
+  stroke-linecap: round;
+  transition: all 180ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+/* Layer 2: Host Target (Middle, Electric Blue) */
+.steering-track-host {
+  stroke: #dbeafe;
+  stroke-width: 3.5px;
+  opacity: 0.7;
+}
+
+.steering-arc-host {
+  stroke: #2563eb;
+  stroke-width: 4px;
+  stroke-linecap: round;
+  transition: all 180ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.steering-cursor-host {
+  stroke: #2563eb;
+  stroke-width: 3px;
+  stroke-linecap: round;
+  transition: all 180ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+/* Layer 3: RT Setpoint (Inner, Emerald Green) */
+.steering-track-rt {
+  stroke: #d1fae5;
+  stroke-width: 3.5px;
+  opacity: 0.7;
+}
+
+.steering-arc-rt {
+  stroke: #059669;
+  stroke-width: 4px;
+  stroke-linecap: round;
+  transition: all 180ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.steering-cursor-rt {
+  stroke: #059669;
+  stroke-width: 3px;
+  stroke-linecap: round;
+  transition: all 180ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.steering-tick-zero {
+  stroke: #18181b;
+  stroke-width: 2.5px;
+}
+
+/* Center Readout positioned comfortably inside R_RT (radius 96) */
+.steering-center-readout {
+  position: absolute;
+  top: 55%;
+  left: 50%;
+  transform: translate(-50%, -45%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.steering-direction-badge {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #64748b;
+  background: #f1f5f9;
+  padding: 1px 7px;
+  border-radius: 9999px;
+  margin-bottom: 3px;
+}
+
+.steering-overflow-badge {
+  font-size: 9.5px;
+  font-weight: 800;
+  color: #ea580c;
+  background: #ffedd5;
+  border: 1px solid rgba(234, 88, 12, 0.3);
+  padding: 1px 6px;
+  border-radius: 9999px;
+  letter-spacing: 0.04em;
+  margin-bottom: 3px;
+}
+
+/* ── Brake Meter Bespoke Styles ── */
+.brake-active-arc {
+  stroke: #18181b;
+  stroke-width: 8px;
+  stroke-linecap: round;
+  transition: all 200ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.brake-active-arc.is-active {
+  stroke: #0284c7;
+}
+
+.brake-active-arc.is-danger {
+  stroke: #dc2626;
+}
+
+.brake-clamp-status-tag {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #64748b;
+  background: #f1f5f9;
+  padding: 1px 7px;
+  border-radius: 9999px;
+  margin-bottom: 2px;
+}
+
+.brake-stroke-container {
+  width: 100%;
+  margin-top: 8px;
+  padding: 8px 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.brake-stroke-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.brake-stroke-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  display: flex;
+  align-items: center;
+}
+
+.brake-stroke-value {
+  font-size: 11.5px;
+  color: var(--text);
+}
+
+.brake-stroke-track {
+  position: relative;
+  width: 100%;
+  height: 6px;
+  background: #e2e8f0;
+  border-radius: 9999px;
+  overflow: visible;
+}
+
+.brake-stroke-fill {
+  height: 100%;
+  background: #2563eb;
+  border-radius: 9999px;
+  transition: width 200ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.brake-stroke-req-marker {
+  position: absolute;
+  top: -3px;
+  width: 2px;
+  height: 12px;
+  background: #1e293b;
+  border-radius: 1px;
+  transform: translateX(-50%);
+}
+
+.multi-meter-footer-note {
+  margin-top: 12px;
+  font-size: 11px;
+  color: var(--text-tertiary);
+  text-align: center;
+}
+
+/* ── Detailed Telemetry Table & Protocol Audit ── */
+.dashboard-details-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px 20px;
+  box-shadow: var(--shadow-sm);
+}
+
+.dashboard-tab-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 10px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.dashboard-tab-btn {
+  background: none;
+  border: none;
+  padding: 6px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all var(--transition);
+}
+
+.dashboard-tab-btn.active {
+  background: var(--surface-2);
+  color: var(--text);
+  box-shadow: var(--shadow-sm);
+}
+
+.dashboard-audit-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 9px;
+  border-radius: 9999px;
+  font-size: 11px;
+  font-weight: 600;
+  font-family: var(--font-mono);
+}
+
+.dashboard-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--font-size-ui);
+}
+
+.dashboard-table th {
+  text-align: left;
+  padding: 8px 12px;
+  font-weight: 600;
+  font-size: var(--font-size-label);
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border);
+}
+
+.dashboard-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+}
+
+.dashboard-table tr:last-child td {
+  border-bottom: none;
+}
+
+/* ── 3-Column Vehicle Cluster Grid ── */
+.dashboard-cluster-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+  align-items: stretch;
+  width: 100%;
+}
+
+@media (min-width: 1100px) {
+  .dashboard-cluster-grid {
+    grid-template-columns: 1fr 1.05fr 1.25fr;
+  }
+}
+
+.dashboard-col-velocity {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.dashboard-col-velocity .multi-meter-card {
+  height: 100%;
+}
+
+.dashboard-col-stacked {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  height: 100%;
+}
+
+.dashboard-col-stacked .multi-meter-card {
+  flex: 1;
+}
+
+.dashboard-col-logger {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+/* Compact Meter Card Adjustments */
+.multi-meter-card.is-compact {
+  padding: 14px 16px 12px;
+  gap: 6px;
+}
+
+.multi-meter-card.is-compact .multi-meter-header {
+  margin-bottom: 2px;
+}
+
+.multi-meter-card.is-compact .steering-tier-legend {
+  margin-bottom: 2px;
+  padding: 2px 4px 4px;
+  gap: 10px;
+}
+
+.multi-meter-card.is-compact .tier-legend-item {
+  font-size: 10px;
+}
+
+.multi-meter-card.is-compact .steering-gauge-wrap,
+.multi-meter-card.is-compact .brake-gauge-wrap {
+  max-width: 310px;
+}
+
+.multi-meter-card.is-compact .multi-meter-center-value {
+  font-size: 34px;
+}
+
+.multi-meter-card.is-compact .multi-meter-center-readout {
+  top: 50%;
+}
+
+.multi-meter-card.is-compact .steering-center-readout {
+  top: 56%;
+}
+
+.multi-meter-card.is-compact .multi-meter-sub-strip {
+  margin-top: 6px;
+  padding-top: 6px;
+}
+
+.multi-meter-card.is-compact .multi-meter-sub-value {
+  font-size: 20px;
+}
+
+.multi-meter-card.is-compact .multi-meter-sub-divider {
+  height: 32px;
+}
+
+.multi-meter-card.is-compact .multi-meter-integrated-strip {
+  margin-top: 6px;
+  padding-top: 6px;
+  gap: 4px;
+}
+
+.multi-meter-card.is-compact .brake-stroke-container {
+  margin-top: 4px;
+  padding: 5px 10px;
+  gap: 3px;
+}
+
+/* ── CAN Audit & Refusal Logger Card ── */
+.can-audit-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 520px;
+  overflow: hidden;
+  transition: border-color var(--transition);
+}
+
+.can-audit-card:hover {
+  border-color: var(--border-strong);
+}
+
+.can-audit-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px 10px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.can-audit-title {
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text);
+}
+
+.can-audit-subtitle {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  margin-left: 6px;
+}
+
+.can-audit-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10.5px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 9999px;
+  font-family: var(--font-mono);
+}
+
+.can-audit-badge.tone-refusal {
+  background: #fee2e2;
+  color: #b91c1c;
+  border: 1px solid rgba(185, 28, 28, 0.3);
+  animation: pulse-refusal 2s infinite ease-in-out;
+}
+
+@keyframes pulse-refusal {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.75; }
+}
+
+.can-audit-badge.tone-nominal {
+  background: var(--success-soft);
+  color: var(--success);
+  border: 1px solid rgba(33, 132, 90, 0.25);
+}
+
+.can-audit-btn-icon {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  width: 26px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: var(--text-secondary);
+  font-size: 11px;
+  transition: all var(--transition);
+}
+
+.can-audit-btn-icon:hover {
+  background: var(--surface-3, #e4e4e7);
+  color: var(--text);
+}
+
+.can-audit-controls {
+  padding: 8px 14px;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.can-audit-tabs {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow-x: auto;
+}
+
+.can-audit-tab {
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all var(--transition);
+  white-space: nowrap;
+}
+
+.can-audit-tab:hover {
+  background: var(--surface);
+  color: var(--text);
+}
+
+.can-audit-tab.is-active {
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+.can-audit-tab.tab-refusal.is-active {
+  color: #b91c1c;
+  font-weight: 700;
+}
+
+.can-audit-search {
+  width: 100%;
+  padding: 5px 10px;
+  border-radius: 5px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  font-size: 11px;
+  color: var(--text);
+  outline: none;
+}
+
+.can-audit-search:focus {
+  border-color: var(--primary);
+}
+
+.can-audit-stream {
+  flex: 1;
+  overflow-y: auto;
+  max-height: 420px;
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.can-audit-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 10px;
+  text-align: center;
+}
+
+.can-audit-entry {
+  padding: 10px 12px;
+  border-radius: 6px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  cursor: pointer;
+  transition: all var(--transition);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.can-audit-entry:hover {
+  border-color: var(--border-strong);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04);
+}
+
+.can-audit-entry.category-refusal {
+  border-left: 3.5px solid #dc2626;
+  background: #fff8f8;
+}
+
+.can-audit-entry.category-fault {
+  border-left: 3.5px solid #b91c1c;
+  background: #fef2f2;
+}
+
+.can-audit-entry.category-state {
+  border-left: 3.5px solid #2563eb;
+}
+
+.can-audit-entry.category-report {
+  border-left: 3.5px solid #059669;
+}
+
+.can-audit-entry-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.can-audit-pill {
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-family: var(--font-mono);
+}
+
+.pill-refusal {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.pill-fault {
+  background: #fecaca;
+  color: #991b1b;
+}
+
+.pill-state {
+  background: #dbeafe;
+  color: #1e40af;
+}
+
+.pill-report {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.can-audit-subsystem {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+}
+
+.can-audit-time {
+  font-size: 10px;
+  font-family: var(--font-mono);
+  color: var(--text-tertiary);
+}
+
+.can-audit-entry-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1.25;
+}
+
+.can-audit-entry-desc {
+  font-size: 11px;
+  color: var(--text-secondary);
+  line-height: 1.35;
+}
+
+.can-audit-entry-details {
+  margin-top: 6px;
+  padding: 8px 10px;
+  border-radius: 4px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+}
+
+.can-audit-details-title {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  margin-bottom: 4px;
+}
+
+.can-audit-json {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text);
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.can-audit-footer {
+  padding: 8px 16px;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.can-audit-paused-indicator {
+  font-size: 9.5px;
+  font-weight: 800;
+  color: #b45309;
+  background: #fef3c7;
+  padding: 1px 6px;
+  border-radius: 3px;
+}

@@ -40,6 +40,12 @@ const TABS: Array<{
     mustSee: ['safety-strip'],
   },
   {
+    id: 'dashboard',
+    nav: 'nav-dashboard',
+    workspace: 'workspace-dashboard',
+    mustSee: ['dashboard-hud', 'dashboard-meters', 'meter-speed'],
+  },
+  {
     id: 'network',
     nav: 'nav-network',
     workspace: 'workspace-network',

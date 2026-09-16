@@ -54,15 +54,22 @@ export function linkLabelFromStatus(status: Status | null | undefined): {
   if (connected && (health === 'open' || health === 'active' || health === 'quiet')) {
     return { label: 'Connected', tone: 'ok', detail: 'CANalyst-II link open' }
   }
-  if (health === 'degraded' || health === 'recovering') {
+  if (health === 'recovering') {
     return {
-      label: health === 'recovering' ? 'Recovering' : 'Degraded',
+      label: 'Connecting',
       tone: 'warn',
-      detail: status?.adapter?.last_error || status?.link?.detail || 'Physical link unstable',
+      detail: status?.adapter?.last_error || status?.link?.detail || 'CANalyst-II connecting',
+    }
+  }
+  if (health === 'degraded') {
+    return {
+      label: 'Degraded',
+      tone: 'warn',
+      detail: status?.adapter?.last_error || status?.link?.detail || 'Physical link degraded',
     }
   }
   return {
-    label: 'No connection',
+    label: 'Disconnected',
     tone: 'danger',
     detail:
       status?.adapter?.last_error ||

@@ -2,7 +2,7 @@
 
 .safety-strip {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
   border: 1px solid var(--border);
   background: var(--surface);
   border-radius: var(--radius);
@@ -16,11 +16,11 @@
   border: none;
   border-right: 1px solid var(--border);
   border-radius: 0;
-  padding: 12px 14px;
+  padding: 8px 12px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  min-height: 64px;
+  gap: 4px;
+  min-height: 52px;
   justify-content: flex-start;
 }
 
@@ -30,6 +30,10 @@
 
 .strip-item.ok .strip-v {
   color: var(--success);
+}
+
+.strip-item.muted .strip-v {
+  color: var(--text-muted);
 }
 
 .strip-item.hazard {
@@ -52,14 +56,21 @@
   color: var(--danger);
 }
 
+.strip-item.health-offline .strip-v,
+.strip-item.health-unknown .strip-v {
+  color: var(--text-muted);
+}
+
 .strip-k {
-  font-size: 11.5px;
+  font-size: 10.5px;
   color: var(--text-secondary);
-  font-weight: 500;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
 }
 
 .strip-v {
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 650;
   font-variant-numeric: tabular-nums;
   color: var(--text);
@@ -67,9 +78,9 @@
 
 /* Req/Conf lines — compact single block, not paired with a second chip */
 .strip-v-detail {
-  font-size: 13px;
+  font-size: 12.5px;
   font-weight: 600;
-  line-height: 1.35;
+  line-height: 1.3;
 }
 
 .strip-sep {
@@ -79,15 +90,166 @@
 }
 
 .strip-item .meter-bar {
-  margin-top: 2px;
+  margin-top: 1px;
 }
 
 /* Status pill is the primary value in the strip (no duplicate .strip-v) */
 .strip-item > .status-pill {
   align-self: flex-start;
-  margin-top: 2px;
-  font-size: 12.5px;
+  margin-top: 1px;
+  font-size: 11px;
   font-weight: 650;
-  padding: 4px 10px;
+  padding: 2px 8px;
 }
+
+/* ── Diagnostic Quick-Check Strip ────────────────────────────────── */
+
+.quick-check-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 8px;
+  margin-bottom: 2px;
+}
+
+@media (max-width: 1200px) {
+  .quick-check-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .quick-check-strip {
+    grid-template-columns: 1fr;
+  }
+}
+
+.check-pod {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 6px 9px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.check-pod-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.check-pod-title {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-secondary);
+}
+
+.check-pod-items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+}
+
+.check-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 10.5px;
+  font-weight: 600;
+  background: var(--surface-2, #f5f6f8);
+  border: 1px solid var(--border);
+  color: var(--text);
+  cursor: default;
+  transition: background 0.15s ease, border-color 0.15s ease;
+  user-select: none;
+  line-height: 1.35;
+}
+
+.check-chip-label {
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.check-chip-val {
+  font-variant-numeric: tabular-nums;
+  font-weight: 650;
+}
+
+.check-chip.status-ok {
+  border-color: color-mix(in srgb, var(--success) 35%, transparent);
+  background: color-mix(in srgb, var(--success) 8%, var(--surface));
+}
+
+.check-chip.status-warn {
+  border-color: color-mix(in srgb, var(--warning) 45%, transparent);
+  background: color-mix(in srgb, var(--warning) 12%, var(--surface));
+}
+
+.check-chip.status-danger {
+  border-color: color-mix(in srgb, var(--danger) 45%, transparent);
+  background: color-mix(in srgb, var(--danger) 12%, var(--surface));
+}
+
+.check-chip.status-info {
+  border-color: color-mix(in srgb, var(--primary) 35%, transparent);
+  background: color-mix(in srgb, var(--primary) 8%, var(--surface));
+}
+
+.check-chip.status-muted {
+  opacity: 0.8;
+}
+
+/* ── Micro Badges inside Metric Cards ────────────────────────────── */
+
+.card-micro-badges {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+
+.micro-chip {
+  font-size: 9.5px;
+  font-weight: 650;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: var(--surface-2, #f1f3f6);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  line-height: 1.2;
+}
+
+.micro-chip.chip-ok {
+  color: var(--success);
+  border-color: color-mix(in srgb, var(--success) 30%, transparent);
+  background: color-mix(in srgb, var(--success) 8%, var(--surface));
+}
+
+.micro-chip.chip-warn {
+  color: var(--warning);
+  border-color: color-mix(in srgb, var(--warning) 30%, transparent);
+  background: color-mix(in srgb, var(--warning) 8%, var(--surface));
+}
+
+.micro-chip.chip-danger {
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 30%, transparent);
+  background: color-mix(in srgb, var(--danger) 8%, var(--surface));
+}
+
+.micro-chip.chip-accent {
+  color: var(--primary);
+  border-color: color-mix(in srgb, var(--primary) 30%, transparent);
+  background: color-mix(in srgb, var(--primary) 8%, var(--surface));
+}
+
+
 

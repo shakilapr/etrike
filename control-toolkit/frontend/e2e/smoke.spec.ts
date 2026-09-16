@@ -2,6 +2,10 @@ import { test, expect } from '@playwright/test'
 import { resetComputerSession } from './session-reset'
 
 test.describe('Control Toolkit UI (Pure Software)', () => {
+  test.beforeEach(async ({ request }) => {
+    await resetComputerSession(request)
+  })
+
   test('loads shell and shows stream/live status', async ({ page }) => {
     await page.goto('/')
     await expect(page.getByTestId('app')).toBeVisible()

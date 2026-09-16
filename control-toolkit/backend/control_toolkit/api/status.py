@@ -74,8 +74,7 @@ def get_status(request: Request) -> dict:
             "mode": "real",
             "destination": session.destination,
             "connected": lifecycle.transport is not None
-            and adapter.health.value
-            in ("open", "active", "quiet", "degraded", "recovering"),
+            and adapter.health.value in ("open", "active", "quiet"),
             "health": adapter.health.value,
             "detail": adapter.last_error,
         },

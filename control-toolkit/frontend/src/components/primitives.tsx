@@ -32,6 +32,7 @@ export function MeterBar({
   tone,
   label,
   testId,
+  bipolar,
 }: {
   value: number | null
   max: number
@@ -39,10 +40,38 @@ export function MeterBar({
   tone?: 'auto' | 'high-bad' | 'low-bad' | 'accent' | 'ok' | 'warn' | 'danger'
   label?: string
   testId?: string
+  bipolar?: boolean
 }) {
+  const isBipolar = bipolar ?? (min < 0 && max > 0)
   const span = Math.max(1e-6, max - min)
-  const raw = value == null ? 0 : Math.abs(value - min) / span
-  const pct = Math.max(0, Math.min(100, raw * 100))
+  
+  let fillStyle: React.CSSProperties
+  let pct = 0
+
+  if (isBipolar) {
+    // For steering and yaw: 0 is center. Bar extends left or right from 50%.
+    const halfSpan = Math.max(Math.abs(min), Math.abs(max))
+    const clampedVal = value == null ? 0 : Math.max(-halfSpan, Math.min(halfSpan, value))
+    pct = (Math.abs(clampedVal) / halfSpan) * 50 // max 50% width
+    if (clampedVal < 0) {
+      fillStyle = {
+        width: `${pct}%`,
+        right: '50%',
+        position: 'absolute',
+      }
+    } else {
+      fillStyle = {
+        width: `${pct}%`,
+        left: '50%',
+        position: 'absolute',
+      }
+    }
+  } else {
+    const raw = value == null ? 0 : Math.abs(value - min) / span
+    pct = Math.max(0, Math.min(100, raw * 100))
+    fillStyle = { width: `${pct}%` }
+  }
+
   let t = tone ?? 'auto'
   if (t === 'auto' || t === 'high-bad' || t === 'low-bad') {
     if (t === 'high-bad') {
@@ -73,15 +102,19 @@ export function MeterBar({
       aria-valuenow={value ?? undefined}
       aria-label={label}
     >
-      <div className="meter-bar-track h-1.5 w-full overflow-hidden rounded-full bg-surface-2">
+      <div className="meter-bar-track relative h-1.5 w-full overflow-hidden rounded-full bg-surface-2">
+        {isBipolar && (
+          <div className="absolute left-1/2 top-0 bottom-0 w-[1px] -translate-x-1/2 bg-border z-10 opacity-75" />
+        )}
         <div
-          className={cn('meter-bar-fill h-full rounded-full transition-[width] duration-150', fill)}
-          style={{ width: `${pct}%` }}
+          className={cn('meter-bar-fill h-full rounded-full transition-[width,left,right] duration-150', fill)}
+          style={fillStyle}
         />
       </div>
     </div>
   )
 }
+
 
 /** Discrete state (binary / enum / few values) — never a progress bar. */
 export function StatusPill({
@@ -118,6 +151,8 @@ export function MetricCard({
   testId,
   meterTestId,
   showMeter = true,
+  badges,
+  bipolar,
 }: {
   title: string
   valueText: string
@@ -131,14 +166,16 @@ export function MetricCard({
   testId?: string
   meterTestId?: string
   showMeter?: boolean
+  badges?: React.ReactNode
+  bipolar?: boolean
 }) {
   return (
     <div
-      className="card metric-card rounded-[var(--radius)] border border-border bg-surface p-3.5"
+      className="card metric-card rounded-[var(--radius)] border border-border bg-surface p-2.5"
       data-testid={testId}
     >
-      <div className="card-head mb-1 flex items-start justify-between gap-2">
-        <div className="card-title text-[12px] font-semibold text-text-secondary">{title}</div>
+      <div className="card-head mb-0.5 flex items-start justify-between gap-1.5">
+        <div className="card-title text-[11px] font-semibold text-text-secondary">{title}</div>
         {freshness ? <FreshnessBadge value={freshness} /> : null}
       </div>
       <div
@@ -166,9 +203,12 @@ export function MetricCard({
           tone={tone}
           label={title}
           testId={meterTestId}
+          bipolar={bipolar}
         />
       ) : null}
+      {badges ? <div className="card-micro-badges">{badges}</div> : null}
       {sub ? <div className="card-sub muted mt-1 text-xs text-text-secondary">{sub}</div> : null}
     </div>
   )
 }
+

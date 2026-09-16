@@ -19,7 +19,7 @@ export async function resetComputerSession(request: APIRequestContext) {
     })
   }
   await request.post('/api/v1/sessions', {
-    data: { profile: 'pure_software' },
+    data: { profile: 'bench_test' },
     failOnStatusCode: true,
   })
 }

@@ -26,7 +26,11 @@ async function waitFor(url: string, child: ChildProcess, timeoutMs = 120_000) {
 }
 
 async function stop(child: ChildProcess) {
-  if (child.exitCode != null) return
+  if (child.exitCode != null || child.pid == null) return
+  if (process.platform === 'win32') {
+    spawn('taskkill', ['/F', '/T', '/PID', String(child.pid)])
+    return
+  }
   child.kill('SIGTERM')
   await Promise.race([
     new Promise<void>((resolve) => child.once('exit', () => resolve())),
@@ -35,37 +39,54 @@ async function stop(child: ChildProcess) {
   if (child.exitCode == null) child.kill('SIGKILL')
 }
 
+async function isAlive(url: string): Promise<boolean> {
+  try {
+    const res = await fetch(url)
+    return res.ok || res.status < 500
+  } catch {
+    return false
+  }
+}
+
 export default async function globalSetup(_config: FullConfig) {
-  const backend = spawn(
-    'python',
-    ['-m', 'uvicorn', 'control_toolkit.main:app', '--host', '127.0.0.1', '--port', '8010'],
-    {
-      cwd: backendDir,
-      stdio: 'ignore',
-      env: { ...process.env, CTK_NATIVE_SIL_EXE: nativeSil },
-    },
-  )
-  const frontend = spawn(
-    process.execPath,
-    [path.join(frontendDir, 'node_modules/vite/bin/vite.js'), '--host', '127.0.0.1', '--port', '5174'],
-    {
-      cwd: frontendDir,
-      stdio: 'ignore',
-      env: { ...process.env, CTK_E2E_API: backendUrl },
-    },
-  )
+  let backend: ChildProcess | undefined
+  let frontend: ChildProcess | undefined
+
+  if (!(await isAlive(`${backendUrl}/api/v1/status`))) {
+    backend = spawn(
+      'python',
+      ['-m', 'uvicorn', 'control_toolkit.main:app', '--host', '127.0.0.1', '--port', '8010'],
+      {
+        cwd: backendDir,
+        stdio: 'ignore',
+        env: { ...process.env, CTK_NATIVE_SIL_EXE: nativeSil },
+      },
+    )
+  }
+
+  if (!(await isAlive(frontendUrl))) {
+    frontend = spawn(
+      process.execPath,
+      [path.join(frontendDir, 'node_modules/vite/bin/vite.js'), '--host', '127.0.0.1', '--port', '5174'],
+      {
+        cwd: frontendDir,
+        stdio: 'ignore',
+        env: { ...process.env, CTK_E2E_API: backendUrl },
+      },
+    )
+  }
 
   try {
-    await waitFor(`${backendUrl}/api/v1/status`, backend)
-    await waitFor(frontendUrl, frontend)
+    if (backend) await waitFor(`${backendUrl}/api/v1/status`, backend)
+    if (frontend) await waitFor(frontendUrl, frontend)
   } catch (error) {
-    await stop(frontend)
-    await stop(backend)
+    if (frontend) await stop(frontend)
+    if (backend) await stop(backend)
     throw error
   }
 
   return async () => {
-    await stop(frontend)
-    await stop(backend)
+    if (frontend) await stop(frontend)
+    if (backend) await stop(backend)
   }
 }

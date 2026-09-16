@@ -49,7 +49,9 @@
 
 .topbar-brand-cluster {
   flex: 0 0 auto;
-  gap: 8px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 
 .topbar-cluster {
@@ -110,43 +112,40 @@
 /* Top bar Computer (blue) / Real (amber) transport toggle */
 .topbar-mode-toggle {
   display: inline-flex;
-  align-items: stretch;
+  align-items: center;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 6px;
   overflow: hidden;
   background: var(--surface);
   flex-shrink: 0;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.6);
 }
 
-button.topbar-mode-btn,
-button.topbar-mode-btn:hover:not(:disabled),
-button.topbar-mode-btn:focus:not(:disabled),
-button.topbar-mode-btn:active:not(:disabled),
-button.topbar-mode-btn.active,
-button.topbar-mode-btn.active:hover:not(:disabled) {
+.topbar-mode-btn,
+button.topbar-mode-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 5px;
   margin: 0;
-  padding: 0 10px;
-  min-height: var(--control-h);
-  height: var(--control-h);
-  max-height: var(--control-h);
+  padding: 0 8px;
+  min-height: 22px;
+  height: 22px;
+  max-height: 22px;
   border: none;
-  border-radius: 0;
-  border-right: 1px solid var(--border);
+  border-radius: 5px;
   background: var(--surface-subtle);
   color: var(--text-secondary);
-  font-size: var(--font-size-ui);
+  font-size: 11px;
   font-weight: 600;
   line-height: 1;
-  box-shadow: none;
-  transform: none;
-  cursor: pointer;
   white-space: nowrap;
-  transition: background var(--transition), color var(--transition), border-color var(--transition);
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition);
+}
+
+.topbar-mode-btn.mode-real.active {
+  background: var(--warning-soft);
+  color: var(--warning);
 }
 
 button.topbar-mode-btn:last-child {
@@ -548,8 +547,8 @@ button.topbar-mode-btn.btn {
 
 .chip {
   display: inline-flex;
-  align-items: baseline;
-  gap: 5px;
+  align-items: center;
+  gap: 5.5px;
   font-size: 11.5px;
   padding: 2px 8px;
   border: 1px solid var(--border);
@@ -560,18 +559,40 @@ button.topbar-mode-btn.btn {
   flex-shrink: 0;
 }
 
+.chip-symbol {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-secondary);
+  line-height: 1;
+}
+
+.chip-symbol svg {
+  width: 13px;
+  height: 13px;
+  stroke: currentColor;
+}
+
+.chip-bus-tag {
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  margin-right: -1px;
+}
+
 .chip-pill {
   border-radius: 999px;
 }
 
 .chip-k {
-  color: var(--text-tertiary);
-  font-weight: 500;
+  color: var(--text);
+  font-weight: 600;
+  font-size: 11.5px;
 }
 
 .chip-v {
-  color: var(--text);
-  font-weight: 600;
+  color: var(--text-secondary);
+  font-weight: 500;
   font-variant-numeric: tabular-nums;
 }
 

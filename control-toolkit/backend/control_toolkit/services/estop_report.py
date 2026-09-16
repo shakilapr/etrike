@@ -474,8 +474,15 @@ def build_estop_report(
         primary_cause = "Latched ESTOP in NODE_STATUS: " + ", ".join(sorted(latched))
         cause_resolution = "reported"
 
+    has_traffic = len(messages) > 0
+
     if not any_active:
-        summary = "ESTOP clear — no host latch, no recent 0x001, SYS/RT not reporting ESTOP"
+        if not has_traffic and not host_latch:
+            primary_cause = "No bus telemetry"
+            cause_resolution = "unconfirmed"
+            summary = "No bus telemetry — safety state unconfirmed"
+        else:
+            summary = "ESTOP clear — no host latch, no recent 0x001, SYS/RT not reporting ESTOP"
     elif causes:
         summary = "ESTOP active: " + "; ".join(causes)
     else:

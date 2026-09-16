@@ -11,6 +11,7 @@ import { LiveCan } from './components/LiveCan'
 import { Logs } from './components/Logs'
 import { Network } from './components/Network'
 import { Overview } from './components/Overview'
+import { Dashboard } from './components/Dashboard'
 import { Settings } from './components/Settings'
 import { ActiveTxRail } from './components/ActiveTxRail'
 import { Sidebar } from './components/Sidebar'
@@ -32,6 +33,7 @@ export default function App() {
         <Sidebar />
         <main ref={mainRef} className="min-h-0 min-w-0 flex-1 overflow-auto">
           {workspace === 'overview' && <Overview />}
+          {workspace === 'dashboard' && <Dashboard />}
           {workspace === 'network' && <Network />}
           {workspace === 'live' && <LiveCan />}
           {workspace === 'control' && <Control />}

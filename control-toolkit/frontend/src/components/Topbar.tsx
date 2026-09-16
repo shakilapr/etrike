@@ -10,7 +10,13 @@ import {
   type OverallHealth,
 } from '../lib/signals'
 import { useAppStore } from '../store'
-import { IconCable } from './icons'
+import {
+  IconCable,
+  IconCpu,
+  IconNetwork,
+  IconOctagonAlert,
+  IconRadio,
+} from './icons'
 
 /** green=clean live · yellow=late or live+errors · red=dead · muted=unknown */
 function ecuDotTone(liveness: string): 'live' | 'warning' | 'danger' | 'muted' {
@@ -109,17 +115,6 @@ export function Topbar() {
   }
 
 
-  const streamText =
-    quality === 'live'
-      ? 'Live'
-      : quality === 'delayed'
-        ? 'Delayed'
-        : quality === 'dropping'
-          ? 'Dropping'
-          : quality === 'lost'
-            ? 'Lost'
-            : 'Connecting'
-
   // Fault = safety/protocol problem. Offline = no backend/API.
   // Real + no adapter is Degraded (mode is intentional), not Offline.
   // ESTOP uses multi-source observeEstop (latch + bus 0x001 + SYS/RT), not latch alone.
@@ -181,8 +176,56 @@ export function Topbar() {
           ? 'Offline'
           : 'Degraded'
 
+  const isLinkConnected = Boolean(status?.link?.connected)
+  const hasLiveTraffic = messages.length > 0 && isLinkConnected
+  const estopConfirmed = hasLiveTraffic && !estopOn
+  const estopTone: 'danger' | 'ok' | 'muted' = estopOn
+    ? 'danger'
+    : estopConfirmed
+      ? 'ok'
+      : 'muted'
+  const estopDisplayLabel = estopOn
+    ? estopLabel
+    : estopConfirmed
+      ? 'Clear'
+      : 'No signal'
+
+  const streamText =
+    quality === 'live'
+      ? 'Active · Live'
+      : quality === 'delayed'
+        ? 'Delayed'
+        : quality === 'dropping'
+          ? 'Dropping'
+          : quality === 'lost'
+            ? 'Lost'
+            : 'Connecting'
+
   const highTone = busActivityTone(high?.activity)
   const lowTone = busActivityTone(low?.activity)
+  const highDisplayTone = isLinkConnected ? highTone : 'muted'
+  const lowDisplayTone = isLinkConnected ? lowTone : 'muted'
+
+  const streamDotTone: 'live' | 'warning' | 'danger' =
+    quality === 'live'
+      ? 'live'
+      : quality === 'delayed' || quality === 'dropping' || quality === 'connecting'
+        ? 'warning'
+        : 'danger'
+
+  const linkDotTone: 'live' | 'warning' | 'danger' | 'muted' =
+    link.tone === 'ok' ? 'live' : link.tone === 'warn' ? 'warning' : 'muted'
+
+  const estopDotTone: 'danger' | 'live' | 'muted' =
+    estopTone === 'danger' ? 'danger' : estopTone === 'ok' ? 'live' : 'muted'
+
+  const benchDotTone: 'warning' | 'muted' = benchOn ? 'warning' : 'muted'
+
+  const highDotTone: 'live' | 'warning' | 'danger' | 'muted' =
+    highDisplayTone === 'ok' ? 'live' : highDisplayTone === 'warn' ? 'warning' : highDisplayTone === 'danger' ? 'danger' : 'muted'
+
+  const lowDotTone: 'live' | 'warning' | 'danger' | 'muted' =
+    lowDisplayTone === 'ok' ? 'live' : lowDisplayTone === 'warn' ? 'warning' : lowDisplayTone === 'danger' ? 'danger' : 'muted'
 
   return (
     <header className="topbar z-30 shrink-0 border-b border-border bg-surface" data-testid="topbar">
@@ -190,22 +233,6 @@ export function Topbar() {
       <div className="topbar-row topbar-row-primary flex flex-wrap items-center gap-x-2.5 gap-y-2 px-3.5 py-2">
         <div className="topbar-cluster topbar-brand-cluster">
           <div className="brand">Control Toolkit</div>
-          <div
-            className="topbar-mode-toggle"
-            data-testid="topbar-mode-toggle"
-            role="group"
-            aria-label="Transport mode"
-            title="Real · physical CANalyst-II (CH0 High / CH1 Low)"
-          >
-            <div
-              className="topbar-mode-btn mode-real active"
-              data-testid="topbar-mode-real"
-              style={{ cursor: 'default' }}
-            >
-              <IconCable />
-              <span>Real</span>
-            </div>
-          </div>
         </div>
 
         <div className="health-strip" data-testid="health-strip" aria-label="System health">
@@ -220,27 +247,35 @@ export function Topbar() {
 
           <div className="health-divider" aria-hidden />
 
-          <div className={`chip quality-${quality} health-chip`} data-testid="chip-stream">
-            <span className="chip-k">Stream</span>
-            <span className="chip-v">
-              {streamText}
-              {reconnect > 0 ? ` · r${reconnect}` : ''}
-            </span>
+          {/* Backend */}
+          <div
+            className={`chip quality-${quality} health-chip`}
+            data-testid="chip-stream"
+            title={`Backend: ${streamText}${reconnect > 0 ? ` · r${reconnect}` : ''} (Python backend API & event stream)`}
+          >
+            <span className="chip-symbol" title="Host Backend"><IconCpu /></span>
+            <span className="chip-k">Backend</span>
+            <span className={`status-dot ${streamDotTone}`} />
+            <span className="sr-only">{streamText}</span>
           </div>
 
+          {/* CANalyst Hardware */}
           <div
             className={`chip health-chip ${
-              link.tone === 'ok' ? 'ok' : link.tone === 'warn' ? 'warning' : link.tone === 'danger' ? 'danger' : ''
+              link.tone === 'ok' ? 'ok' : link.tone === 'warn' ? 'warning' : 'muted'
             }`}
             data-testid="chip-link"
-            title={link.detail}
+            title={`CANalyst-II: ${link.label} (${link.detail})`}
           >
-            <span className="chip-k">Link</span>
-            <span className="chip-v">{link.label}</span>
+            <span className="chip-symbol" title="CANalyst-II Interface"><IconCable /></span>
+            <span className="chip-k">CANalyst</span>
+            <span className={`status-dot ${linkDotTone}`} />
+            <span className="sr-only">{link.label}</span>
           </div>
 
+          {/* ESTOP Telltale */}
           <div
-            className={`chip ${estopOn ? 'danger' : 'ok'} health-chip chip-estop`}
+            className={`chip ${estopTone === 'danger' ? 'danger' : estopTone === 'ok' ? 'ok' : 'muted'} health-chip chip-estop`}
             data-testid="chip-estop"
             role="button"
             tabIndex={0}
@@ -255,11 +290,14 @@ export function Topbar() {
             onMouseLeave={() => setEstopHover(false)}
             onFocus={() => setEstopHover(true)}
             onBlur={() => setEstopHover(false)}
-            aria-label={`ESTOP status: ${estopLabel}. Click to open diagnostics.`}
+            aria-label={`ESTOP: ${estopDisplayLabel}. Click to open diagnostics.`}
+            title={`ESTOP: ${estopDisplayLabel} (${estopDetail})`}
           >
+            <span className="chip-symbol" title="Emergency Stop Telltale"><IconOctagonAlert /></span>
             <span className="chip-k">ESTOP</span>
-            <span className="chip-v" data-testid="chip-estop-label">
-              {estopLabel}
+            <span className={`status-dot ${estopDotTone}`} />
+            <span className="sr-only" data-testid="chip-estop-label">
+              {estopDisplayLabel}
             </span>
             {/* Bus presence of 0x001 — separate from host latch label */}
             <span className="estop-bus-lamps" aria-label="SAFETY_ESTOP bus presence">
@@ -287,11 +325,11 @@ export function Topbar() {
                   setWorkspace('diagnostics')
                 }}
               >
-                <div className={`topbar-estop-popover-title ${estopOn ? 'danger-text' : 'ok-text'}`}>
-                  {estopOn ? 'Safety Stop Active' : 'Safety Systems Clear'}
+                <div className={`topbar-estop-popover-title ${estopTone === 'danger' ? 'danger-text' : estopTone === 'ok' ? 'ok-text' : 'muted-text'}`}>
+                  {estopOn ? 'Safety Stop Active' : estopConfirmed ? 'Safety Systems Clear' : 'Safety State Unconfirmed'}
                 </div>
                 <div className="topbar-estop-popover-body">
-                  {estopDetail || (estopOn ? 'Safety stop active across monitored buses.' : 'All monitored safety lines clear.')}
+                  {estopDetail || (estopOn ? 'Safety stop active across monitored buses.' : estopConfirmed ? 'All monitored safety lines clear.' : 'No bus telemetry — safety state unconfirmed.')}
                 </div>
                 <div className="topbar-estop-popover-hint">
                   <span>Click to inspect root cause in Diagnostics →</span>
@@ -300,13 +338,16 @@ export function Topbar() {
             )}
           </div>
 
+          {/* Bench TX */}
           <div
-            className={`chip health-chip ${benchOn ? 'ok' : ''}`}
+            className={`chip health-chip ${benchOn ? 'warning' : 'muted'}`}
             data-testid="chip-bench-tx"
-            title="Bench TX must be enabled before inject / control"
+            title={`Bench TX: ${benchOn ? 'Armed (Caution: Active CAN Transmission)' : 'Off (Listen-only Safe)'}`}
           >
+            <span className="chip-symbol" title="Bench TX Broadcast Gate"><IconRadio /></span>
             <span className="chip-k">TX</span>
-            <span className="chip-v">{benchOn ? 'Armed' : 'Off'}</span>
+            <span className={`status-dot ${benchDotTone}`} />
+            <span className="sr-only">{benchOn ? 'Armed' : 'Off'}</span>
           </div>
 
           {mismatch && (
@@ -318,31 +359,34 @@ export function Topbar() {
 
           <div className="health-divider" aria-hidden />
 
-          {/* Discrete bus state — not a continuous meter (activity is not pressure). */}
+          {/* High Bus */}
           <div
-            className={`chip bus-chip tone-${highTone}`}
+            className={`chip bus-chip tone-${highDisplayTone}`}
             data-testid="chip-high"
-            title={`High bus · activity ${high?.activity ?? '—'} · rx ${high?.rx_count ?? 0}`}
+            title={`High bus (CH0) · ${isLinkConnected ? `activity ${high?.activity ?? '—'} · rx ${high?.rx_count ?? 0}` : 'Offline — CANalyst not connected'}`}
           >
-            <span className={`status-dot ${highTone === 'ok' ? 'live' : highTone === 'warn' ? 'warning' : highTone === 'danger' ? 'danger' : 'muted'}`} />
+            <span className="chip-symbol" title="High CAN Bus (CH0)"><IconNetwork /></span>
             <span className="chip-k">High</span>
-            <span className="chip-v mono">
-              {high?.activity ?? '—'}
+            <span className={`status-dot ${highDotTone}`} />
+            {isLinkConnected && (
               <span className="bus-rx"> · {high?.rx_count ?? 0}</span>
-            </span>
+            )}
+            <span className="sr-only">{isLinkConnected ? high?.activity : 'Offline'}</span>
           </div>
 
+          {/* Low Bus */}
           <div
-            className={`chip bus-chip tone-${lowTone}`}
+            className={`chip bus-chip tone-${lowDisplayTone}`}
             data-testid="chip-low"
-            title={`Low bus · activity ${low?.activity ?? '—'} · rx ${low?.rx_count ?? 0}`}
+            title={`Low bus (CH1) · ${isLinkConnected ? `activity ${low?.activity ?? '—'} · rx ${low?.rx_count ?? 0}` : 'Offline — CANalyst not connected'}`}
           >
-            <span className={`status-dot ${lowTone === 'ok' ? 'live' : lowTone === 'warn' ? 'warning' : lowTone === 'danger' ? 'danger' : 'muted'}`} />
+            <span className="chip-symbol" title="Low CAN Bus (CH1)"><IconNetwork /></span>
             <span className="chip-k">Low</span>
-            <span className="chip-v mono">
-              {low?.activity ?? '—'}
+            <span className={`status-dot ${lowDotTone}`} />
+            {isLinkConnected && (
               <span className="bus-rx"> · {low?.rx_count ?? 0}</span>
-            </span>
+            )}
+            <span className="sr-only">{isLinkConnected ? low?.activity : 'Offline'}</span>
           </div>
         </div>
 
@@ -386,6 +430,24 @@ export function Topbar() {
           <span className="meta-v muted" data-testid="chip-destination">
             {dest}
           </span>
+        </div>
+
+        <div
+          className="topbar-mode-toggle"
+          data-testid="topbar-mode-toggle"
+          role="group"
+          aria-label="Transport mode"
+          title="Real · physical CANalyst-II (CH0 High / CH1 Low) USB device"
+        >
+          <button
+            type="button"
+            className="topbar-mode-btn mode-real active"
+            data-testid="topbar-mode-real"
+            title="Real · physical CANalyst-II (CH0 High / CH1 Low)"
+          >
+            <IconCable />
+            <span>Real</span>
+          </button>
         </div>
 
         <div className="meta-group" data-testid="chip-phase" title="Session phase and id">

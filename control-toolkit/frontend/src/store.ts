@@ -127,6 +127,7 @@ export type Status = {
 
 export type Workspace =
   | 'overview'
+  | 'dashboard'
   | 'network'
   | 'live'
   | 'control'
