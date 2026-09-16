@@ -1,8 +1,14 @@
 /* ── Tables ──────────────────────────────────────────────────────── */
 
-.data-table,
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
 .can-table {
   width: 100%;
+  table-layout: fixed;
   border-collapse: collapse;
   font-size: 13px;
 }
@@ -14,7 +20,8 @@
   border-bottom: 1px solid var(--border);
   padding: 9px 12px;
   text-align: left;
-  vertical-align: top;
+  vertical-align: middle;
+  box-sizing: border-box;
 }
 
 .data-table th,
@@ -101,11 +108,16 @@
   font-weight: 500;
 }
 
+.can-table td.age-cell {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
 .signals-cell {
-  max-width: 360px;
-  min-width: 180px;
-  word-break: normal;
-  overflow-wrap: anywhere;
+  width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   color: var(--text-secondary);
   font-size: 12px;
   font-family: var(--font-mono);
@@ -120,5 +132,6 @@
 .mono {
   font-family: var(--font-mono);
   font-size: 12px;
+  font-variant-numeric: tabular-nums;
 }
 

@@ -306,6 +306,16 @@ export function LiveCan() {
         >
           {viewMode === 'latest' ? (
             <table className="can-table" data-testid="live-can-table">
+              <colgroup>
+                <col className="w-[84px]" />
+                <col className="w-[56px]" />
+                <col className="w-[72px]" />
+                <col className="w-[190px]" />
+                <col className="w-[105px]" />
+                <col className="w-[60px]" />
+                <col className="w-[80px]" />
+                <col />
+              </colgroup>
               <thead>
                 <tr>
                   <th>Fresh</th>
@@ -327,6 +337,9 @@ export function LiveCan() {
                     can_id: m.can_id,
                     hostKeys: hostTxKeys,
                   })
+                  const signalsText = Object.entries(m.signals || {})
+                    .map(([k, v]) => `${k}=${v.enum_label ?? v.engineering_value}`)
+                    .join(' · ')
                   return (
                     <tr
                       key={key}
@@ -362,10 +375,11 @@ export function LiveCan() {
                       >
                         {formatAge(m.age_ms)}
                       </td>
-                      <td className={cn('signals-cell', (m.freshness === 'missing' || (m.age_ms != null && m.age_ms > 5000)) && 'opacity-40')}>
-                        {Object.entries(m.signals || {})
-                          .map(([k, v]) => `${k}=${v.enum_label ?? v.engineering_value}`)
-                          .join(' · ')}
+                      <td
+                        className={cn('signals-cell', (m.freshness === 'missing' || (m.age_ms != null && m.age_ms > 5000)) && 'opacity-40')}
+                        title={signalsText || undefined}
+                      >
+                        {signalsText}
                       </td>
                     </tr>
                   )
@@ -381,6 +395,15 @@ export function LiveCan() {
             </table>
           ) : (
             <table className="can-table" data-testid="live-chrono-table">
+              <colgroup>
+                <col className="w-[75px]" />
+                <col className="w-[56px]" />
+                <col className="w-[72px]" />
+                <col className="w-[55px]" />
+                <col className="w-[70px]" />
+                <col className="w-[55px]" />
+                <col />
+              </colgroup>
               <thead>
                 <tr>
                   <th>Seq</th>
@@ -428,7 +451,7 @@ export function LiveCan() {
                       <td>{f.direction}</td>
                       <td>{f.source}</td>
                       <td className="num">{f.dlc}</td>
-                      <td className="mono signals-cell">{f.data_hex}</td>
+                      <td className="mono signals-cell" title={f.data_hex}>{f.data_hex}</td>
                     </tr>
                   )
                 })}
