@@ -288,13 +288,25 @@ void test_dac_controller_software_i2c_and_clamps() {
     ASSERT_EQ(dac.current_code(), 0);
     ASSERT_EQ(hal_mock::g_last_dac_written, 0);
 
-    // 4. Multi-Address Probing (0x60, 0x61, 0x62)
+    // 4. Multi-Address Probing & Caching (0x60, 0x61, 0x62)
+    // Cache currently holds 0x60 (0xC0)
+    ASSERT_EQ(dac.cached_address(), 0x60 << 1);
+
     // Switch target address to candidate 0x61 (0xC2)
     hal_mock::g_i2c_target_addr = 0x61 << 1;
-    // Current cache holds 0x60 -> first probe will NACK and invalidate cache, then successfully probe 0x61!
+    // Current cache holds 0x60 -> write to cached 0x60 will NACK and abort immediately,
+    // invalidating cache, then candidate scan will successfully probe 0x61!
     dac.set_throttle(1400, true);
     ASSERT_EQ(dac.current_code(), 1400);
     ASSERT_EQ(hal_mock::g_last_dac_written, 1400);
+    ASSERT_EQ(dac.cached_address(), 0x61 << 1);
+
+    // 5. Total NACK: all candidates NACK
+    hal_mock::g_i2c_nack_address = true;
+    bool write_ok = dac.write_dac_raw(1500);
+    ASSERT_FALSE(write_ok);
+    ASSERT_EQ(dac.cached_address(), 0); // Cache invalidated
+    hal_mock::g_i2c_nack_address = false;
 }
 
 // ═══════════════════════════════════════════════════════════════════════

@@ -50,6 +50,7 @@ typedef struct {
 #define __HAL_RCC_GPIOC_CLK_ENABLE() do {} while(0)
 #define __HAL_RCC_FDCAN_CLK_ENABLE() do {} while(0)
 #define __NOP() do {} while(0)
+inline void HAL_Delay(uint32_t /*ms*/) {}
 
 // ── Global Test Mock State for GPIO & Software I2C ─────────────────
 namespace hal_mock {
