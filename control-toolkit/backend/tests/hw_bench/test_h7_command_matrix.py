@@ -40,6 +40,8 @@ from harness import (
     CAN_RT_DRIVE_CMD,
     CAN_SEB_REQ,
     CAN_SES_REQ,
+    CAN_SYS_MODE_CMD,
+    CAN_SYS_PWR_CMD,
     CAN_SYS_SAFETY_STS,
     GEAR_D,
     GEAR_N,
@@ -146,6 +148,32 @@ def test_mtr_drive_latency_bounded(auto_ready):
     assert ok, (
         "RT 0x204 step latency exceeded 1.5 s: "
         f"{state.get((LOW, CAN_RT_DRIVE_CMD))}"
+    )
+
+
+def test_mtr_receives_complete_command_set(auto_ready):
+    """MTR needs all four frames to drive: 0x204 + 0x110 + 0x113 + 0x011.
+
+    The speed command reaches MTR directly from RT (0x204), but MTR only
+    *enables* propulsion when SYS also supplies the mode (0x110), power (0x113)
+    and no-ESTOP safety status (0x011). Verify the whole set is on the Low bus
+    during a high-level speed command.
+    """
+    bench = auto_ready
+    bench.start_drive(900, gear=GEAR_D)
+    ok, state = bench.wait_for(
+        lambda s: (signal_of(s.get((LOW, CAN_RT_DRIVE_CMD)), "motor_speed_mmps") or 0) == 900
+        and signal_of(s.get((LOW, CAN_SYS_MODE_CMD)), "mode") == 1
+        and signal_of(s.get((LOW, CAN_SYS_PWR_CMD)), "power_state") == 1
+        and signal_of(s.get((LOW, CAN_SYS_SAFETY_STS)), "estop_active") == 0,
+        timeout_s=4.0,
+    )
+    assert ok, (
+        "MTR command set incomplete on Low: "
+        f"0x204={state.get((LOW, CAN_RT_DRIVE_CMD))} "
+        f"0x110={state.get((LOW, CAN_SYS_MODE_CMD))} "
+        f"0x113={state.get((LOW, CAN_SYS_PWR_CMD))} "
+        f"0x011={state.get((LOW, CAN_SYS_SAFETY_STS))}"
     )
 
 

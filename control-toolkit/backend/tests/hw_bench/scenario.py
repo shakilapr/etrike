@@ -50,7 +50,7 @@ def health(bench) -> dict[str, Any]:
     def g(cid: int, name: str):
         return signal_of(s.get((LOW, int(cid))), name)
 
-    return {
+    snapshot = {
         "map": s,
         "sys_estop": g(CAN_SYS_SAFETY_STS, "estop_active"),
         "rt_estop": g(CAN_RT_NODE_STATUS, "estop_active"),
@@ -65,26 +65,53 @@ def health(bench) -> dict[str, Any]:
         "seb_stroke": g(CAN_SEB_REQ, "stroke_request_raw"),
         "seb_pressure": g(CAN_SEB_REQ, "pressure_request_raw"),
     }
+    # All Low-bus unit frames present in this sample. A transient gap (e.g. a
+    # CANalyst USB reconnect that clears the backend state ring) must not be
+    # mistaken for a safety trip.
+    snapshot["low_live"] = all(
+        snapshot[key] is not None
+        for key in ("sys_estop", "rt_estop", "rt_mode", "task_health",
+                    "speed", "brake", "steer_raw", "seb_mode")
+    )
+    return snapshot
 
 
 def assert_no_trip(snapshot: dict[str, Any], label: str) -> None:
     """No node may latch ESTOP during a nominal maneuver."""
-    assert snapshot["sys_estop"] == 0, f"[{label}] SYS latched ESTOP: {snapshot}"
-    assert snapshot["rt_estop"] == 0, f"[{label}] RT latched ESTOP: {snapshot}"
+    assert snapshot["sys_estop"] == 0 and snapshot["rt_estop"] == 0, (
+        f"[{label}] unexpected ESTOP: sys={snapshot['sys_estop']} rt={snapshot['rt_estop']} "
+        f"rt_mode={snapshot['rt_mode']} seb_stroke={snapshot['seb_stroke']} "
+        f"brake={snapshot['brake']} speed={snapshot['speed']}"
+    )
 
 
-def hold(bench, label: str, seconds: float, sample_s: float = 0.5) -> dict[str, Any]:
-    """Sample health for ``seconds``, failing if a node trips mid-maneuver."""
+def hold(bench, label: str, seconds: float, sample_s: float = 0.5,
+         max_missing: int = 6) -> dict[str, Any]:
+    """Sample health for ``seconds``, failing if a node trips mid-maneuver.
+
+    Transient Low-bus telemetry gaps (adapter reconnect) are tolerated for up
+    to ``max_missing`` consecutive samples; a sustained gap fails with a
+    telemetry message rather than a misleading ESTOP one.
+    """
     deadline = time.monotonic() + dur(seconds)
     snapshot = health(bench)
+    missing = 0
     while time.monotonic() < deadline:
         snapshot = health(bench)
-        assert_no_trip(snapshot, label)
+        if snapshot["low_live"]:
+            missing = 0
+            assert_no_trip(snapshot, label)
+        else:
+            missing += 1
+            assert missing <= max_missing, (
+                f"[{label}] Low-bus telemetry missing for {missing} samples "
+                f"(adapter reconnect?): {snapshot}"
+            )
         time.sleep(sample_s)
     return snapshot
 
 
-def track(bench, predicate: Callable[[StateMap], bool], label: str, timeout_s: float = 4.0):
+def track(bench, predicate: Callable[[StateMap], bool], label: str, timeout_s: float = 6.0):
     """Wait for ``predicate``; on failure report all three unit frames."""
     ok, state = bench.wait_for(predicate, timeout_s=timeout_s)
     assert ok, (

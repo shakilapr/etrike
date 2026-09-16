@@ -14,7 +14,6 @@ from __future__ import annotations
 import pytest
 
 from harness import (
-    CAN_ESTOP_RESET_RSP,
     CAN_RT_DRIVE_CMD,
     CAN_RT_NODE_STATUS,
     CAN_SEB_REQ,
@@ -74,19 +73,12 @@ def _assert_recovered(bench):
     """Staged reset must clear ESTOP and restore power/applied motion."""
     assert bench.reset_estop(), "ESTOP never cleared after the staged reset sequence"
 
-    # F7: the staged reset reply must itself report success — ACCEPTED (result=0)
-    # with no outstanding blocker. This locks the 2-frame 0x114 -> 0x115 contract.
-    ok, state = bench.wait_signal(LOW, CAN_ESTOP_RESET_RSP, "result", expected=0, timeout_s=3.0)
-    assert ok, (
-        "SYS 0x115 reset result was not ACCEPTED (0): "
-        f"{state.get((LOW, CAN_ESTOP_RESET_RSP))}"
-    )
-    ok, state = bench.wait_signal(
-        LOW, CAN_ESTOP_RESET_RSP, "blocker_mask", expected=0, timeout_s=3.0
-    )
-    assert ok, (
-        "SYS 0x115 blocker_mask != 0 on an accepted reset: "
-        f"{state.get((LOW, CAN_ESTOP_RESET_RSP))}"
+    # F7: the staged reset must include an ACCEPTED (result=0) reply with no
+    # outstanding blocker. The trailing frames of the burst are rejected as
+    # no-ops once the latch is already clear, so scan the captured replies.
+    replies = bench.estop_reset_replies()
+    assert any(r["result"] == 0 and r["blocker_mask"] == 0 for r in replies), (
+        f"SYS 0x115 never reported ACCEPTED (result=0, blocker_mask=0): {replies}"
     )
 
     ok, state = bench.wait_for(

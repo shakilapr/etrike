@@ -142,6 +142,41 @@ class HwBench(BenchClient):
         super().__init__(base_url=base_url)
         self._hb_ctr: dict[str, int] = {}
         self._supervised = {KEY_MODE_REQ, KEY_PWR_REQ, KEY_ESTOP_RESET_REQ, KEY_HOST_STEER}
+        self._session_epoch: Optional[int] = None
+        self._drive_job: Optional[str] = None
+        self._steer_job: Optional[str] = None
+
+    # ── session lifecycle (survive CANalyst USB reconnects) ──────────────
+    def setup_session(self, profile: str = "bench_test") -> None:
+        super().setup_session(profile=profile)
+        self._session_epoch = self._adapter_epoch()
+
+    def _adapter_epoch(self) -> Optional[int]:
+        try:
+            status = self.get_status()
+        except Exception:  # noqa: BLE001
+            return None
+        return (status.get("adapter") or {}).get("adapter_epoch")
+
+    def ensure_session(self, profile: str = "bench_test") -> None:
+        """Re-establish the bench session after a CANalyst reconnect.
+
+        A USB reconnect bumps ``adapter_epoch`` and disables ``bench_tx``, which
+        silently rejects every injection — so a long suite would fail every
+        drive/brake test with no visible cause. Re-run ``setup_session`` when the
+        epoch changed or TX is disabled.
+        """
+        try:
+            status = self.get_status()
+        except Exception:  # noqa: BLE001
+            return
+        session = status.get("session") or {}
+        epoch = (status.get("adapter") or {}).get("adapter_epoch")
+        if session.get("bench_tx") != "enabled" or epoch != self._session_epoch:
+            try:
+                self.setup_session(profile=profile)
+            except Exception:  # noqa: BLE001 — adapter may be mid-reconnect
+                pass
 
     # ── state reads ──────────────────────────────────────────────────────
     def state_map(self) -> StateMap:
@@ -229,32 +264,34 @@ class HwBench(BenchClient):
             ctr = self._hb_ctr.get(key, 1)
             vals["rolling_counter"] = ctr
             self._hb_ctr[key] = (ctr + 1) & 0xFF
-        code, res = self.request(
-            "POST",
-            "/injections",
-            {
-                "bus": bus,
-                "key": key,
-                "can_id": can_id,
-                "values": vals,
-                "period_ms": period_ms,
-                "owner": owner,
-            },
-        )
+        payload = {
+            "bus": bus,
+            "key": key,
+            "can_id": can_id,
+            "values": vals,
+            "period_ms": period_ms,
+            "owner": owner,
+        }
+        code, res = self.request("POST", "/injections", payload)
+        if not (code == 200 and bool(res.get("ok"))):
+            # An adapter reconnect disables bench_tx and rejects injections;
+            # re-establish the session and retry once.
+            self.ensure_session()
+            code, res = self.request("POST", "/injections", payload)
         return code == 200 and bool(res.get("ok")), (res or {})
 
     def inject_raw(self, bus: str, can_id: int, data_hex: str = "") -> bool:
-        code, res = self.request(
-            "POST",
-            "/injections/raw",
-            {
-                "bus": bus,
-                "can_id": int(can_id),
-                "data_hex": data_hex,
-                "confirm_raw": True,
-                "owner": "hw_bench:raw",
-            },
-        )
+        payload = {
+            "bus": bus,
+            "can_id": int(can_id),
+            "data_hex": data_hex,
+            "confirm_raw": True,
+            "owner": "hw_bench:raw",
+        }
+        code, res = self.request("POST", "/injections/raw", payload)
+        if not (code == 200 and bool(res.get("ok"))):
+            self.ensure_session()
+            code, res = self.request("POST", "/injections/raw", payload)
         return code == 200 and bool(res.get("ok"))
 
     def stop_all(self) -> None:
@@ -262,6 +299,8 @@ class HwBench(BenchClient):
             self.cancel_all_injections()
         except Exception:  # noqa: BLE001
             pass
+        self._drive_job = None
+        self._steer_job = None
 
     # ── bench operations ─────────────────────────────────────────────────
     def command_power(self, on: bool) -> tuple[bool, StateMap]:
@@ -292,10 +331,13 @@ class HwBench(BenchClient):
         if gear is not None:
             vals["gear"] = int(gear)
         ok, res = self.inject(HIGH, KEY_HOST_DRIVE, vals, period_ms=period_ms)
-        return res.get("job_id") if ok else None
-
-    def send_brake(self, kpa: int) -> bool:
-        return self.inject(HIGH, KEY_HOST_BRAKE, {"brake_pressure_kpa": int(kpa)})[0]
+        if not ok:
+            return None
+        job = res.get("job_id")
+        # Keep exactly one periodic drive stream: an old job would keep injecting
+        # a different speed so 0x204 would flicker between commands.
+        self._cancel_prev("_drive_job", job)
+        return job
 
     def start_steer(
         self,
@@ -314,7 +356,23 @@ class HwBench(BenchClient):
             {"steer_angle_0_1deg": int(angle_0_1deg), "angle_valid": int(valid)},
             period_ms=period_ms,
         )
-        return res.get("job_id") if ok else None
+        if not ok:
+            return None
+        job = res.get("job_id")
+        self._cancel_prev("_steer_job", job)
+        return job
+
+    def _cancel_prev(self, attr: str, new_job: Optional[str]) -> None:
+        old = getattr(self, attr, None)
+        if old and old != new_job:
+            try:
+                self.cancel_injection(old)
+            except Exception:  # noqa: BLE001
+                pass
+        setattr(self, attr, new_job)
+
+    def send_brake(self, kpa: int) -> bool:
+        return self.inject(HIGH, KEY_HOST_BRAKE, {"brake_pressure_kpa": int(kpa)})[0]
 
     def send_lights(self, left: int = 0, right: int = 0, brake: int = 0, head: int = 0) -> bool:
         return self.inject(
@@ -329,6 +387,29 @@ class HwBench(BenchClient):
     # ── safety ───────────────────────────────────────────────────────────
     def assert_estop(self, bus: str = HIGH) -> bool:
         return self.inject_raw(bus, CAN_SAFETY_ESTOP, "")
+
+    def trip_estop(self, bus: str = HIGH, timeout_s: float = 5.0) -> bool:
+        """Inject 0x001 until SYS latches ESTOP, then confirm RT latched too.
+
+        RT forwards the High 0x001 to Low best-effort (single bounded gateway
+        frame), so a single injection can be dropped before SYS sees it. Retry
+        until SYS reports estop_active=1, then wait for RT's own latch.
+        """
+        deadline = time.monotonic() + timeout_s
+        while time.monotonic() < deadline:
+            self.assert_estop(bus)
+            ok, _ = self.wait_signal(
+                LOW, CAN_SYS_SAFETY_STS, "estop_active", expected=1, timeout_s=0.5
+            )
+            if ok:
+                break
+        else:
+            return False
+        ok, _ = self.wait_for(
+            lambda s: signal_of(s.get((LOW, CAN_RT_NODE_STATUS)), "estop_active") == 1,
+            timeout_s=3.0,
+        )
+        return ok
 
     def reset_estop(self, timeout_s: float = 8.0) -> bool:
         """Clear a latched ESTOP via the staged host reset request.
@@ -354,11 +435,53 @@ class HwBench(BenchClient):
         )
         return ok
 
+    def estop_reset_replies(self, limit: int = 4096) -> list[dict]:
+        """Decode every recent SYS_ESTOP_RESET_RSP (0x115) from the history ring.
+
+        The host reset is a multi-frame request: the accepted stage clears the
+        latch and *later* frames are then rejected as no-ops, so the last-seen
+        reply is not necessarily the accepted one. Scanning the frames captured
+        during the burst lets a test assert that an ACCEPTED (result=0,
+        blocker_mask=0) stage actually happened.
+        """
+        _, data = self.request("GET", f"/history?limit={limit}")
+        replies: list[dict] = []
+        for frame in (data or {}).get("frames", []):
+            if frame.get("bus") != "low" or int(frame.get("can_id", -1)) != CAN_ESTOP_RESET_RSP:
+                continue
+            raw = bytes.fromhex(frame.get("data_hex", ""))
+            if len(raw) >= 4:
+                replies.append(
+                    {
+                        "request_seq": raw[0],
+                        "result": raw[1],
+                        "blocker_mask": (raw[2] << 8) | raw[3],
+                    }
+                )
+        return replies
+
     def ensure_operational(self) -> None:
-        """Clear a latched ESTOP (e.g. a node rebooted into ESTOP) if needed."""
+        """Clear a latched ESTOP, healing the RT-only desync if present.
+
+        A High ``0x001`` latches RT, but RT's High->Low forward is best-effort
+        (single bounded gateway frame): if it is dropped SYS never latches, the
+        staged reset then has nothing to clear and is REJECTED, leaving RT
+        latched indefinitely. Re-latch SYS with a Low ``0x001`` (delivered
+        directly) so the staged reset can clear both nodes.
+        """
         try:
-            if (self.get_status().get("estop") or {}).get("active"):
-                self.reset_estop()
+            estop = self.get_status().get("estop") or {}
+        except Exception:  # noqa: BLE001
+            return
+        if not estop.get("active"):
+            return
+        nodes = estop.get("nodes") or {}
+        rt_latched = bool((nodes.get("rt") or {}).get("estop_active"))
+        sys_latched = bool((nodes.get("sys") or {}).get("estop_active"))
+        if rt_latched and not sys_latched:
+            self.trip_estop(LOW, timeout_s=4.0)
+        try:
+            self.reset_estop()
         except Exception:  # noqa: BLE001
             pass
 
@@ -373,8 +496,7 @@ class HwBench(BenchClient):
         except Exception:  # noqa: BLE001
             pass
         try:
-            if (self.get_status().get("estop") or {}).get("active"):
-                self.reset_estop()
+            self.ensure_operational()
         except Exception:  # noqa: BLE001
             pass
         try:

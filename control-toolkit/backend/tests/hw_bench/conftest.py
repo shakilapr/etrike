@@ -29,6 +29,7 @@ from harness import (
     ESTOP_REASON_WATCHDOG,
     HIGH,
     LOW,
+    OBSTACLE_CLEAR,
     HwBench,
     signal_of,
 )
@@ -138,6 +139,7 @@ def _bench_isolation(request):
         yield
         return
     bench = request.getfixturevalue("bench")
+    bench.ensure_session()
     bench.stop_all()
     yield
     bench.park()
@@ -146,9 +148,20 @@ def _bench_isolation(request):
 @pytest.fixture
 def auto_ready(bench: HwBench) -> HwBench:
     """Vehicle powered ON and in AUTO (drive-ready), per handoff Step 1."""
+    bench.ensure_session()
     bench.ensure_operational()
     ok_power, _ = bench.command_power(True)
     assert ok_power, "SYS_PWR_CMD never reached power_state=1 (power ON)"
+
+    # Normalise latched Host inputs: RT holds the last commanded obstacle/brake
+    # indefinitely, so a test that failed before releasing them would otherwise
+    # zero every later drive setpoint (0x205 = obstacle kpa, 0x204 = 0). Repeat
+    # the clear so a single dropped/echoed frame cannot leave it latched.
+    for _ in range(4):
+        bench.send_obstacle(OBSTACLE_CLEAR)
+        bench.send_brake(0)
+        time.sleep(0.05)
+
     ok_mode, state = bench.command_mode(True)
     assert ok_mode, (
         "AUTO transition failed: SYS_MODE_CMD/RT_STATE_RPT never reported mode=1 "

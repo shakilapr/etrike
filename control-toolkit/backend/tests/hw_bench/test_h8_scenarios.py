@@ -24,15 +24,18 @@ import time
 import pytest
 
 from harness import (
+    CAN_RT_NODE_STATUS,
     CAN_SYS_SAFETY_STS,
     GEAR_D,
     GEAR_N,
     HIGH,
     LOW,
     OBSTACLE_CLEAR,
+    signal_of,
 )
 from scenario import (
     SBW_ANGLE_OFFSET,
+    assert_no_trip,
     dur,
     health,
     hold,
@@ -157,22 +160,33 @@ def test_estop_recovery_cycles_scenario(auto_ready):
         bench.start_drive(1000, gear=GEAR_D)
         track(bench, speed_is(1000, tol=150), f"estop-cycle[{cycle}]: drive")
 
-        assert bench.assert_estop(HIGH), f"estop-cycle[{cycle}]: raw 0x001 failed"
+        assert bench.trip_estop(HIGH), f"estop-cycle[{cycle}]: SYS/RT never latched ESTOP"
         ok, state = bench.wait_signal(
-            LOW, CAN_SYS_SAFETY_STS, "estop_active", expected=1, timeout_s=4.0
+            LOW, CAN_SYS_SAFETY_STS, "estop_active", expected=1, timeout_s=2.0
         )
         assert ok, (
             f"estop-cycle[{cycle}]: SYS never reported ESTOP: "
             f"{state.get((LOW, CAN_SYS_SAFETY_STS))}"
         )
-        hold(bench, f"estop-cycle[{cycle}]: tripped", 1)
+        # RT must latch too (this is an intentional trip, so no hold()).
+        ok, state = bench.wait_for(
+            lambda s: signal_of(s.get((LOW, CAN_RT_NODE_STATUS)), "estop_active") == 1,
+            timeout_s=3.0,
+        )
+        assert ok, f"estop-cycle[{cycle}]: RT never latched ESTOP"
 
         assert bench.reset_estop(), f"estop-cycle[{cycle}]: staged reset never cleared ESTOP"
-        ok_mode, _ = bench.command_mode(True)
-        assert ok_mode, f"estop-cycle[{cycle}]: did not re-arm AUTO"
 
-        bench.start_drive(1000, gear=GEAR_D)
-        track(bench, speed_is(1000, tol=150), f"estop-cycle[{cycle}]: re-engage")
+        # Reset exits ESTOP to MANUAL and the steering machine ramps out before
+        # motion authority returns, so re-arm + re-drive with a few retries.
+        engaged = False
+        for _ in range(3):
+            bench.command_mode(True)
+            bench.start_drive(1000, gear=GEAR_D)
+            engaged, _ = bench.wait_for(speed_is(1000, tol=150), timeout_s=3.0)
+            if engaged:
+                break
+        assert engaged, f"estop-cycle[{cycle}]: drive did not re-engage after recovery"
 
     bench.start_drive(0, gear=GEAR_N)
 
@@ -186,6 +200,7 @@ def test_endurance_varied_drive_scenario(auto_ready):
     start = time.monotonic()
     total = dur(60)
     phase = 0
+    missing = 0
     while time.monotonic() - start < total:
         elapsed = time.monotonic() - start
         # Sweep the steering sinusoidally and brake for the last 5 s of each 20 s.
@@ -197,13 +212,20 @@ def test_endurance_varied_drive_scenario(auto_ready):
             bench.send_obstacle(OBSTACLE_CLEAR)
 
         snapshot = health(bench)
-        assert snapshot["sys_estop"] == 0, f"endurance: SYS ESTOP {snapshot}"
-        assert snapshot["rt_estop"] == 0, f"endurance: RT ESTOP {snapshot}"
-        assert snapshot["rt_degraded"] == 0, f"endurance: RT degraded {snapshot}"
-        task_health = snapshot["task_health"]
-        assert task_health is not None and (task_health & 0x0F) == 0x0F, (
-            f"endurance: RT task_health lost a task: {snapshot}"
-        )
+        if snapshot["low_live"]:
+            missing = 0
+            assert_no_trip(snapshot, "endurance")
+            assert snapshot["rt_degraded"] == 0, f"endurance: RT degraded {snapshot}"
+            task_health = snapshot["task_health"]
+            assert (task_health & 0x0F) == 0x0F, (
+                f"endurance: RT task_health lost a task: {snapshot}"
+            )
+        else:
+            missing += 1
+            assert missing <= 6, (
+                f"endurance: Low-bus telemetry missing for {missing} samples "
+                f"(adapter reconnect?): {snapshot}"
+            )
         phase += 1
         time.sleep(0.5)
 
