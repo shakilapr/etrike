@@ -43,27 +43,32 @@ Lamp − → GND
 
 ## Switches (wire to GND)
 
-| Function | GPIO | Switch |
-|----------|------|--------|
-| Brake lever | GPIO2 | Momentary NO |
-| START | GPIO41 | Momentary NO |
-| MODE | GPIO11 | Momentary NO |
-| Bypass | GPIO42 | Latching, closed at power-up = bypass ON |
-| Left | GPIO9 | (not wired) |
-| Right | GPIO6 | (not wired) |
-| Headlight | GPIO7 | (not wired) |
+Every input uses the ESP32-S3 internal pull-up to 3.3 V. All switches are dry contacts wired between the GPIO pin and **GND**.
+
+| Function | GPIO | Switch / Contact Type | Operation / Logic |
+|----------|------|-----------------------|-------------------|
+| Brake lever | GPIO2 | Momentary NO (Microswitch) | Pull lever → Closes to GND (Active-LOW) |
+| START | GPIO41 | Momentary NO (Push Button) | Press → Closes to GND (Exits ESTOP → MANUAL) |
+| MODE | GPIO11 | Momentary NO (Push Button) | Press → Closes to GND (Toggles MANUAL ↔ AUTO; 3s hold exits ESTOP) |
+| Bypass | GPIO42 | Latching / Jumper | Closed to GND at boot = Developer bench bypass ON |
+| Left Turn | GPIO9 | Handlebar Switch (NO/Toggle) | Press → Closes to GND (Toggles Left Blinker in MANUAL) |
+| Right Turn | GPIO6 | Handlebar Switch (NO/Toggle) | Press → Closes to GND (Toggles Right Blinker in MANUAL) |
+| Headlight | GPIO7 | Handlebar Switch (Toggle) | Press → Closes to GND (Toggles Headlight in MANUAL) |
 
 ## ESTOP switch
 
 ```
-GPIO1 ── NC contact ── GND
+GPIO1 ──── [ NC Red Mushroom Switch ] ──── GND
 ```
 
-Released = normal. Pressed or wire broken = ESTOP.
+- **Type:** Red mushroom emergency stop button with **NC (Normally Closed)** latching contact.
+- **Released / Healthy:** Contact is CLOSED to GND (reads LOW / 0 V) → Normal operation allowed.
+- **Pressed / Open Circuit:** Contact OPENS → Internal pull-up pulls GPIO1 to 3.3 V (HIGH) → Immediate latched ESTOP.
+- **Fail-Safe:** Any disconnected wire or cut cable automatically pulls HIGH and trips ESTOP.
 
 No external resistor needed: the firmware enables the internal pull-up on
 GPIO1. Do not add a pull-down and do not feed 3.3 V into GPIO1 — that wiring
-belongs to the older hardware docs and would read as permanent ESTOP against
+belongs to older obsolete drawings and would read as permanent ESTOP against
 this firmware.
 
 ## Components needed
@@ -71,4 +76,4 @@ this firmware.
 None — every input uses the firmware internal pull-up, and the relay module
 contains the drivers. No external resistors anywhere.
 
-Never connect +12 V to any ESP32 GPIO.
+**Never connect +12 V to any ESP32 GPIO.**
