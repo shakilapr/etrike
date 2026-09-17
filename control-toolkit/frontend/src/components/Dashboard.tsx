@@ -25,6 +25,7 @@ export function Dashboard() {
 
   const [unitMode, setUnitMode] = useState<'kmh' | 'mmps'>('kmh')
   const [demoMode, setDemoMode] = useState<boolean>(false)
+  const [activeView, setActiveView] = useState<'cluster' | 'tables'>('cluster')
   const [activeTab, setActiveTab] = useState<'protocol' | 'pipeline' | 'gates'>('protocol')
   const [dictMessages, setDictMessages] = useState<Array<Record<string, unknown>> | null>(null)
 
@@ -144,13 +145,15 @@ export function Dashboard() {
     <WorkspaceShell
       testId="workspace-dashboard"
       title="Dashboard"
-      description="Integrated 3-tier automotive instrument cluster · Minimalist digital meters with programmatic protocol verification"
-      sectionLabel="Observe"
+      fitScreen={true}
+      hideHeader={true}
     >
       <div className="dashboard-container">
         {/* ── HUD Overview Strip ── */}
         <header className="dashboard-hud-strip" data-testid="dashboard-hud">
           <div className="dashboard-hud-group">
+            <span className="dashboard-brand-pill">DASHBOARD</span>
+
             {/* ESTOP Status */}
             <div className="dashboard-hud-item">
               <span className="dashboard-hud-k">ESTOP</span>
@@ -170,7 +173,7 @@ export function Dashboard() {
                 <span className="dashboard-gear-pill" data-testid="dashboard-gear">
                   {activeGear}
                 </span>
-                <span className="text-xs text-muted font-medium">
+                <span className="text-[11px] text-muted font-medium">
                   {activeGear === 'D'
                     ? 'Drive'
                     : activeGear === 'R'
@@ -220,26 +223,47 @@ export function Dashboard() {
             <div className="dashboard-hud-item">
               <span className="dashboard-hud-k">Protocol Status</span>
               <div className="dashboard-hud-v">
-                <span
-                  className={`dashboard-audit-badge tone-${auditReport.overallStatus}`}
+                <button
+                  type="button"
+                  className={`dashboard-audit-badge tone-${auditReport.overallStatus} cursor-pointer hover:opacity-80`}
                   data-testid="dashboard-protocol-summary"
-                  title={`${auditReport.conformingCount}/${auditReport.totalSignals} signals conforming to protocol contracts`}
+                  title="Click to view detailed Programmatic Protocol Audit table"
+                  onClick={() => {
+                    setActiveView('tables')
+                    setActiveTab('protocol')
+                  }}
                 >
                   {auditReport.overallStatus === 'conforming'
                     ? '✓ Protocol Verified'
                     : `${auditReport.conformingCount}/${auditReport.totalSignals} Conforming`}
-                </span>
+                </button>
               </div>
             </div>
           </div>
 
-          {/* Unit & Demo Controls */}
+          {/* Unit, Demo & View Switch Controls */}
           <div className="dashboard-hud-group">
+            {/* Activation Gates Quick Pill */}
+            <button
+              type="button"
+              className={`dashboard-gates-pill tone-${activationReport.allCleared ? 'ok' : 'danger'}`}
+              onClick={() => {
+                setActiveView('tables')
+                setActiveTab('gates')
+              }}
+              title="Click to view controller activation gate matrix"
+              data-testid="hud-activation-gates-pill"
+            >
+              {activationReport.allCleared
+                ? `✓ ${activationReport.clearedGates}/${activationReport.totalGates} Gates Ready`
+                : `⚠ ${activationReport.totalGates - activationReport.clearedGates} Gate Blocked`}
+            </button>
+
             {/* Speed Unit Toggle */}
-            <div className="flex items-center gap-1 bg-surface-2 p-1 rounded border border-border">
+            <div className="flex items-center gap-1 bg-surface-2 p-0.5 rounded border border-border">
               <button
                 type="button"
-                className={`px-2.5 py-1 text-xs font-semibold rounded ${
+                className={`px-2 py-0.5 text-xs font-semibold rounded ${
                   unitMode === 'kmh' ? 'bg-primary text-white' : 'text-text-secondary'
                 }`}
                 onClick={() => setUnitMode('kmh')}
@@ -249,7 +273,7 @@ export function Dashboard() {
               </button>
               <button
                 type="button"
-                className={`px-2.5 py-1 text-xs font-semibold rounded ${
+                className={`px-2 py-0.5 text-xs font-semibold rounded ${
                   unitMode === 'mmps' ? 'bg-primary text-white' : 'text-text-secondary'
                 }`}
                 onClick={() => setUnitMode('mmps')}
@@ -263,35 +287,50 @@ export function Dashboard() {
             {!hasFrames && (
               <button
                 type="button"
-                className={`px-3 py-1 text-xs font-semibold rounded border ${
+                className={`px-2.5 py-0.5 text-xs font-semibold rounded border ${
                   demoMode ? 'bg-info-soft text-primary border-primary' : 'bg-surface text-text border-border'
                 }`}
                 onClick={() => setDemoMode((v) => !v)}
                 data-testid="toggle-demo-mode"
                 title="Toggle simulated preview telemetry when no hardware CAN frames are incoming"
               >
-                {demoMode ? 'Sim Preview: ON' : 'Preview Mode'}
+                {demoMode ? 'Sim: ON' : 'Preview'}
               </button>
             )}
+
+            {/* View Switcher: Cluster vs Audit Tables */}
+            <div className="flex items-center gap-0.5 bg-surface-2 p-0.5 rounded border border-border">
+              <button
+                type="button"
+                className={`px-2.5 py-0.5 text-xs font-semibold rounded ${
+                  activeView === 'cluster' ? 'bg-primary text-white' : 'text-text-secondary'
+                }`}
+                onClick={() => setActiveView('cluster')}
+                data-testid="toggle-view-cluster"
+              >
+                Cluster
+              </button>
+              <button
+                type="button"
+                className={`px-2.5 py-0.5 text-xs font-semibold rounded ${
+                  activeView === 'tables' ? 'bg-primary text-white' : 'text-text-secondary'
+                }`}
+                onClick={() => setActiveView('tables')}
+                data-testid="toggle-view-tables"
+              >
+                Tables
+              </button>
+            </div>
           </div>
         </header>
 
-        {/* ── Controller Activation & AUTO Mode Gate Matrix Strip ── */}
-        <section className="dashboard-activation-section" data-testid="dashboard-activation-section">
-          <ControllerActivationMatrix
-            report={activationReport}
-            compact={true}
-            onSelectGate={() => setActiveTab('gates')}
-          />
-        </section>
-
-        {/* ── 3 Clean Minimalist Meters: Velocity, Steering, and Braking ── */}
-        {/* ── 3-Column Vehicle Cluster: Velocity, Stacked (Steering + Brake), and CAN Audit & Refusal Log ── */}
-        <section
-          className="dashboard-cluster-grid"
-          data-testid="dashboard-meters"
-          aria-label="Vehicle instrument cluster and audit logger"
-        >
+        {activeView === 'cluster' ? (
+          /* ── 3-Column Vehicle Cluster: Velocity, Stacked (Steering + Brake), and CAN Audit & Refusal Log ── */
+          <section
+            className="dashboard-cluster-grid"
+            data-testid="dashboard-meters"
+            aria-label="Vehicle instrument cluster and audit logger"
+          >
           {/* Column 1: Velocity (Host -> RT -> Throttle -> FBK Pending) */}
           <div className="dashboard-col-velocity">
             <MultiMeter
@@ -418,8 +457,8 @@ export function Dashboard() {
             />
           </div>
         </section>
-
-        {/* ── Tabbed Inspection Section: Programmatic Protocol Audit vs Pipeline Verification ── */}
+      ) : (
+        /* ── Tabbed Inspection Section: Programmatic Protocol Audit vs Pipeline Verification ── */
         <section className="dashboard-details-card" data-testid="dashboard-summary-table">
           <div className="dashboard-tab-bar">
             <div className="flex items-center gap-2">
@@ -672,7 +711,8 @@ export function Dashboard() {
             <ControllerActivationMatrix report={activationReport} compact={false} />
           )}
         </section>
-      </div>
-    </WorkspaceShell>
+      )}
+    </div>
+  </WorkspaceShell>
   )
 }

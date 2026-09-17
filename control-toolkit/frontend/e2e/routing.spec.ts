@@ -13,6 +13,9 @@ test.describe('URL Routing & History Navigation', () => {
     await expect(page.getByTestId('nav-overview')).toHaveClass(/active/)
     await expect(page).toHaveURL(/\/overview$/)
     await expect(page).toHaveTitle(/Overview/i)
+    await page.screenshot({
+      path: 'C:/Users/logsh/.gemini/antigravity/brain/ba92870d-875f-4c69-8960-0970c0e3456a/url_overview.png',
+    })
   })
 
   test('direct navigation to /settings loads Settings workspace and preserves on reload', async ({ page }) => {
@@ -21,6 +24,9 @@ test.describe('URL Routing & History Navigation', () => {
     await expect(page.getByTestId('nav-settings')).toHaveClass(/active/)
     await expect(page).toHaveURL(/\/settings$/)
     await expect(page).toHaveTitle(/Settings/i)
+    await page.screenshot({
+      path: 'C:/Users/logsh/.gemini/antigravity/brain/ba92870d-875f-4c69-8960-0970c0e3456a/url_settings.png',
+    })
 
     // Verify page reload preserves the workspace
     await page.reload()
