@@ -270,7 +270,7 @@ export function Topbar() {
       ? 'ok'
       : 'muted'
   const estopDisplayLabel = estopOn
-    ? estopLabel
+    ? (/active/i.test(estopLabel) ? estopLabel : `Active · ${estopLabel}`)
     : estopConfirmed
       ? 'Clear'
       : 'No signal'
@@ -315,7 +315,7 @@ export function Topbar() {
   return (
     <header className="topbar z-30 shrink-0 border-b border-border bg-surface" data-testid="topbar">
       {/* Primary health strip */}
-      <div className="topbar-row topbar-row-primary flex flex-wrap items-center gap-x-2.5 gap-y-2 px-3.5 py-2">
+      <div className="topbar-row topbar-row-primary">
         <div className="topbar-cluster topbar-brand-cluster">
           <div className="brand">Control Toolkit</div>
         </div>

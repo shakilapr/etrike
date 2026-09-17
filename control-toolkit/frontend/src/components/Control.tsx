@@ -105,7 +105,15 @@ function DirectActuatorCards({
   async function start(channel: 'motor' | 'steering' | 'brake') {
     setBusy(true)
     try {
-      await ensureSessionReady()
+      let st = await ensureSessionReady()
+      if (String(st.session?.bench_tx ?? '').toLowerCase() !== 'enabled' && st.session?.session_id) {
+        try {
+          await api.setBenchTx(st.session.session_id, true, st.session.revision)
+          st = await refresh()
+        } catch {
+          /* continue to attempt command */
+        }
+      }
       // Safety bypass: control_enable + alignment_enable always forced ON in backend.
       const values =
         channel === 'motor'
@@ -487,7 +495,15 @@ export function Control() {
   }, [setStatus])
 
   async function ensureSessionReady() {
-    const st = await refresh()
+    let st = await refresh()
+    if (!st.session?.session_id) {
+      try {
+        await api.createSession('bench_test')
+        st = await refresh()
+      } catch {
+        /* continue to check */
+      }
+    }
     if (!st.session?.session_id) {
       throw new Error('No active session. Connect Real in Settings first.')
     }

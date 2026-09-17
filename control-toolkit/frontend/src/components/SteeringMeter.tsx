@@ -42,7 +42,7 @@ function toVisualDeg(ratio: number) {
 
 export function SteeringMeter({
   title = 'Steering',
-  badge = 'EPS Closed-Loop',
+  badge = 'Active',
   badgeTone = 'info',
   actualAngle,
   hostAngle,
@@ -221,26 +221,28 @@ export function SteeringMeter({
     >
       {/* Card Header */}
       <div className="multi-meter-header">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 min-w-0">
           <span className="multi-meter-title">{title}</span>
-          <span className="multi-meter-subtitle">
-            {compact ? 'Host → RT → SES' : 'Directional Angle & Multi-Tier Guidance'}
-          </span>
+          {compact && (
+            <span className="multi-meter-subtitle">Host → RT → Actuator</span>
+          )}
         </div>
         <div className="flex items-center gap-1.5">
           {protocolAudit && (
             <span
-              className={`protocol-pill tone-${protocolAudit.status}`}
+              className={`protocol-status-tag tone-${protocolAudit.status}`}
               title={protocolAudit.note ?? `Protocol verification: ${protocolAudit.status}`}
               data-testid={`${testId}-protocol-pill`}
             >
-              {protocolAudit.status === 'conforming'
-                ? '✓'
-                : protocolAudit.status === 'warning'
-                  ? '!'
-                  : protocolAudit.status === 'error'
-                    ? '✕'
-                    : '?'}
+              <span>
+                {protocolAudit.status === 'conforming'
+                  ? '✓ OK'
+                  : protocolAudit.status === 'warning'
+                    ? '⚠ Warn'
+                    : protocolAudit.status === 'error'
+                      ? '✕ Fault'
+                      : '• Bench'}
+              </span>
             </span>
           )}
           {badge && (
@@ -251,7 +253,7 @@ export function SteeringMeter({
         </div>
       </div>
 
-      {/* Layered Meter Lines Legend — in physical order: Host (inner) → RT (middle) → SES (outer) */}
+      {/* Layered Meter Lines Legend — in physical order: Host (inner) → RT (middle) → Actuator (outer) */}
       <div className="steering-tier-legend" data-testid={`${testId}-tier-legend`}>
         <div className="tier-legend-item" title="Host Guidance Target (CAN 0x303)">
           <span className="tier-dot host" />
@@ -261,9 +263,9 @@ export function SteeringMeter({
           <span className="tier-dot rt" />
           <span>RT Setpoint</span>
         </div>
-        <div className="tier-legend-item" title="SES Actual Steering Feedback (CAN 0x201)">
+        <div className="tier-legend-item" title="Actual Steering Feedback (CAN 0x201)">
           <span className="tier-dot actual" />
-          <span>Actual SES</span>
+          <span>Actual Angle</span>
         </div>
       </div>
 
@@ -363,7 +365,10 @@ export function SteeringMeter({
 
         {/* Center Digital Readout — safely inside R_HOST with ZERO hub/needle overlap */}
         <div className="steering-center-readout">
-          <div className="flex items-center gap-1.5">
+          <div className="multi-meter-center-value" data-testid={`${testId}-center-value`}>
+            {angleNum != null ? `${angleNum > 0 ? '+' : ''}${angleNum.toFixed(1)}°` : '—'}
+          </div>
+          <div className="steering-direction-badge-wrap">
             <span className="steering-direction-badge">{directionText}</span>
             {isOverflow && (
               <span
@@ -374,15 +379,12 @@ export function SteeringMeter({
               </span>
             )}
           </div>
-          <div className="multi-meter-center-value" data-testid={`${testId}-center-value`}>
-            {angleNum != null ? `${angleNum > 0 ? '+' : ''}${angleNum.toFixed(1)}°` : '—'}
-          </div>
           <div
             className="multi-meter-center-label"
             data-testid={`${testId}-center-label`}
             title="SES_STATUS: angle_deg (CAN 0x201)"
           >
-            <span>SES ANGLE</span>
+            <span>STEERING ANGLE</span>
           </div>
         </div>
       </div>
@@ -396,7 +398,7 @@ export function SteeringMeter({
             title="HOST_STEER_CMD: steer_angle_0_1deg (CAN 0x303)"
           >
             <span className="tier-dot host" />
-            <span className="multi-meter-sub-label">HOST STEER</span>
+            <span className="multi-meter-sub-label">AUTONOMY TARGET</span>
           </div>
           <span className="multi-meter-sub-value text-host">
             {hostNum != null
@@ -416,7 +418,7 @@ export function SteeringMeter({
             title="VCU_SES_REQ: target_angle_raw (CAN 0x169)"
           >
             <span className="tier-dot rt" />
-            <span className="multi-meter-sub-label">RT TARGET</span>
+            <span className="multi-meter-sub-label">SUPERVISOR SETPOINT</span>
           </div>
           <span className="multi-meter-sub-value text-rt">
             {rtNum != null
@@ -431,18 +433,18 @@ export function SteeringMeter({
       <div className="multi-meter-integrated-strip" data-testid={`${testId}-dynamics-strip`}>
         <div className="multi-meter-integrated-item" title="HOST_DRIVE_CMD: yaw_rate_mrad_s (CAN 0x300)">
           <div className="integrated-label-row">
-            <span className="integrated-label">Host Yaw</span>
+            <span className="integrated-label">Yaw Rate</span>
           </div>
           <span className="integrated-value mono">
             {typeof yawRate === 'number' && Number.isFinite(yawRate)
-              ? `${yawRate.toFixed(0)} mrad/s`
+              ? `${(yawRate * 0.0573).toFixed(1)} °/s`
               : '—'}
           </span>
         </div>
 
         <div className="multi-meter-integrated-item" title="VCU_SES_REQ: target_speed_raw (CAN 0x169)">
           <div className="integrated-label-row">
-            <span className="integrated-label">RT Slew</span>
+            <span className="integrated-label">Slew Rate</span>
           </div>
           <span className="integrated-value mono">
             {typeof slewRate === 'number' && Number.isFinite(slewRate)
@@ -453,7 +455,7 @@ export function SteeringMeter({
 
         <div className="multi-meter-integrated-item" title="SES_STATUS: torque_nm (CAN 0x201)">
           <div className="integrated-label-row">
-            <span className="integrated-label">EPS Torque</span>
+            <span className="integrated-label">Torque</span>
           </div>
           <span className="integrated-value mono">
             {typeof torqueNm === 'number' && Number.isFinite(torqueNm)

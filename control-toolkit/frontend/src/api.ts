@@ -602,6 +602,18 @@ export const api = {
   },
   clearLogs: () =>
     json<{ cleared: number }>('/logs', { method: 'DELETE' }),
+  saveExport: (data: unknown, filename?: string) =>
+    json<{ ok: boolean; saved_path: string; filename: string; size_bytes: number }>(
+      '/logs/export-save',
+      {
+        method: 'POST',
+        body: JSON.stringify({ data, filename }),
+      },
+    ),
+  savedExports: () =>
+    json<{ count: number; exports: Array<{ filename: string; size_bytes: number; modified_ts: number }> }>(
+      '/logs/saved-exports',
+    ),
   recordings: () =>
     json<{
       active: Record<string, unknown> | null

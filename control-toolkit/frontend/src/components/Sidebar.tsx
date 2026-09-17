@@ -14,6 +14,7 @@ export function Sidebar() {
   const workspace = useAppStore((s) => s.workspace)
   const setWorkspace = useAppStore((s) => s.setWorkspace)
   const activity = useAppStore((s) => s.activity)
+  const sidebarCollapsed = useAppStore((s) => s.sidebarCollapsed)
   const setStatus = useAppStore((s) => s.setStatus)
   const status = useAppStore((s) => s.status)
   const quality = useAppStore((s) => s.streamQuality)
@@ -747,17 +748,23 @@ export function Sidebar() {
                   type="button"
                   data-testid={`nav-${item.id}`}
                   className={workspace === item.id ? 'nav active' : 'nav'}
+                  title={item.label}
+                  aria-label={item.label}
                   onClick={() => setWorkspace(item.id)}
                 >
                   {item.icon}
-                  <span>{item.label}</span>
+                  <span className="nav-text">{item.label}</span>
                 </button>
               ))}
             </div>
           ))}
         </nav>
 
-        <section className="vehicle-card" aria-labelledby="side-vehicle-title">
+        <section
+          className="vehicle-card"
+          aria-labelledby="side-vehicle-title"
+          title={`eTrike ${streamOk ? 'Live' : 'Offline'} · Speed: ${speedText}, Steer: ${steerText}`}
+        >
           <div className="vehicle-card-header">
             <div className="vehicle-card-title">
               <IconGauge />
@@ -829,7 +836,11 @@ export function Sidebar() {
           </div>
         </section>
 
-        <div className="system-card" data-testid="sidebar-system-card">
+        <div
+          className="system-card"
+          data-testid="sidebar-system-card"
+          title={`${streamLabel} · ${profileLabel} · adapter ${adapterHealth}`}
+        >
           <div className="system-card-row">
             <span
               className={`status-dot ${streamOk ? 'success' : quality === 'connecting' ? 'warning' : 'danger'}`}
@@ -847,7 +858,10 @@ export function Sidebar() {
   }
 
   return (
-    <aside className="sidebar" aria-label="Application sidebar">
+    <aside
+      className={`sidebar${sidebarCollapsed ? ' is-collapsed' : ''}`}
+      aria-label="Application sidebar"
+    >
       <ActivityBar />
       <div className={bodyClass} data-testid={bodyTestId} aria-label={bodyLabel}>
         {body}

@@ -20,7 +20,7 @@ export function Settings() {
     status?.session?.profile ||
     status?.profile ||
     'bench_test'
-  const activeMode: 'real' = 'real'
+  const activeMode = 'real' as const
 
   const refreshSettings = useCallback(async () => {
     try {
@@ -123,11 +123,12 @@ export function Settings() {
   }
 
   async function closeCurrentSession() {
-    const sid = String(snap?.session?.session_id || status?.session?.session_id || '')
-    const rev = Number(snap?.session?.revision ?? status?.session?.revision ?? 0)
-    if (!sid) return
     setBusy(true)
     try {
+      const st = await api.status()
+      const sid = st.session?.session_id
+      const rev = st.session?.revision ?? 0
+      if (!sid) return
       await api.closeSession(sid, rev)
       setStatus(await api.status())
       await refreshSettings()
@@ -156,14 +157,12 @@ export function Settings() {
   }
 
   async function toggleBenchTx(enabled: boolean) {
-    const sid = String(snap?.session?.session_id || status?.session?.session_id || '')
-    const rev = Number(snap?.session?.revision ?? status?.session?.revision ?? 0)
-    if (!sid) {
-      setLog('No active session — start Computer or Real first.')
-      return
-    }
     setBusy(true)
     try {
+      const st = await api.status()
+      const sid = st.session?.session_id
+      const rev = st.session?.revision ?? 0
+      if (!sid) return
       await api.setBenchTx(sid, enabled, rev)
       setStatus(await api.status())
       await refreshSettings()

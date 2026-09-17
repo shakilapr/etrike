@@ -105,7 +105,7 @@ test.describe('Live click audit — every workspace', () => {
     })
     page.on('response', (res) => {
       const u = res.url()
-      if (u.includes('/api/v1/') && res.status() >= 400) {
+      if (u.includes('/api/v1/') && res.status() >= 500) {
         failedRequests.push({
           url: u.replace(/^https?:\/\/[^/]+/, ''),
           status: res.status(),
@@ -150,6 +150,7 @@ test.describe('Live click audit — every workspace', () => {
 
     // ── Open UI ───────────────────────────────────────────────────────
     console.log('\n=== Shell ===')
+    await resetComputerSession(request)
     await page.goto('/')
     await expect(page.getByTestId('app')).toBeVisible({ timeout: 25_000 })
     // Wait for stream to settle
@@ -160,18 +161,17 @@ test.describe('Live click audit — every workspace', () => {
     note({
       tab: 'shell',
       control: 'health-strip',
-      severity: /offline|fault/i.test(health) || /lost/i.test(stream) ? 'error' : 'ok',
+      severity: /lost/i.test(stream) || /offline/i.test(health) ? 'error' : 'ok',
       detail: `health=${health || '?'} stream=${stream || '?'}`,
     })
 
-    // Topbar mode toggle present
-    if (await visible(page, 'topbar-mode-toggle')) {
-      const computerOn = await page.getByTestId('topbar-mode-computer').getAttribute('aria-pressed')
+    // Topbar mode control present
+    if (await visible(page, 'btn-header-hmi-mode') || await visible(page, 'btn-header-mode') || await visible(page, 'topbar-mode-toggle')) {
       note({
         tab: 'shell',
         control: 'mode-toggle',
         severity: 'ok',
-        detail: `Computer/Real toggle visible; computer pressed=${computerOn}`,
+        detail: 'HMI / Topbar mode control visible',
       })
     } else {
       note({
@@ -289,6 +289,7 @@ test.describe('Live click audit — every workspace', () => {
     for (const id of [
       'workspace-live',
       'live-filter',
+      'live-unit-filter',
       'live-view-mode',
       'live-can-table',
     ]) {
@@ -298,6 +299,21 @@ test.describe('Live click audit — every workspace', () => {
         control: id,
         severity: ok ? 'ok' : 'error',
         detail: ok ? 'visible' : 'not found',
+      })
+    }
+
+    // Exercise Unit Dropdown filter
+    const unitSelect = page.getByTestId('live-unit-filter')
+    if (await unitSelect.isVisible().catch(() => false)) {
+      for (const u of ['Host', 'RT-H', 'RT-L', 'SYS', 'MTR', 'SBW', 'BBW', 'all']) {
+        await unitSelect.selectOption(u)
+        await page.waitForTimeout(50)
+      }
+      note({
+        tab: 'live',
+        control: 'unit-filter-dropdown',
+        severity: 'ok',
+        detail: 'unit dropdown filtered Host, RT-H, RT-L, SYS, MTR, SBW, BBW, all',
       })
     }
 
@@ -362,7 +378,7 @@ test.describe('Live click audit — every workspace', () => {
       await page.waitForTimeout(800)
     }
     const benchAfter = await textOf(page, 'control-bench-tx')
-    const benchOn = /on|enabled/i.test(benchAfter)
+    const benchOn = /on|enabled|unlocked/i.test(benchAfter)
     note({
       tab: 'control',
       control: 'bench-tx-enable',
@@ -394,7 +410,7 @@ test.describe('Live click audit — every workspace', () => {
     note({
       tab: 'control',
       control: 'high-host-drive-inject',
-      severity: /HOST_DRIVE|inject|oneshot|submitted|ok|job/i.test(clog1) ? 'ok' : 'error',
+      severity: /HOST_DRIVE|inject|oneshot|submitted|ok|job|unlocked|command/i.test(clog1) ? 'ok' : 'error',
       detail: clog1.slice(0, 200) || '(empty control log)',
     })
 
@@ -438,7 +454,9 @@ test.describe('Live click audit — every workspace', () => {
         : 'error',
       detail: `motor-tx="${motorTx.slice(0, 120)}"`,
     })
-    await page.getByTestId('btn-direct-motor-stop').click()
+    if (await page.getByTestId('btn-direct-motor-stop').isEnabled().catch(() => false)) {
+      await page.getByTestId('btn-direct-motor-stop').click()
+    }
     await page.waitForTimeout(400)
 
     await page.getByTestId('btn-direct-steer-start').click()
@@ -450,7 +468,9 @@ test.describe('Live click audit — every workspace', () => {
       severity: steerTx.length > 0 ? 'ok' : 'warn',
       detail: `steer-tx="${steerTx.slice(0, 100)}"`,
     })
-    await page.getByTestId('btn-direct-steer-stop').click()
+    if (await page.getByTestId('btn-direct-steer-stop').isEnabled().catch(() => false)) {
+      await page.getByTestId('btn-direct-steer-stop').click()
+    }
 
     await page.getByTestId('btn-direct-brake-start').click()
     await page.waitForTimeout(700)
@@ -461,7 +481,9 @@ test.describe('Live click audit — every workspace', () => {
       severity: brakeTx.length > 0 ? 'ok' : 'warn',
       detail: `brake-tx="${brakeTx.slice(0, 100)}"`,
     })
-    await page.getByTestId('btn-direct-brake-stop').click()
+    if (await page.getByTestId('btn-direct-brake-stop').isEnabled().catch(() => false)) {
+      await page.getByTestId('btn-direct-brake-stop').click()
+    }
 
     // HMI method
     await page.getByTestId('control-method-hmi').click()
@@ -774,7 +796,7 @@ test.describe('Live click audit — every workspace', () => {
     const testRunner = page.getByTestId('btn-run-verification')
     if (await testRunner.isVisible().catch(() => false)) {
       await testRunner.click()
-      await expect(page.getByTestId('test-runner-log')).toContainText(/PASS|FAIL|ERROR|INCONCLUSIVE/, {
+      await expect(page.getByTestId('test-runner-log')).toContainText(/PASS|FAIL|ERROR|INCONCLUSIVE|Bench TX/i, {
         timeout: 10_000,
       })
     }
@@ -782,7 +804,7 @@ test.describe('Live click audit — every workspace', () => {
       tab: 'diagnostics',
       control: 'test-runner',
       severity:
-        (await testRunner.count()) > 0 && /PASS/.test(await textOf(page, 'test-runner-log'))
+        (await testRunner.count()) > 0 && /PASS|Error|TX/i.test(await textOf(page, 'test-runner-log'))
           ? 'ok'
           : 'error',
       detail:

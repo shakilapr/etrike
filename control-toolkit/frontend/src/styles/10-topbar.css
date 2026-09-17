@@ -15,27 +15,37 @@
 
 .topbar-row {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
-  gap: 8px 10px;
+  gap: 8px;
   min-width: 0;
-  padding: 8px 14px;
+  padding: 6px 12px;
 }
 
 .topbar-row-primary {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
   justify-content: flex-start;
-  gap: 12px;
-  padding: 8px 14px 7px;
+  gap: 8px;
+  padding: 6px 12px;
   border-bottom: 1px solid var(--border);
   background: linear-gradient(180deg, #fff 0%, #fafbfc 100%);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.topbar-row-primary::-webkit-scrollbar {
+  display: none;
 }
 
 .topbar-row-primary .topbar-actions {
   margin-left: auto;
   align-self: center;
-  display: flex;
+  display: inline-flex;
+  flex-wrap: nowrap;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
   flex-shrink: 0;
 }
 
@@ -48,15 +58,17 @@
 
 /* Vehicle Telemetry Cluster (Gear, Modes, Power) in Topbar Row 1 */
 .topbar-vehicle-cluster {
-  display: flex;
+  display: inline-flex;
+  flex-wrap: nowrap;
   align-items: center;
-  gap: 8px;
-  margin-left: 12px;
-  padding: 2px 10px;
+  gap: 6px;
+  margin-left: 4px;
+  padding: 2px 8px;
   background: var(--surface-2, #f8fafc);
   border: 1px solid var(--border, #e2e8f0);
   border-radius: var(--radius);
   flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .vehicle-cluster-item {
@@ -268,11 +280,12 @@
 }
 
 .topbar-cluster {
-  display: flex;
-  flex-wrap: wrap;
+  display: inline-flex;
+  flex-wrap: nowrap;
   align-items: center;
   gap: 6px 8px;
   min-width: 0;
+  flex-shrink: 0;
 }
 
 .brand {
@@ -418,28 +431,29 @@ button.topbar-mode-btn.btn {
 
 /* Grouped critical health chips + bus meters */
 .health-strip {
-  display: flex;
-  flex-wrap: wrap;
+  display: inline-flex;
+  flex-wrap: nowrap;
   align-items: center;
-  gap: 8px 10px;
-  flex: 1 1 280px;
-  min-width: 0;
-  padding: 4px 10px;
+  gap: 6px;
+  flex-shrink: 0;
+  padding: 2px 8px;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius);
   background: var(--surface-subtle);
 }
 
 .health-overall {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  padding: 2px 4px 2px 2px;
-  min-height: 28px;
+  gap: 5px;
+  padding: 0 4px;
+  min-height: 24px;
+  height: 24px;
+  flex-shrink: 0;
 }
 
 .health-overall-label {
-  font-size: 12.5px;
+  font-size: 11.5px;
   font-weight: 750;
   letter-spacing: -0.01em;
 }
@@ -462,14 +476,17 @@ button.topbar-mode-btn.btn {
 
 .health-divider {
   width: 1px;
-  height: 22px;
+  height: 16px;
   background: var(--border);
   flex-shrink: 0;
 }
 
 .health-chip {
-  min-height: 26px;
-  padding: 3px 9px;
+  min-height: 24px;
+  height: 24px;
+  padding: 2px 7px;
+  font-size: 11px;
+  flex-shrink: 0;
 }
 
 /* ESTOP chip: label + H/L 0x001 presence lamps */
@@ -589,7 +606,13 @@ button.topbar-mode-btn.btn {
 /* High/Low bus state chips — discrete activity, not a level meter */
 .bus-chip {
   align-items: center;
-  gap: 6px;
+  gap: 5px;
+  min-height: 24px;
+  height: 24px;
+  padding: 2px 7px;
+  font-size: 11px;
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .bus-chip .status-dot {
@@ -639,11 +662,19 @@ button.topbar-mode-btn.btn {
 
 /* Meta row — secondary context */
 .topbar-row-meta {
-  gap: 4px 14px;
-  padding: 5px 14px 6px;
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 4px 12px;
+  padding: 4px 12px 5px;
   background: #f7f9fb;
   border-top: none;
   align-items: center;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.topbar-row-meta::-webkit-scrollbar {
+  display: none;
 }
 
 /* ECU presence — right side of meta row (label over LED) */

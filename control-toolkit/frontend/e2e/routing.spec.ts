@@ -40,6 +40,9 @@ test.describe('URL Routing & History Navigation', () => {
     await expect(page.getByTestId('nav-dashboard')).toHaveClass(/active/)
     await expect(page).toHaveURL(/\/dashboard$/)
     await expect(page).toHaveTitle(/Dashboard/i)
+    await page.screenshot({
+      path: 'C:/Users/logsh/.gemini/antigravity/brain/ba92870d-875f-4c69-8960-0970c0e3456a/dashboard_disconnected_clean.png',
+    })
   })
 
   test('sidebar clicks push corresponding URLs to browser history', async ({ page }) => {

@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { Fragment, useMemo } from 'react'
 
 export type SecondaryMetric = {
   label: string
@@ -22,8 +22,10 @@ export type MultiMeterProps = {
   badge?: string
   badgeTone?: 'ok' | 'warn' | 'danger' | 'info' | 'muted'
   primary: MultiMeterSignal
-  subLeft: MultiMeterSignal
-  subRight: MultiMeterSignal
+  targetValue?: number | null
+  subLeft?: MultiMeterSignal
+  subRight?: MultiMeterSignal
+  subColumns?: MultiMeterSignal[]
   secondaryMetrics?: SecondaryMetric[]
   min?: number
   max?: number
@@ -50,8 +52,10 @@ export function MultiMeter({
   badge,
   badgeTone = 'info',
   primary,
+  targetValue,
   subLeft,
   subRight,
+  subColumns,
   secondaryMetrics,
   min = 0,
   max = 200,
@@ -193,6 +197,47 @@ export function MultiMeter({
     }
   }, [pNum, tipPos])
 
+  // Target tick & marker ('T') calculation
+  const targetElements = useMemo(() => {
+    if (targetValue == null || !Number.isFinite(targetValue)) return null
+    let tFrac: number
+    if (bipolar) {
+      const bound = Math.max(Math.abs(min), Math.abs(max)) || 1
+      tFrac = (targetValue + bound) / (2 * bound)
+    } else {
+      tFrac = (targetValue - min) / (max - min || 1)
+    }
+    tFrac = Math.max(0, Math.min(1, tFrac))
+
+    const deg = 180 - tFrac * 180
+    const rad = (deg * Math.PI) / 180
+
+    // Radial tick line extending across the arc (R = 124)
+    const rInner = R - 12
+    const rOuter = R + 12
+    const x1 = CX + rInner * Math.cos(rad)
+    const y1 = CY - rInner * Math.sin(rad)
+    const x2 = CX + rOuter * Math.cos(rad)
+    const y2 = CY - rOuter * Math.sin(rad)
+
+    // Position for the 'T' letter badge placed cleanly inside the arc
+    const rText = R - 22
+    const tx = CX + rText * Math.cos(rad)
+    const ty = CY - rText * Math.sin(rad)
+
+    return { x1, y1, x2, y2, tx, ty }
+  }, [targetValue, min, max, bipolar])
+
+  const subCols = useMemo(() => {
+    if (subColumns && subColumns.length > 0) {
+      return subColumns
+    }
+    const cols: MultiMeterSignal[] = []
+    if (subLeft) cols.push(subLeft)
+    if (subRight) cols.push(subRight)
+    return cols
+  }, [subColumns, subLeft, subRight])
+
   const formatSub = (v: number | null | undefined, digits = 0) => {
     if (typeof v === 'number' && Number.isFinite(v)) {
       return v.toFixed(digits)
@@ -216,18 +261,19 @@ export function MultiMeter({
           <div className="flex items-center gap-1.5">
             {protocolAudit && (
               <span
-                className={`protocol-pill tone-${protocolAudit.status}`}
+                className={`protocol-status-tag tone-${protocolAudit.status}`}
                 title={protocolAudit.note ?? `Protocol verification: ${protocolAudit.status}`}
                 data-testid={`${testId}-protocol-pill`}
               >
-                <span className="protocol-dot" />
-                {protocolAudit.status === 'conforming'
-                  ? '✓'
-                  : protocolAudit.status === 'warning'
-                    ? '!'
-                    : protocolAudit.status === 'error'
-                      ? '✕'
-                      : '?'}
+                <span>
+                  {protocolAudit.status === 'conforming'
+                    ? '✓ OK'
+                    : protocolAudit.status === 'warning'
+                      ? '⚠ Warn'
+                      : protocolAudit.status === 'error'
+                        ? '✕ Fault'
+                        : '• Bench'}
+                </span>
               </span>
             )}
             {badge && (
@@ -314,21 +360,38 @@ export function MultiMeter({
               className="multi-meter-tip-needle"
             />
           )}
+
+          {/* Target Setpoint Marker ('T' on Arc) */}
+          {targetElements && (
+            <g className="multi-meter-target-group" aria-label={`Target speed ${targetValue}`}>
+              <line
+                x1={targetElements.x1}
+                y1={targetElements.y1}
+                x2={targetElements.x2}
+                y2={targetElements.y2}
+                className="multi-meter-target-tick"
+              />
+              <text
+                x={targetElements.tx}
+                y={targetElements.ty}
+                className="multi-meter-target-text"
+                textAnchor="middle"
+                dominantBaseline="central"
+              >
+                T
+              </text>
+            </g>
+          )}
         </svg>
 
         {/* Center Digital Readout — Clean Minimalist Aesthetic */}
         <div className="multi-meter-center-readout">
-          <div className="multi-meter-center-label" data-testid={`${testId}-center-label`}>
+          <div
+            className="multi-meter-center-label"
+            data-testid={`${testId}-center-label`}
+            title={primary.varName ? `${primary.label} (${primary.varName}${primary.canId ? ` · CAN ${primary.canId}` : ''})` : primary.canId ? `CAN ${primary.canId}` : undefined}
+          >
             <span>{primary.label}</span>
-            {primary.canId && (
-              <span
-                className="can-id-tag"
-                title={primary.varName ?? primary.canId}
-                data-testid={`${testId}-primary-can`}
-              >
-                {primary.canId}
-              </span>
-            )}
           </div>
           <div className="multi-meter-center-value" data-testid={`${testId}-center-value`}>
             {pNum != null ? pNum.toFixed(pDigits) : '—'}
@@ -338,63 +401,57 @@ export function MultiMeter({
       </div>
 
       {/* Sub-meters Split Strip */}
-      <div className="multi-meter-sub-strip" data-testid={`${testId}-sub-strip`}>
-        {/* Left Sub-Meter */}
-        <div className="multi-meter-sub-col" data-testid={`${testId}-sub-left`}>
-          <div className="multi-meter-sub-label-row">
-            <span className="multi-meter-sub-label">{subLeft.label}</span>
-            {subLeft.canId && (
-              <span
-                className="can-id-tag"
-                title={subLeft.varName ?? subLeft.canId}
-                data-testid={`${testId}-sub-left-can`}
+      {subCols.length > 0 && (
+        <div
+          className={`multi-meter-sub-strip cols-${subCols.length}`}
+          data-testid={`${testId}-sub-strip`}
+        >
+          {subCols.map((col, idx) => (
+            <Fragment key={idx}>
+              {idx > 0 && <div className="multi-meter-sub-divider" aria-hidden="true" />}
+              <div
+                className="multi-meter-sub-col"
+                data-testid={
+                  idx === 0
+                    ? `${testId}-sub-left`
+                    : idx === 1 && subCols.length === 2
+                      ? `${testId}-sub-right`
+                      : `${testId}-sub-${idx}`
+                }
               >
-                {subLeft.canId}
-              </span>
-            )}
-          </div>
-          <span className="multi-meter-sub-value">
-            {formatSub(subLeft.value, subLeft.digits ?? pDigits)}
-          </span>
-          <span className="multi-meter-sub-unit">{subLeft.unit}</span>
+                <div
+                  className="multi-meter-sub-label-row"
+                  title={
+                    col.varName
+                      ? `${col.label} (${col.varName}${col.canId ? ` · CAN ${col.canId}` : ''})`
+                      : col.canId
+                        ? `CAN ${col.canId}`
+                        : undefined
+                  }
+                >
+                  <span className="multi-meter-sub-label">{col.label}</span>
+                </div>
+                <span className="multi-meter-sub-value">
+                  {formatSub(col.value, col.digits ?? pDigits)}
+                </span>
+                <span className="multi-meter-sub-unit">{col.unit}</span>
+              </div>
+            </Fragment>
+          ))}
         </div>
-
-        {/* Vertical Divider Line */}
-        <div className="multi-meter-sub-divider" aria-hidden="true" />
-
-        {/* Right Sub-Meter */}
-        <div className="multi-meter-sub-col" data-testid={`${testId}-sub-right`}>
-          <div className="multi-meter-sub-label-row">
-            <span className="multi-meter-sub-label">{subRight.label}</span>
-            {subRight.canId && (
-              <span
-                className="can-id-tag"
-                title={subRight.varName ?? subRight.canId}
-                data-testid={`${testId}-sub-right-can`}
-              >
-                {subRight.canId}
-              </span>
-            )}
-          </div>
-          <span className="multi-meter-sub-value">
-            {formatSub(subRight.value, subRight.digits ?? pDigits)}
-          </span>
-          <span className="multi-meter-sub-unit">{subRight.unit}</span>
-        </div>
-      </div>
+      )}
 
       {/* Integrated Combined Secondary Metrics (e.g. Slew/Torque for Steering, Stroke for Brake) */}
       {secondaryMetrics && secondaryMetrics.length > 0 && (
         <div className="multi-meter-integrated-strip" data-testid={`${testId}-integrated-strip`}>
           {secondaryMetrics.map((sm, idx) => (
-            <div key={idx} className="multi-meter-integrated-item" title={sm.varName ?? sm.label}>
+            <div
+              key={idx}
+              className="multi-meter-integrated-item"
+              title={sm.varName ? `${sm.label} (${sm.varName}${sm.canId ? ` · CAN ${sm.canId}` : ''})` : sm.label}
+            >
               <span className="integrated-label">{sm.label}</span>
               <span className="integrated-value mono">{sm.value}</span>
-              {sm.canId && (
-                <span className="can-id-tag" title={sm.varName ?? sm.canId}>
-                  {sm.canId}
-                </span>
-              )}
             </div>
           ))}
         </div>

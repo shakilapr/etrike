@@ -72,13 +72,19 @@ export function Logs() {
   }
 
   function exportJson() {
-    const blob = new Blob([JSON.stringify({ stats, logs }, null, 2)], {
+    const filename = `control-toolkit-logs-${Date.now()}.json`
+    const payload = { stats, logs }
+
+    // Persist directly to gitignored tem/control-toolkit-logs/
+    api.saveExport(payload, filename).catch(() => undefined)
+
+    const blob = new Blob([JSON.stringify(payload, null, 2)], {
       type: 'application/json',
     })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `control-toolkit-logs-${Date.now()}.json`
+    a.download = filename
     a.click()
     URL.revokeObjectURL(url)
   }

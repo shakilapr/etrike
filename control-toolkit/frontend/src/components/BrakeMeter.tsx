@@ -22,28 +22,33 @@ export type BrakeMeterProps = {
 
 export function BrakeMeter({
   title = 'Braking',
-  badge = 'Hydraulic Clamping',
+  badge = 'Standby',
   badgeTone = 'ok',
   actualPressure,
   hostPressure,
   rtPressure,
   actualStroke,
   reqStroke,
-  diagStroke,
+  diagStroke: _diagStroke,
   maxPressure = 5000,
   maxStroke = 50,
   compact = false,
   testId = 'meter-brake',
   protocolAudit,
 }: BrakeMeterProps) {
-  const CX = 175
-  const CY = compact ? 134 : 155
-  const R = compact ? 98 : 124
-  const ARC_LEN = Math.PI * R
-
   const pressNum =
     typeof actualPressure === 'number' && Number.isFinite(actualPressure)
       ? actualPressure
+      : null
+
+  const hostPressNum =
+    typeof hostPressure === 'number' && Number.isFinite(hostPressure)
+      ? hostPressure
+      : null
+
+  const rtPressNum =
+    typeof rtPressure === 'number' && Number.isFinite(rtPressure)
+      ? rtPressure
       : null
 
   const strokeNum =
@@ -62,6 +67,18 @@ export function BrakeMeter({
     return Math.max(0, Math.min(1, pressNum / maxPressure))
   }, [pressNum, maxPressure])
 
+  const pressPct = pressFrac * 100
+
+  const rtPressPct = useMemo(() => {
+    if (rtPressNum == null) return null
+    return Math.max(0, Math.min(100, (rtPressNum / maxPressure) * 100))
+  }, [rtPressNum, maxPressure])
+
+  const hostPressPct = useMemo(() => {
+    if (hostPressNum == null) return null
+    return Math.max(0, Math.min(100, (hostPressNum / maxPressure) * 100))
+  }, [hostPressNum, maxPressure])
+
   // Stroke percentage of mechanical travel [0, 100]
   const strokePct = useMemo(() => {
     if (strokeNum == null) return 0
@@ -73,76 +90,19 @@ export function BrakeMeter({
     return Math.max(0, Math.min(100, (reqStrokeNum / maxStroke) * 100))
   }, [reqStrokeNum, maxStroke])
 
-  // Pressure Arc Calculations
-  const { strokeDasharray, strokeDashoffset, tipTick } = useMemo(() => {
-    const angleDeg = 180 - pressFrac * 180
-    const angleRad = (angleDeg * Math.PI) / 180
-
-    const rInner = R - (compact ? 7 : 10)
-    const rOuter = R + (compact ? 7 : 10)
-    const tip =
-      pressNum != null
-        ? {
-            x1: CX + rInner * Math.cos(angleRad),
-            y1: CY - rInner * Math.sin(angleRad),
-            x2: CX + rOuter * Math.cos(angleRad),
-            y2: CY - rOuter * Math.sin(angleRad),
-          }
-        : null
-
-    return {
-      strokeDasharray: `${ARC_LEN}`,
-      strokeDashoffset: ARC_LEN * (1 - pressFrac),
-      tipTick: tip,
-    }
-  }, [pressFrac, pressNum, R, CY, ARC_LEN, compact])
-
-  // Scale Ticks (0, 1k, 2k, 3k, 4k, 5k)
-  const ticks = useMemo(() => {
-    const list: Array<{ val: number; label: string; x1: number; y1: number; x2: number; y2: number; lx: number; ly: number }> = []
+  // Pressure Scale Ticks (0, 1k, 2k, 3k, 4k, 5k)
+  const pressureTicks = useMemo(() => {
+    const list: Array<{ val: number; label: string; pct: number }> = []
     const stepList = compact ? [0, 2500, 5000] : [0, 1000, 2000, 3000, 4000, 5000]
-
     for (const val of stepList) {
-      const frac = val / maxPressure
-      const deg = 180 - frac * 180
-      const rad = (deg * Math.PI) / 180
-
-      const tickLen = val === 0 || val === maxPressure ? (compact ? 9 : 12) : (compact ? 6 : 8)
-      const x1 = CX + (R - tickLen) * Math.cos(rad)
-      const y1 = CY - (R - tickLen) * Math.sin(rad)
-      const x2 = CX + (R + 2) * Math.cos(rad)
-      const y2 = CY - (R + 2) * Math.sin(rad)
-
-      const labelR = R + (compact ? 12 : 16)
-      const lx = CX + labelR * Math.cos(rad)
-      const ly = CY - labelR * Math.sin(rad)
-
-      let label = `${val / 1000}k`
-      if (val === 0) label = '0'
-
-      list.push({ val, label, x1, y1, x2, y2, lx, ly })
-    }
-    return list
-  }, [maxPressure, R, CY, compact])
-
-  // Minor ticks
-  const minorTicks = useMemo(() => {
-    if (compact) return []
-    const list: Array<{ x1: number; y1: number; x2: number; y2: number }> = []
-    for (let p = 500; p < maxPressure; p += 1000) {
-      const frac = p / maxPressure
-      const deg = 180 - frac * 180
-      const rad = (deg * Math.PI) / 180
-      const tickLen = 4
       list.push({
-        x1: CX + (R - tickLen) * Math.cos(rad),
-        y1: CY - (R - tickLen) * Math.sin(rad),
-        x2: CX + R * Math.cos(rad),
-        y2: CY - R * Math.sin(rad),
+        val,
+        label: val === 0 ? '0' : `${val / 1000}k`,
+        pct: (val / maxPressure) * 100,
       })
     }
     return list
-  }, [maxPressure, R, CY, compact])
+  }, [maxPressure, compact])
 
   // Clamping state badge
   const clampingStateText =
@@ -154,6 +114,9 @@ export function BrakeMeter({
           ? 'EMERGENCY CLAMP'
           : `CLAMPING ${pressNum.toFixed(0)} kPa`
 
+  const isEmergency = pressNum != null && pressNum > 3500
+  const isActive = pressNum != null && pressNum >= 50
+
   return (
     <div
       className={`multi-meter-card tone-default brake-meter-card ${compact ? 'is-compact' : ''}`}
@@ -162,26 +125,28 @@ export function BrakeMeter({
     >
       {/* Card Header */}
       <div className="multi-meter-header">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 min-w-0">
           <span className="multi-meter-title">{title}</span>
-          <span className="multi-meter-subtitle">
-            {compact ? 'Host → RT → SYS → SEB' : 'Hydraulic & Caliper Travel'}
-          </span>
+          {compact && (
+            <span className="multi-meter-subtitle">Host → RT → Actuator</span>
+          )}
         </div>
         <div className="flex items-center gap-1.5">
           {protocolAudit && (
             <span
-              className={`protocol-pill tone-${protocolAudit.status}`}
+              className={`protocol-status-tag tone-${protocolAudit.status}`}
               title={protocolAudit.note ?? `Protocol verification: ${protocolAudit.status}`}
               data-testid={`${testId}-protocol-pill`}
             >
-              {protocolAudit.status === 'conforming'
-                ? '✓'
-                : protocolAudit.status === 'warning'
-                  ? '!'
-                  : protocolAudit.status === 'error'
-                    ? '✕'
-                    : '?'}
+              <span>
+                {protocolAudit.status === 'conforming'
+                  ? '✓ OK'
+                  : protocolAudit.status === 'warning'
+                    ? '⚠ Warn'
+                    : protocolAudit.status === 'error'
+                      ? '✕ Fault'
+                      : '• Bench'}
+              </span>
             </span>
           )}
           {badge && (
@@ -192,115 +157,110 @@ export function BrakeMeter({
         </div>
       </div>
 
-      {/* Hydraulic Pressure Arc & Center Value */}
-      <div className="multi-meter-gauge-wrap brake-gauge-wrap">
-        <svg
-          viewBox={compact ? "0 0 350 162" : "0 0 350 215"}
-          className="multi-meter-svg brake-svg"
-          preserveAspectRatio="xMidYMid meet"
-        >
-          {/* Baseline Pressure Track */}
-          <path
-            d={`M ${CX - R} ${CY} A ${R} ${R} 0 0 1 ${CX + R} ${CY}`}
-            fill="none"
-            className="multi-meter-track"
-          />
+      {/* Layered Brake Pipeline Legend — Host Demand (0x301) → RT Setpoint (0x205) → Actual Pressure (0x721) */}
+      <div className="steering-tier-legend brake-tier-legend" data-testid={`${testId}-tier-legend`}>
+        <div className="tier-legend-item" title="Host Guidance Braking Demand (CAN 0x301)">
+          <span className="tier-dot host" />
+          <span>Host Demand</span>
+        </div>
+        <div className="tier-legend-item" title="RT Supervisory Setpoint (CAN 0x205)">
+          <span className="tier-dot rt" />
+          <span>RT Setpoint</span>
+        </div>
+        <div className="tier-legend-item" title="Actual Hydraulic Clamping Pressure (CAN 0x721)">
+          <span className="tier-dot clamping" />
+          <span>Actual Clamping</span>
+        </div>
+      </div>
 
-          {/* Minor Ticks */}
-          {minorTicks.map((mt, idx) => (
-            <line
-              key={`bm-${idx}`}
-              x1={mt.x1}
-              y1={mt.y1}
-              x2={mt.x2}
-              y2={mt.y2}
-              className="multi-meter-tick-minor"
-            />
-          ))}
-
-          {/* Major Ticks */}
-          {ticks.map((t) => (
-            <line
-              key={`bt-${t.val}`}
-              x1={t.x1}
-              y1={t.y1}
-              x2={t.x2}
-              y2={t.y2}
-              className="multi-meter-tick-major"
-            />
-          ))}
-
-          {/* Numeric Tick Labels */}
-          {ticks.map((t) => (
-            <text
-              key={`btl-${t.val}`}
-              x={t.lx}
-              y={t.ly}
-              className="multi-meter-tick-text"
-              textAnchor="middle"
-              dominantBaseline="middle"
-            >
-              {t.label}
-            </text>
-          ))}
-
-          {/* Active Hydraulic Arc Progress */}
-          {pressNum != null && (
-            <path
-              d={`M ${CX - R} ${CY} A ${R} ${R} 0 0 1 ${CX + R} ${CY}`}
-              fill="none"
-              className={`brake-active-arc ${pressNum > 3500 ? 'is-danger' : pressNum > 500 ? 'is-active' : ''}`}
-              style={{
-                strokeDasharray,
-                strokeDashoffset,
-              }}
-            />
-          )}
-
-          {/* Current Pressure Tip Marker */}
-          {tipTick && (
-            <line
-              x1={tipTick.x1}
-              y1={tipTick.y1}
-              x2={tipTick.x2}
-              y2={tipTick.y2}
-              className="multi-meter-tip-tick"
-            />
-          )}
-        </svg>
-
-        {/* Center Readout: Clamping Pressure */}
-        <div className="multi-meter-center-readout brake-center-readout">
+      {/* Horizontal Clamping Pressure Section */}
+      <div className="brake-horiz-section">
+        {/* Large Digital Readout */}
+        <div className="brake-horiz-readout-wrap">
           <div className="brake-clamp-status-tag">{clampingStateText}</div>
-          <div className="multi-meter-center-value" data-testid={`${testId}-center-value`}>
-            {pressNum != null ? pressNum.toFixed(0) : '—'}
-          </div>
-          <div className="multi-meter-center-unit">kPa</div>
-          <div className="multi-meter-center-label" data-testid={`${testId}-center-label`}>
-            <span>ACTUAL BRAKE</span>
+          <div className="flex items-baseline justify-center gap-2 my-1">
             <span
-              className="can-id-tag"
-              title="SEB_STATUS: pressure_kpa (Low 0x721)"
-              data-testid={`${testId}-primary-can`}
+              className="brake-horiz-value"
+              data-testid={`${testId}-center-value`}
             >
-              0x721
+              {pressNum != null ? pressNum.toFixed(0) : '—'}
             </span>
+            <span className="brake-horiz-unit">kPa</span>
+          </div>
+          <div
+            className="brake-horiz-label"
+            data-testid={`${testId}-center-label`}
+            title="SEB_STATUS: pressure_kpa (CAN 0x721)"
+          >
+            <span>HYDRAULIC CLAMPING</span>
+          </div>
+        </div>
+
+        {/* Primary Horizontal Pressure Meter Bar */}
+        <div className="brake-horiz-meter-container">
+          <div className="brake-horiz-meter-header">
+            <span className="text-[10px] font-semibold text-muted uppercase tracking-wider">
+              Hydraulic Circuit (0 - {maxPressure} kPa)
+            </span>
+            <span className="text-[11px] font-mono font-bold text-foreground">
+              {pressNum != null ? `${pressNum.toFixed(0)} kPa` : '0 kPa'}
+            </span>
+          </div>
+
+          <div className="brake-horiz-track-wrap">
+            {/* The Bar Track */}
+            <div className="brake-horiz-track">
+              {/* Active Fill */}
+              <div
+                className={`brake-horiz-fill ${isEmergency ? 'fill-danger' : isActive ? 'fill-active' : 'fill-idle'}`}
+                style={{ width: `${pressPct}%` }}
+                title={`Actual Clamping Pressure: ${pressNum != null ? pressNum.toFixed(0) : 0} kPa (0x721)`}
+              />
+
+              {/* Host Demand Needle Marker */}
+              {hostPressPct != null && (
+                <div
+                  className="brake-horiz-marker host-marker"
+                  style={{ left: `${hostPressPct}%` }}
+                  title={`Host Demand: ${hostPressNum?.toFixed(0)} kPa (0x301)`}
+                />
+              )}
+
+              {/* RT Setpoint Needle Marker */}
+              {rtPressPct != null && (
+                <div
+                  className="brake-horiz-marker rt-marker"
+                  style={{ left: `${rtPressPct}%` }}
+                  title={`RT Setpoint: ${rtPressNum?.toFixed(0)} kPa (0x205)`}
+                />
+              )}
+            </div>
+
+            {/* Scale Ticks & Labels */}
+            <div className="brake-horiz-ticks-row">
+              {pressureTicks.map((t) => (
+                <div
+                  key={`pt-${t.val}`}
+                  className="brake-horiz-tick-item"
+                  style={{ left: `${t.pct}%` }}
+                >
+                  <div className="brake-horiz-tick-line" />
+                  <span className="brake-horiz-tick-label">{t.label}</span>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       </div>
 
-      {/* Integrated Caliper Mechanical Stroke Bar (Stage 3 SYS Req vs Stage 4 Actual) */}
-      <div className="brake-stroke-container" data-testid={`${testId}-stroke-bar`}>
+      {/* Secondary Horizontal Mechanical Caliper Travel Bar */}
+      <div className="brake-stroke-container mt-3" data-testid={`${testId}-stroke-bar`}>
         <div className="brake-stroke-header">
-          <div className="brake-stroke-label">
-            <span>CALIPER STROKE</span>
-            <span
-              className="can-id-tag ml-1"
-              title="SEB_STATUS: stroke_mm (Low 0x721)"
-              data-testid={`${testId}-stroke-can`}
-            >
-              0x721
-            </span>
+          <div
+            className="brake-stroke-label"
+            title="SEB_STATUS: stroke_mm (CAN 0x721)"
+          >
+            <span>CALIPER TRAVEL</span>
           </div>
           <div className="brake-stroke-value">
             <span className="font-bold">{strokeNum != null ? strokeNum.toFixed(1) : '—'}</span>
@@ -313,33 +273,29 @@ export function BrakeMeter({
           <div
             className="brake-stroke-fill"
             style={{ width: `${strokePct}%` }}
-            title={`Caliper stroke: ${strokeNum != null ? strokeNum.toFixed(1) : 0} mm`}
+            title={`Caliper stroke: ${strokeNum != null ? strokeNum.toFixed(1) : 0} mm (0x721)`}
           />
           {reqStrokePct != null && (
             <div
               className="brake-stroke-req-marker"
               style={{ left: `${reqStrokePct}%` }}
-              title={`SYS Requested Stroke: ${reqStrokeNum?.toFixed(1)} mm (0x7B9)`}
+              title={`Requested Stroke: ${reqStrokeNum?.toFixed(1)} mm (0x7B9)`}
             />
           )}
         </div>
       </div>
 
-      {/* Sub-meters Split Strip: Stage 1 (Host 0x301) vs Stage 2 (RT 0x205) */}
-      <div className="multi-meter-sub-strip" data-testid={`${testId}-sub-strip`}>
-        {/* Left Sub-Meter: Host Command */}
+      {/* Sub-meters Split Strip: Autonomy vs Supervisor */}
+      <div className="multi-meter-sub-strip mt-3" data-testid={`${testId}-sub-strip`}>
+        {/* Left Sub-Meter: Autonomy Command */}
         <div className="multi-meter-sub-col" data-testid={`${testId}-sub-left`}>
-          <div className="multi-meter-sub-label-row">
-            <span className="multi-meter-sub-label">HOST BRAKE</span>
-            <span
-              className="can-id-tag"
-              title="HOST_BRAKE_REQ: brake_pressure_kpa (High 0x301)"
-              data-testid={`${testId}-sub-left-can`}
-            >
-              0x301
-            </span>
+          <div
+            className="multi-meter-sub-label-row"
+            title="HOST_BRAKE_REQ: brake_pressure_kpa (CAN 0x301)"
+          >
+            <span className="multi-meter-sub-label">AUTONOMY DEMAND</span>
           </div>
-          <span className="multi-meter-sub-value">
+          <span className="multi-meter-sub-value text-host">
             {typeof hostPressure === 'number' && Number.isFinite(hostPressure)
               ? hostPressure.toFixed(0)
               : '—'}
@@ -350,19 +306,15 @@ export function BrakeMeter({
         {/* Vertical Divider */}
         <div className="multi-meter-sub-divider" aria-hidden="true" />
 
-        {/* Right Sub-Meter: RT Command */}
+        {/* Right Sub-Meter: Supervisor Command */}
         <div className="multi-meter-sub-col" data-testid={`${testId}-sub-right`}>
-          <div className="multi-meter-sub-label-row">
-            <span className="multi-meter-sub-label">RT BRAKE</span>
-            <span
-              className="can-id-tag"
-              title="RT_BRAKE_CMD: brake_pressure_kpa (Low 0x205)"
-              data-testid={`${testId}-sub-right-can`}
-            >
-              0x205
-            </span>
+          <div
+            className="multi-meter-sub-label-row"
+            title="RT_BRAKE_CMD: brake_pressure_kpa (CAN 0x205)"
+          >
+            <span className="multi-meter-sub-label">SUPERVISOR SETPOINT</span>
           </div>
-          <span className="multi-meter-sub-value">
+          <span className="multi-meter-sub-value text-rt">
             {typeof rtPressure === 'number' && Number.isFinite(rtPressure)
               ? rtPressure.toFixed(0)
               : '—'}
@@ -371,38 +323,35 @@ export function BrakeMeter({
         </div>
       </div>
 
-      {/* Secondary Diag & SYS Request Row */}
+      {/* Secondary Hydraulics & Stroke Delta Row */}
       {!compact && (
         <div className="multi-meter-integrated-strip" data-testid={`${testId}-diag-strip`}>
-          <div className="multi-meter-integrated-item" title="SEB_STATUS: stroke_mm (Low 0x721)">
+          <div className="multi-meter-integrated-item" title="VCU_SEB_REQ: stroke_mm (CAN 0x7B9 via SYS)">
             <div className="integrated-label-row">
-              <span className="integrated-label">Actual Stroke</span>
-              <span className="can-id-tag">0x721</span>
-            </div>
-            <span className="integrated-value mono">
-              {strokeNum != null ? `${strokeNum.toFixed(1)} mm` : '—'}
-            </span>
-          </div>
-
-          <div className="multi-meter-integrated-item" title="VCU_SEB_REQ: stroke_mm (Low 0x7B9 via SYS)">
-            <div className="integrated-label-row">
-              <span className="integrated-label">SYS Req</span>
-              <span className="can-id-tag">0x7B9</span>
+              <span className="integrated-label">Target</span>
             </div>
             <span className="integrated-value mono">
               {reqStrokeNum != null ? `${reqStrokeNum.toFixed(1)} mm` : '—'}
             </span>
           </div>
 
-          <div className="multi-meter-integrated-item" title="BRAKE_DIAG: pressure_raw (High 0x311)">
+          <div className="multi-meter-integrated-item" title="Discrepancy between requested target and actual stroke">
             <div className="integrated-label-row">
-              <span className="integrated-label">Diag Raw</span>
-              <span className="can-id-tag">0x311</span>
+              <span className="integrated-label">Delta</span>
             </div>
             <span className="integrated-value mono">
-              {typeof diagStroke === 'number' && Number.isFinite(diagStroke)
-                ? `${diagStroke.toFixed(1)} mm`
+              {reqStrokeNum != null && strokeNum != null
+                ? `${Math.abs(reqStrokeNum - strokeNum).toFixed(1)} mm`
                 : '—'}
+            </span>
+          </div>
+
+          <div className="multi-meter-integrated-item" title="Hydraulic Line Pressure in bar (1 bar = 100 kPa)">
+            <div className="integrated-label-row">
+              <span className="integrated-label">Pressure</span>
+            </div>
+            <span className="integrated-value mono">
+              {pressNum != null ? `${(pressNum / 100).toFixed(1)} bar` : '—'}
             </span>
           </div>
         </div>
@@ -410,3 +359,4 @@ export function BrakeMeter({
     </div>
   )
 }
+

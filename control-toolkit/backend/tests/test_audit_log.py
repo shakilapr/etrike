@@ -121,3 +121,26 @@ def test_logs_only_on_change_dedup(client):
     assert audit.stats()["count"] == 2
 
 
+def test_export_save_to_tem_logs(client):
+    test_payload = {
+        "filename": "test-telemetry-10s.json",
+        "data": {
+            "test_key": "val",
+            "count": 42,
+        },
+    }
+    r = client.post("/api/v1/logs/export-save", json=test_payload)
+    assert r.status_code == 200
+    res = r.json()
+    assert res["ok"] is True
+    assert "test-telemetry-10s.json" in res["filename"]
+    assert "control-toolkit-logs" in res["saved_path"]
+
+    # Verify listing saved exports
+    r_list = client.get("/api/v1/logs/saved-exports")
+    assert r_list.status_code == 200
+    exports = r_list.json()["exports"]
+    assert any(e["filename"] == "test-telemetry-10s.json" for e in exports)
+
+
+

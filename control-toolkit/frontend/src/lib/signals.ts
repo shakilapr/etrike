@@ -376,7 +376,10 @@ export function getSteeringPipeline(messages: MessageState[]) {
   const hostSteerDeg = hostAngleRaw != null ? hostAngleRaw * 0.1 : null
 
   const rtAngleRaw = signalNum(rtSesReq, 'target_angle_raw')
-  const rtTargetAngleDeg = rtAngleRaw != null ? rtAngleRaw * 0.1 : null
+  const rtTargetAngleDeg =
+    rtAngleRaw != null
+      ? (rtAngleRaw >= 10000 ? (rtAngleRaw - 30000) * 0.1 : rtAngleRaw * 0.1)
+      : null
   const rtTargetSlewRate = signalNum(rtSesReq, 'target_speed_raw')
   const rtSteerStateCode = signalNum(rtState, 'steer_state')
   const steerStateLabels: Record<number, string> = {

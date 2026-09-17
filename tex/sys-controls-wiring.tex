@@ -1,198 +1,219 @@
 % ===========================================================================
-%  E-Trike SYS ESP32-S3: Controls & 12 V Relay Wiring Reference Sheet
-%  Professional Engineering Reference | Clean Single-Page Layout
+%  E-Trike SYS ESP32-S3: Complete Electrical & Controls Wiring Manual
+%  Full Pin-to-Pin Reference Sheet | High-Contrast Monochrome (2 Pages)
+%  Minimum Font Size: 11pt | Standard Naming | Deduplicated Tables
 %  Compile: pdflatex -interaction=nonstopmode sys-controls-wiring.tex
 % ===========================================================================
-\documentclass[10pt,a4paper]{article}
+\documentclass[11pt,a4paper]{article}
 
 \usepackage[utf8]{inputenc}
 \usepackage[T1]{fontenc}
 \usepackage{lmodern}
-\usepackage[margin=8.5mm,footskip=0mm]{geometry}
+\usepackage[top=8mm,bottom=8mm,left=9mm,right=9mm,headheight=14pt,footskip=14pt]{geometry}
 \usepackage{booktabs}
 \usepackage{array}
 \usepackage{tabularx}
-\usepackage{xcolor}
-\usepackage{colortbl}
+\usepackage{enumitem}
 \usepackage{tikz}
 \usetikzlibrary{shapes,arrows.meta,positioning,calc}
 \usepackage[most]{tcolorbox}
+\usepackage{fancyhdr}
 \usepackage{hyperref}
 
-\pagestyle{empty}
-
-% ── Color Palette ──────────────────────────────────────────────────────────
-\definecolor{brandNavy}{HTML}{0F172A}
-\definecolor{brandBlue}{HTML}{1D4ED8}
-\definecolor{cardBg}{HTML}{F8FAFC}
-\definecolor{cardBorder}{HTML}{CBD5E1}
-\definecolor{accentRed}{HTML}{DC2626}
-\definecolor{accentGreen}{HTML}{16A34A}
-\definecolor{accentAmber}{HTML}{D97706}
-\definecolor{tableStripe}{HTML}{F1F5F9}
+% ── Page Header & Footer ───────────────────────────────────────────────────
+\pagestyle{fancy}
+\fancyhf{}
+\renewcommand{\headrulewidth}{0.8pt}
+\renewcommand{\footrulewidth}{0.4pt}
+\fancyhead[L]{\textbf{E-TRIKE SYSTEM WIRING MANUAL} $\cdot$ SYS ESP32-S3 PIN-TO-PIN}
+\fancyhead[R]{\textbf{REV 0.8.0-ALPHA}}
+\fancyfoot[L]{SYS ESP32-S3 Wiring Guide $\cdot$ Low CAN, Digital Inputs, ULN2803A \& Relays}
+\fancyfoot[R]{Page \thepage\ of 2}
 
 \hypersetup{
-  colorlinks=true,
-  linkcolor=brandBlue,
-  urlcolor=brandBlue,
-  pdftitle={SYS ESP32-S3 Controls and Relay Wiring Reference},
+  colorlinks=false,
+  pdfborder={0 0 0},
+  pdftitle={SYS ESP32-S3 Complete Wiring Reference},
   pdfauthor={E-Trike Safety Systems},
 }
 
-% ── Custom Card Styles ─────────────────────────────────────────────────────
+% ── Monochrome Box Styles ──────────────────────────────────────────────────
 \tcbset{
-  basecard/.style={
+  bwcard/.style={
     enhanced,
-    colback=cardBg,
-    colframe=cardBorder,
-    boxrule=0.7pt,
-    arc=3pt,
-    left=6pt, right=6pt, top=5pt, bottom=5pt,
-    fonttitle=\bfseries\small\color{white},
-    coltitle=white,
+    colback=white,
+    colframe=black,
+    boxrule=0.8pt,
+    arc=2pt,
+    left=5pt, right=5pt, top=2pt, bottom=2pt,
+    fonttitle=\bfseries\normalsize\color{black},
+    coltitle=black,
     attach boxed title to top left={yshift*=-\tcboxedtitleheight/2, xshift=8pt},
     boxed title style={
-      colback=brandNavy,
-      colframe=brandNavy,
+      colback=white,
+      colframe=black,
       arc=2pt,
-      boxrule=0pt,
-      top=2pt, bottom=2pt, left=6pt, right=6pt
+      boxrule=0.7pt,
+      top=0.5pt, bottom=0.5pt, left=3pt, right=3pt
     }
+  },
+  bwalert/.style={
+    enhanced,
+    colback=white,
+    colframe=black,
+    boxrule=1.1pt,
+    arc=2pt,
+    left=6pt, right=6pt, top=3pt, bottom=3pt
   }
 }
 
-\begin{document}
+\renewcommand{\arraystretch}{1.12}
+\setlength{\tabcolsep}{3.5pt}
 
-% ── Header Banner ──────────────────────────────────────────────────────────
-\begin{tcolorbox}[
-  enhanced,
-  colback=brandNavy,
-  colframe=brandNavy,
-  arc=3pt,
-  boxrule=0pt,
-  left=8pt, right=8pt, top=4pt, bottom=4pt
-]
-\begin{tabularx}{\textwidth}{@{}X r@{}}
-  {\bfseries\color{white}\fontsize{11.5}{13}\selectfont E-TRIKE: SYS ESP32-S3 CONTROLS \& 12\,V RELAY WIRING} & \textbf{\small\color{cardBorder} REV 0.8.0-ALPHA} \\
-  {\footnotesize\color{cardBorder} Master Safety Authority $\cdot$ Pilot Controls $\cdot$ Body Relay Drivers} & {\footnotesize\color{cardBorder} Active-GND Inputs $\cdot$ 3.3\,V Internal Pull-Ups} \\
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+\newcolumntype{C}[1]{>{\centering\arraybackslash}p{#1}}
+\newcolumntype{Y}{>{\raggedright\arraybackslash}X}
+
+\begin{document}
+\normalsize
+
+% ═════════════════════════════════════════════════════════════════════════════
+%  PAGE 1: PILOT SWITCHES, DIGITAL INPUTS & CAN TRANSCEIVER
+% ═════════════════════════════════════════════════════════════════════════════
+
+\begin{center}
+  {\large\bfseries PART 1: PILOT SWITCHES, DIGITAL INPUTS \& LOW CAN BUS}
+\end{center}
+\vspace{-8pt}
+
+% ── Critical Invariants Box ────────────────────────────────────────────────
+\begin{tcolorbox}[bwalert]
+\textbf{CORE ELECTRICAL INVARIANTS \& CONNECTION RULES:}
+\begin{itemize}[leftmargin=1.3em, itemsep=1pt, topsep=1pt, parsep=0pt]
+  \item \textbf{Active-LOW Inputs:} Every digital input connects directly between the assigned \textbf{GPIO} and \textbf{Common GND (0\,V)}. Internal MCU pull-up resistors ($\approx$3.3\,V) are active on all input pins.
+  \item \textbf{Strict Voltage Limit:} \textbf{NEVER connect +12\,V or external 3.3\,V to any GPIO pin.} Doing so destroys the ESP32-S3 SoC immediately.
+  \item \textbf{Fail-Safe ESTOP Loop:} Must use a \textbf{Normally Closed (NC)} contact to GND. Disconnection, broken wire, or button push opens circuit $\rightarrow$ pulls to 3.3\,V $\rightarrow$ latches ESTOP.
+  \item \textbf{Wiring Standard:} Use \textbf{22 AWG stranded wire} for all switch lines and CAN bus pairs.
+\end{itemize}
+\end{tcolorbox}
+
+\vspace{-4pt}
+
+% ── Section 1: Pilot & Safety Switches Pin-to-Pin ──────────────────────────
+\begin{tcolorbox}[bwcard, title={1. Digital Inputs \& Pilot Switches (All Connect GPIO $\leftrightarrow$ Common GND)}]
+\begin{tabularx}{\textwidth}{@{} L{4.4cm} C{2.1cm} L{2.6cm} C{2.2cm} Y @{}}
+\toprule
+\textbf{Signal Name (Code)} & \textbf{GPIO} & \textbf{Contact Type} & \textbf{Active Level} & \textbf{Safety \& Operational Logic} \\
+\midrule
+\textbf{ESTOP} (\texttt{kEstopGpio}) & \textbf{GPIO 1} & \textbf{NC Contact} & 3.3\,V (Open) & \textbf{0\,V = Safe.} Open/Cut $\rightarrow$ \textbf{ESTOP} \\
+\textbf{Brake Lever} (\texttt{kBrakeLeverGpio}) & \textbf{GPIO 2} & NO Microswitch & 0\,V (Closed) & Pulled $\rightarrow$ Overrides drive; sends 0x7B9 SEB \\
+\textbf{START Button} (\texttt{kStartBtnGpio}) & \textbf{GPIO 41} & Momentary NO & 0\,V (Closed) & Pressed $\rightarrow$ Exits ESTOP to MANUAL \\
+\textbf{MODE Button} (\texttt{kModeBtnGpio}) & \textbf{GPIO 11} & Momentary NO & 0\,V (Closed) & Short: Mode toggle; 3s hold: Reset \\
+\textbf{Dev Bypass} (\texttt{DEVELOPER\_OVERRIDE}) & \textbf{GPIO 42} & Latching SPST & 0\,V (Closed) & Closed $\rightarrow$ Standalone bench mode \\
+\textbf{Left Turn} (\texttt{kSwitchLeftTurn}) & \textbf{GPIO 9} & Momentary / Push & 0\,V (Closed) & Toggles Left Turn flasher in MANUAL \\
+\textbf{Right Turn} (\texttt{kSwitchRightTurn}) & \textbf{GPIO 6} & Momentary / Push & 0\,V (Closed) & Toggles Right Turn flasher in MANUAL \\
+\textbf{Headlight} (\texttt{kSwitchHeadlight}) & \textbf{GPIO 7} & Latching Toggle & 0\,V (Closed) & Toggles Headlamp output in MANUAL \\
+\bottomrule
 \end{tabularx}
 \end{tcolorbox}
 
 \vspace{-4pt}
 
-% ── Invariant Alert Bar ────────────────────────────────────────────────────
-\begin{tcolorbox}[
-  enhanced,
-  colback=accentRed!7!white,
-  colframe=accentRed!80!black,
-  boxrule=0.8pt,
-  arc=2pt,
-  left=6pt, right=6pt, top=3pt, bottom=3pt
+% ── Section 2: CAN Transceiver Module (WCMCU-230 / SN65HVD230) ─────────────
+\begin{tcolorbox}[bwcard, title={2. Low CAN Bus Transceiver (SN65HVD230 / WCMCU-230)}]
+\begin{tabularx}{\textwidth}{@{} L{3.2cm} C{2.2cm} C{2.2cm} L{2.5cm} Y @{}}
+\toprule
+\textbf{Signal / Net} & \textbf{Module Pin} & \textbf{Target Pin} & \textbf{Wire Spec} & \textbf{Description \& Requirements} \\
+\midrule
+\textbf{3V3 Power} & 3V3 / VCC & ESP32 3.3\,V & 22 AWG Red & \textbf{3.3\,V supply only} (never connect to 5\,V) \\
+\textbf{Ground} & GND & ESP32 GND & 22 AWG Black & Common ground reference with MCU \\
+\textbf{CAN TX} (\texttt{kCanTxGpio}) & CTX / TXD & \textbf{GPIO 5} & 22 AWG Yel & TWAI CAN Transmit line (MCU $\rightarrow$ Transceiver) \\
+\textbf{CAN RX} (\texttt{kCanRxGpio}) & CRX / RXD & \textbf{GPIO 4} & 22 AWG Wht & TWAI CAN Receive line (Transceiver $\rightarrow$ MCU) \\
+\textbf{CAN\_H} & CAN\_H & Low CAN H & 22 AWG Yel & Differential High line (500 kbit/s, twisted pair) \\
+\textbf{CAN\_L} & CAN\_L & Low CAN L & 22 AWG Grn & Differential Low line (500 kbit/s, twisted pair) \\
+\bottomrule
+\end{tabularx}
+\vspace{1pt}
+\textbf{Bus Termination:} Enable onboard 120\,$\Omega$ resistor ONLY if SYS is at the physical endpoint of the bus.
+\end{tcolorbox}
+
+\vspace{-4pt}
+
+% ── Section 3: Switch Wiring Summary ───────────────────────────────────────
+\begin{tcolorbox}[bwcard, title={3. Switch Connection Logic \& Fail-Safe Summary}]
+\begin{tabularx}{\textwidth}{@{} Y Y @{}}
+  \textbf{Normally Open (NO) Push Buttons \& Levers:} & \textbf{Normally Closed (NC) ESTOP Mushroom Loop:} \\
+  $\bullet$ Rest: Switch OPEN $\rightarrow$ Pin pulled to 3.3\,V (HIGH). & $\bullet$ Safe State: Switch CLOSED $\rightarrow$ Pin grounded to 0\,V. \\
+  $\bullet$ Active: Switch CLOSES to GND $\rightarrow$ Reads 0\,V (LOW). & $\bullet$ Tripped / Cut: Circuit OPENS $\rightarrow$ 3.3\,V $\rightarrow$ Latches ESTOP. \\
+\end{tabularx}
+\end{tcolorbox}
+
+\newpage
+
+% ═════════════════════════════════════════════════════════════════════════════
+%  PAGE 2: ULN2803A DRIVER, RELAY PORTS (NO/NC/COM) & POWER DISTRIBUTION
+% ═════════════════════════════════════════════════════════════════════════════
+
+\begin{center}
+  {\large\bfseries PART 2: ULN2803A DRIVER, RELAY ACTUATORS \& POWER DISTRIBUTION}
+\end{center}
+\vspace{-8pt}
+
+% ── USB Pin Conflict Alert Box ─────────────────────────────────────────────
+\begin{tcolorbox}[bwalert]
+\textbf{NATIVE USB PIN CONFLICT WARNING (GPIO 19 \& GPIO 20):}
+GPIO 19 and GPIO 20 are physically shared with the ESP32-S3 Native USB data lines (D- / D+). \textbf{Relay Channels K4 and K7 must remain completely disconnected (NO, COM, NC all open).} Connecting loads to these channels causes severe relay chatter whenever USB is attached.
+\end{tcolorbox}
+
+\vspace{-4pt}
+
+% ── Section 4: Unified Complete Relay & Indicator Wiring Table ─────────────
+\begin{tcolorbox}[bwcard, title={4. Indicator \& Relay Module Wiring (Complete Pin-to-Pin \& Screw Terminals)}]
+\begin{tabularx}{\textwidth}{@{} C{0.8cm} L{3.3cm} C{1.8cm} C{2.2cm} L{3.8cm} Y @{}}
+\toprule
+\textbf{Ch.} & \textbf{Signal Name (Code)} & \textbf{ESP32 Pin} & \textbf{ULN2803A} & \textbf{Screw Terminals (COM/NO/NC)} & \textbf{Output Function / Lamp (+)} \\
+\midrule
+\textbf{K1} & AUTO (\texttt{kBulbAuto}) & \textbf{GPIO 48} & 1 $\rightarrow$ 18 & COM: +12\,V $\mid$ NO: Out $\mid$ NC: Open & 12\,V AUTO Mode Lamp (+) \\
+\textbf{K2} & MANUAL (\texttt{kBulbManual}) & \textbf{GPIO 39} & 2 $\rightarrow$ 17 & COM: +12\,V $\mid$ NO: Out $\mid$ NC: Open & 12\,V MANUAL Mode Lamp (+) \\
+\textbf{K3} & READY (\texttt{kBulbReady}) & \textbf{GPIO 17} & 3 $\rightarrow$ 16 & COM: +12\,V $\mid$ NO: Out $\mid$ NC: Open & 12\,V READY Green Lamp (+) \\
+\textbf{K4} & \textit{Reserved (USB D+)} & \textbf{GPIO 20} & 4 $\rightarrow$ 15 & \textbf{Leave All Terminals Open} & \textbf{DO NOT USE (Native USB D+)} \\
+\textbf{K5} & BYPASS (\texttt{kBulbBypass}) & \textbf{GPIO 14} & 5 $\rightarrow$ 14 & COM: +12\,V $\mid$ NO: Out $\mid$ NC: Open & 12\,V BYPASS Amber Lamp (+) \\
+\textbf{K6} & ESTOP (\texttt{kBulbEstop}) & \textbf{GPIO 18} & 6 $\rightarrow$ 13 & COM: +12\,V $\mid$ NO: Out $\mid$ NC: Open & 12\,V ESTOP Red Lamp (+) \\
+\textbf{K7} & \textit{Reserved (USB D-)} & \textbf{GPIO 19} & 7 $\rightarrow$ 12 & \textbf{Leave All Terminals Open} & \textbf{DO NOT USE (Native USB D-)} \\
+\textbf{K8} & Brake (\texttt{kLightBrake}) & \textbf{GPIO 21} & 8 $\rightarrow$ 11 & COM: +12\,V $\mid$ NO: Out $\mid$ NC: Open & 12\,V Rear Brake Light (+) \\
+\midrule
+\multicolumn{6}{@{}p{\linewidth}@{}}{\textbf{Terminal Rules:} COM = +12\,V (Fused 5\,A Bus); NO = Switched +12\,V feed to Lamp (+); NC = Leave open/unused.} \\
+\multicolumn{6}{@{}p{\linewidth}@{}}{\textbf{Ground \& Supply:} All lamp negative ($-$) leads return to Common GND (0\,V). ULN Pin 9 $\rightarrow$ GND; Pin 10 $\rightarrow$ +12\,V Fused Rail.} \\
+\bottomrule
+\end{tabularx}
+\end{tcolorbox}
+
+\vspace{-4pt}
+
+% ── Section 5: Driver Circuit Schematic & Power Distribution ───────────────
+\begin{tcolorbox}[bwcard, title={5. Power Distribution, Wire Gauges \& Driver Circuit Schematic}]
+\centering
+\begin{tikzpicture}[
+  font=\normalsize\sffamily,
+  box/.style={draw=black, fill=white, rounded corners=2pt, minimum height=18pt, align=center, inner sep=3pt, thick},
+  wire/.style={very thick, -{Latex[length=3.5pt]}}
 ]
-\footnotesize
-\textbf{\color{accentRed}CRITICAL ELECTRICAL RULES:}
-\textbf{1.} All pilot switches \& buttons switch directly to \textbf{GND (0\,V)} using MCU internal pull-ups.
-\textbf{2.} \textbf{NEVER connect +12\,V or external 3.3\,V to any ESP32 GPIO.}
-\textbf{3.} ESTOP loop is \textbf{Normally Closed (NC) to GND}; open/broken wire = immediate fail-safe ESTOP.
-\end{tcolorbox}
+  \node[box] (gpio) {\textbf{ESP32 GPIO}\\{\small (3.3\,V Output)}};
+  \node[box, right=0.9cm of gpio] (uln) {\textbf{ULN2803A}\\{\small (Pins 1--8 $\rightarrow$ 18--11)}};
+  \node[box, right=0.9cm of uln] (relay) {\textbf{12\,V Relay Module}\\{\small (Active-LOW Coil)}};
+  \node[box, right=0.9cm of relay] (lamp) {\textbf{12\,V Lamp / Load}\\{\small (Switched via \textbf{NO})}};
 
-\vspace{-3pt}
+  \draw[wire] (gpio) -- (uln);
+  \draw[wire] (uln) -- (relay);
+  \draw[wire] (relay) -- (lamp);
+\end{tikzpicture}
 
-% ── Section 1: Switches & Digital Inputs ────────────────────────────────────
-\begin{tcolorbox}[basecard, title={1. Pilot Switches \& Digital Inputs (Dry Contact to GND)}]
-\vspace{1pt}
-\footnotesize
-All digital inputs utilize ESP32-S3 \textbf{internal pull-ups (to 3.3\,V)}. Wire dry contacts between GPIO and common \textbf{GND}. No external resistors required.
-
-\vspace{2pt}
-\begin{tabularx}{\textwidth}{@{} l c l l X @{}}
-\toprule
-\textbf{Function} & \textbf{GPIO} & \textbf{Contact Type} & \textbf{Electrical State} & \textbf{Firmware / Safety Action} \\
-\midrule
-\rowcolor{tableStripe}
-\textbf{ESTOP Button} & \textbf{GPIO 1} & \textbf{NC Red Mushroom} & Closed = 0\,V (Healthy) & Open / Cut = 3.3\,V $\rightarrow$ Immediate Latched ESTOP \\
-\textbf{Brake Lever} & \textbf{GPIO 2} & NO Limit Microswitch & Closed = 0\,V (Active) & Overrides throttle $\rightarrow$ Demands SEB brake (0x7B9) \\
-\rowcolor{tableStripe}
-\textbf{START Button} & \textbf{GPIO 41} & Momentary NO Push Button & Pressed = 0\,V & Exits ESTOP $\rightarrow$ MANUAL mode (500\,ms debounce) \\
-\textbf{MODE Button} & \textbf{GPIO 11} & Momentary NO Push Button & Pressed = 0\,V & Short: MANUAL $\leftrightarrow$ AUTO; Hold 3s: Exits ESTOP \\
-\rowcolor{tableStripe}
-\textbf{Bypass Mode} & \textbf{GPIO 42} & Latching Switch / Jumper & Closed to GND = ON & Enables developer bench solo bypass mode at boot \\
-\textbf{Left Turn Sw} & \textbf{GPIO 9} & Handlebar Push / Toggle & Pressed = 0\,V & Toggles left turn signal flasher in MANUAL mode \\
-\rowcolor{tableStripe}
-\textbf{Right Turn Sw} & \textbf{GPIO 6} & Handlebar Push / Toggle & Pressed = 0\,V & Toggles right turn signal flasher in MANUAL mode \\
-\textbf{Headlight Sw} & \textbf{GPIO 7} & Handlebar Toggle Switch & Closed = 0\,V & Toggles headlight output in MANUAL mode \\
-\bottomrule
-\end{tabularx}
-\end{tcolorbox}
-
-\vspace{-3pt}
-
-% ── Section 2: 12V Relay Module & Indicators ─────────────────────────────────
-\begin{tcolorbox}[basecard, title={2. 12\,V Relay Outputs \& Dashboard Lamps}]
-\vspace{1pt}
-\footnotesize
-Drives an 8-channel \textbf{Active-LOW} 12\,V relay board via a \textbf{ULN2803A Darlington sink array} (ESP32 $\rightarrow$ ULN $\rightarrow$ Relay INx).
-
-\vspace{2pt}
-\begin{tabularx}{\textwidth}{@{} l c l l X @{}}
-\toprule
-\textbf{Indicator / Load} & \textbf{ESP32} & \textbf{ULN2803A} & \textbf{Relay Channel} & \textbf{Indication \& Logic} \\
-\midrule
-\rowcolor{tableStripe}
-\textbf{Bulb AUTO} & GPIO 48 & IN1 $\rightarrow$ OUT1 & Relay 1 (K1) & High (ON) when vehicle is in \textbf{AUTO} mode \\
-\textbf{Bulb MANUAL} & GPIO 39 & IN2 $\rightarrow$ OUT2 & Relay 2 (K2) & High (ON) when vehicle is in \textbf{MANUAL} mode \\
-\rowcolor{tableStripe}
-\textbf{Bulb READY} & GPIO 17 & IN3 $\rightarrow$ OUT3 & Relay 3 (K3) & Green lamp: RT alive, heartbeat healthy, no faults \\
-\textbf{USB Data+} & GPIO 20 & IN4 $\rightarrow$ OUT4 & Relay 4 (K4) & \textit{\color{accentRed}DO NOT USE / LEAVE UNCONNECTED (ESP32 USB D+)} \\
-\rowcolor{tableStripe}
-\textbf{Bulb BYPASS} & GPIO 14 & IN5 $\rightarrow$ OUT5 & Relay 5 (K5) & Amber lamp: Developer bench bypass active \\
-\textbf{Bulb ESTOP} & GPIO 18 & IN6 $\rightarrow$ OUT6 & Relay 6 (K6) & \textbf{Red lamp:} Hard or soft ESTOP latched \\
-\rowcolor{tableStripe}
-\textbf{USB Data$-$} & GPIO 19 & IN7 $\rightarrow$ OUT7 & Relay 7 (K7) & \textit{\color{accentRed}DO NOT USE / LEAVE UNCONNECTED (ESP32 USB D-)} \\
-\textbf{Brake Lamp} & GPIO 21 & IN8 $\rightarrow$ OUT8 & Relay 8 (K8) & 12\,V Rear Brake Light (Lever $\lor$ ESTOP $\lor$ SEB active) \\
-\bottomrule
-\end{tabularx}
-\end{tcolorbox}
-
-\vspace{-3pt}
-
-% ── Section 3: Visual Topologies ──────────────────────────────────────────
-\begin{tcolorbox}[basecard, title={3. Circuit Topologies \& Power Distribution}]
-\vspace{1pt}
-\begin{tabularx}{\textwidth}{@{} X X @{}}
-  \textbf{(A) Switch Input Circuit (to GND):} & \textbf{(B) 12\,V Relay Driver Chain:} \\
-  \begin{tikzpicture}[
-    node distance=0.8cm and 0.9cm,
-    font=\scriptsize\sffamily,
-    box/.style={draw=brandNavy, fill=white, rounded corners=2pt, minimum height=16pt, align=center, inner sep=2pt, thick},
-    wire/.style={thick, -{Latex[length=3pt]}}
-  ]
-    \node[box, fill=brandBlue!10] (esp) {ESP32 Pin\\(Pull-Up 3.3V)};
-    \node[box, right=0.6cm of esp] (sw) {Switch Contact\\(NO or NC)};
-    \node[box, fill=black!10, right=0.6cm of sw] (gnd) {Common GND\\(0\,V Chassis)};
-    \draw[wire] (esp) -- (sw);
-    \draw[wire] (sw) -- (gnd);
-  \end{tikzpicture}
-  &
-  \begin{tikzpicture}[
-    node distance=0.5cm,
-    font=\scriptsize\sffamily,
-    box/.style={draw=brandNavy, fill=white, rounded corners=2pt, minimum height=16pt, align=center, inner sep=2pt, thick},
-    wire/.style={thick, -{Latex[length=3pt]}}
-  ]
-    \node[box, fill=brandBlue!10] (gpio) {ESP32\\GPIO};
-    \node[box, right=0.35cm of gpio] (uln) {ULN2803A\\Sink};
-    \node[box, right=0.35cm of uln] (ry) {Relay IN\\(Active-L)};
-    \node[box, fill=accentAmber!20, right=0.35cm of ry] (lp) {12\,V Lamp\\Output};
-    \draw[wire] (gpio) -- (uln);
-    \draw[wire] (uln) -- (ry);
-    \draw[wire] (ry) -- (lp);
-  \end{tikzpicture}
-  \\
-  \midrule
-  \textbf{Relay Contact Wiring:} & \textbf{Common Grounds:} \\
-  $\bullet$ +12\,V Fused $\rightarrow$ Relay COM terminal & $\bullet$ ESP32 GND = ULN GND = Relay GND \\
-  $\bullet$ Relay NO $\rightarrow$ Lamp (+) $\quad\vert\quad$ Lamp ($-$) $\rightarrow$ GND & $\bullet$ Common vehicle chassis ground (0\,V) \\
+\vspace{3pt}
+\begin{tabularx}{\textwidth}{@{} Y Y @{}}
+  \textbf{Power Supply Rails \& Protection:} & \textbf{Wire Gauge \& Color Code Standard:} \\
+  $\bullet$ \textbf{12\,V Auxiliary Rail:} DC-DC output via \textbf{5\,A fuse} $\rightarrow$ Relay VCC \& COM busbar. & $\bullet$ \textbf{+12\,V Power Rail / Fused:} 18 / 20 AWG \textbf{Red}. \\
+  $\bullet$ \textbf{3.3\,V Logic Rail:} ESP32-S3 regulator $\rightarrow$ CAN Transceiver VCC (3.3\,V only). & $\bullet$ \textbf{Common Ground (0\,V):} 18 AWG \textbf{Black}. \\
+  $\bullet$ \textbf{Common Ground:} ESP32 GND = ULN GND = Relay GND = Chassis GND. & $\bullet$ \textbf{Digital Inputs / Low CAN:} 22 AWG \textbf{Yellow/Green}. \\
 \end{tabularx}
 \end{tcolorbox}
 

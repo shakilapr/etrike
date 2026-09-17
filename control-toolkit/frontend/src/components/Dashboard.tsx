@@ -2,14 +2,18 @@ import { useEffect, useMemo, useState } from 'react'
 import { useAppStore } from '../store'
 import { api } from '../api'
 import {
+  getBrakePipeline,
   getSpeedPipeline,
   getSteeringPipeline,
-  getBrakePipeline,
-  getAuthorityPipeline,
-  observeEstop,
 } from '../lib/signals'
 import { runFullProtocolAudit } from '../lib/protocolAudit'
 import { evaluateActivationGates } from '../lib/activationGates'
+import {
+  activeRecordingSession,
+  exportInstantRollingBuffer,
+  downloadExportJson,
+  type DiagnosticExportBundle,
+} from '../lib/telemetryRecorder'
 import { MultiMeter } from './MultiMeter'
 import { SteeringMeter } from './SteeringMeter'
 import { BrakeMeter } from './BrakeMeter'
@@ -21,13 +25,57 @@ import { StatusPill } from './primitives'
 export function Dashboard() {
   const messages = useAppStore((s) => s.messages)
   const status = useAppStore((s) => s.status)
-  const quality = useAppStore((s) => s.streamQuality)
 
   const [unitMode, setUnitMode] = useState<'kmh' | 'mmps'>('kmh')
   const [demoMode, setDemoMode] = useState<boolean>(false)
   const [activeView, setActiveView] = useState<'cluster' | 'tables'>('cluster')
   const [activeTab, setActiveTab] = useState<'protocol' | 'pipeline' | 'gates'>('protocol')
+  const [chassisView, setChassisView] = useState<'both' | 'steer' | 'brake'>('both')
   const [dictMessages, setDictMessages] = useState<Array<Record<string, unknown>> | null>(null)
+
+  // 10-Second Telemetry Recording & LLM Export State
+  const [isRecording, setIsRecording] = useState(false)
+  const [recordingRemaining, setRecordingRemaining] = useState(10.0)
+  const [exportDropdownOpen, setExportDropdownOpen] = useState(false)
+  const [exportBundle, setExportBundle] = useState<DiagnosticExportBundle | null>(null)
+  const [copiedPrompt, setCopiedPrompt] = useState(false)
+
+  const handleStartRecording = () => {
+    setExportDropdownOpen(false)
+    setIsRecording(true)
+    setRecordingRemaining(10.0)
+    activeRecordingSession.start(
+      10000,
+      (_progress, remaining) => {
+        setRecordingRemaining(remaining)
+      },
+      (bundle) => {
+        setIsRecording(false)
+        setExportBundle(bundle)
+      },
+    )
+  }
+
+  const handleStopRecordingEarly = () => {
+    setIsRecording(false)
+    void activeRecordingSession.finishAndExport().then((bundle) => {
+      setExportBundle(bundle)
+    })
+  }
+
+  const handleExportInstantBuffer = async () => {
+    setExportDropdownOpen(false)
+    const bundle = await exportInstantRollingBuffer(10000)
+    setExportBundle(bundle)
+  }
+
+  const handleCopyPrompt = () => {
+    if (!exportBundle?.llm_diagnostic_context?.llm_prompt_markdown) return
+    void navigator.clipboard.writeText(exportBundle.llm_diagnostic_context.llm_prompt_markdown).then(() => {
+      setCopiedPrompt(true)
+      setTimeout(() => setCopiedPrompt(false), 2500)
+    })
+  }
 
   useEffect(() => {
     let cancel = false
@@ -44,14 +92,10 @@ export function Dashboard() {
     }
   }, [])
 
-  const ses = status?.session
-  const estopObs = observeEstop(messages, ses)
-
   // 3-Tier Subsystem Pipelines
   const speed = getSpeedPipeline(messages)
   const steer = getSteeringPipeline(messages)
   const brake = getBrakePipeline(messages)
-  const auth = getAuthorityPipeline(messages)
 
   // Conversion helpers
   const toDisplaySpeed = (mmps: number | null | undefined): number | null => {
@@ -64,16 +108,19 @@ export function Dashboard() {
 
   // Live or Demo fallback values
   const hasFrames = messages.length > 0
-  const isDemo = demoMode || !hasFrames
+  const isDemo = demoMode // Grounded in explicit demoMode state
 
   // 1. Speed values (raw in mm/s)
   const rawMtrSpeed = isDemo ? 27222 : (speed.mtrFbkSpeed ?? speed.physicalSpeed ?? null)
   const rawHostSpeed = isDemo ? 27778 : (speed.hostSpeed ?? null)
   const rawRtSpeed = isDemo ? 26944 : (speed.rtSpeed ?? null)
+  const rawSysOutputSpeed = isDemo ? 25000 : (speed.manualSpeed ?? speed.mtrFbkSpeed ?? null)
 
   const mtrSpeedVal = toDisplaySpeed(rawMtrSpeed)
   const hostSpeedVal = toDisplaySpeed(rawHostSpeed)
   const rtSpeedVal = toDisplaySpeed(rawRtSpeed)
+  const sysOutputVal = toDisplaySpeed(rawSysOutputSpeed)
+  const targetSpeedVal = rtSpeedVal ?? hostSpeedVal
 
   // 2. Steering values (deg & dynamics)
   const sesAngleVal = isDemo ? 12.4 : (steer.sesAngleDeg ?? null)
@@ -95,7 +142,7 @@ export function Dashboard() {
 
   // Secondary speed metrics
   const wheelSpeedVal = toDisplaySpeed(isDemo ? 26800 : (speed.physicalSpeed ?? null))
-  const manualThrottleVal = toDisplaySpeed(isDemo ? 25000 : (speed.manualSpeed ?? null))
+  const manualThrottleVal = sysOutputVal
 
   // Programmatic Protocol Audit execution
   const rawSignalValues = useMemo<Record<string, number | null>>(() => ({
@@ -128,18 +175,10 @@ export function Dashboard() {
   const steerAudit = auditReport.subsystems.find((s) => s.subsystem === 'Steering')
   const brakeAudit = auditReport.subsystems.find((s) => s.subsystem === 'Braking')
 
-  // Active Gear
-  const activeGear =
-    speed.mtrGear || speed.rtGear || speed.hostGear || (isDemo ? 'D' : 'N')
-
-  // Speed max & ticks based on unit
   const speedMax = unitMode === 'kmh' ? 200 : 25000
   const speedTicks =
     unitMode === 'kmh' ? [0, 50, 100, 150, 200] : [0, 5000, 10000, 15000, 20000, 25000]
   const speedUnit = unitMode === 'kmh' ? 'km/h' : 'mm/s'
-
-  // Stream health
-  const isHealthy = quality === 'live' || (isDemo && hasFrames)
 
   return (
     <WorkspaceShell
@@ -154,78 +193,13 @@ export function Dashboard() {
           <div className="dashboard-hud-group">
             <span className="dashboard-brand-pill">DASHBOARD</span>
 
-            {/* ESTOP Status */}
-            <div className="dashboard-hud-item">
-              <span className="dashboard-hud-k">ESTOP</span>
-              <div className="dashboard-hud-v">
-                <StatusPill
-                  label={estopObs.any ? estopObs.label : 'Clear'}
-                  tone={estopObs.any ? 'danger' : 'ok'}
-                  testId="dashboard-estop-pill"
-                />
-              </div>
-            </div>
-
-            {/* Gear Selector */}
-            <div className="dashboard-hud-item">
-              <span className="dashboard-hud-k">Gear</span>
-              <div className="dashboard-hud-v">
-                <span className="dashboard-gear-pill" data-testid="dashboard-gear">
-                  {activeGear}
-                </span>
-                <span className="text-[11px] text-muted font-medium">
-                  {activeGear === 'D'
-                    ? 'Drive'
-                    : activeGear === 'R'
-                      ? 'Reverse'
-                      : activeGear === 'S'
-                        ? 'Sport'
-                        : 'Neutral'}
-                </span>
-              </div>
-            </div>
-
-            {/* Drive Mode */}
-            <div className="dashboard-hud-item">
-              <span className="dashboard-hud-k">Drive Mode</span>
-              <div className="dashboard-hud-v" data-testid="dashboard-mode">
-                {ses?.confirmed_mode ?? auth.rtReportedMode ?? (isDemo ? 'AUTO' : 'MANUAL')}
-              </div>
-            </div>
-
-            {/* Power / Contactor */}
-            <div className="dashboard-hud-item">
-              <span className="dashboard-hud-k">Power</span>
-              <div className="dashboard-hud-v" data-testid="dashboard-power">
-                <StatusPill
-                  label={ses?.confirmed_power ?? (isDemo ? 'ON' : 'OFF')}
-                  tone={ses?.confirmed_power === 'ON' || isDemo ? 'ok' : 'muted'}
-                />
-              </div>
-            </div>
-
-            {/* CAN Link Health */}
-            <div className="dashboard-hud-item">
-              <span className="dashboard-hud-k">CAN Bus</span>
-              <div className="dashboard-hud-v">
-                <StatusPill
-                  label={isHealthy ? 'Live' : quality}
-                  tone={isHealthy ? 'ok' : 'warn'}
-                  testId="dashboard-can-pill"
-                />
-                <span className="text-xs text-muted">
-                  {messages.length} frames
-                </span>
-              </div>
-            </div>
-
             {/* Protocol Audit Health Pill */}
             <div className="dashboard-hud-item">
               <span className="dashboard-hud-k">Protocol Status</span>
               <div className="dashboard-hud-v">
                 <button
                   type="button"
-                  className={`dashboard-audit-badge tone-${auditReport.overallStatus} cursor-pointer hover:opacity-80`}
+                  className={`dashboard-audit-badge tone-${hasFrames ? auditReport.overallStatus : (demoMode ? 'info' : 'muted')} cursor-pointer hover:opacity-80`}
                   data-testid="dashboard-protocol-summary"
                   title="Click to view detailed Programmatic Protocol Audit table"
                   onClick={() => {
@@ -233,9 +207,13 @@ export function Dashboard() {
                     setActiveTab('protocol')
                   }}
                 >
-                  {auditReport.overallStatus === 'conforming'
-                    ? '✓ Protocol Verified'
-                    : `${auditReport.conformingCount}/${auditReport.totalSignals} Conforming`}
+                  {hasFrames
+                    ? auditReport.overallStatus === 'conforming'
+                      ? '✓ Protocol Verified'
+                      : `${auditReport.conformingCount}/${auditReport.totalSignals} Verified`
+                    : demoMode
+                      ? 'Simulated Telemetry'
+                      : 'No CAN Telemetry'}
                 </button>
               </div>
             </div>
@@ -321,6 +299,109 @@ export function Dashboard() {
                 Tables
               </button>
             </div>
+
+            {/* Chassis Actuator View Switcher */}
+            {activeView === 'cluster' && (
+              <div className="flex items-center gap-0.5 bg-surface-2 p-0.5 rounded border border-border">
+                <button
+                  type="button"
+                  className={`px-2 py-0.5 text-xs font-semibold rounded ${
+                    chassisView === 'both' ? 'bg-primary text-white' : 'text-text-secondary'
+                  }`}
+                  onClick={() => setChassisView('both')}
+                  title="Display Steering and Braking side-by-side in dual full-height panels"
+                  data-testid="toggle-chassis-both"
+                >
+                  Dual
+                </button>
+                <button
+                  type="button"
+                  className={`px-2 py-0.5 text-xs font-semibold rounded ${
+                    chassisView === 'steer' ? 'bg-primary text-white' : 'text-text-secondary'
+                  }`}
+                  onClick={() => setChassisView('steer')}
+                  title="Focus Steering full-width"
+                  data-testid="toggle-chassis-steer"
+                >
+                  Steer
+                </button>
+                <button
+                  type="button"
+                  className={`px-2 py-0.5 text-xs font-semibold rounded ${
+                    chassisView === 'brake' ? 'bg-primary text-white' : 'text-text-secondary'
+                  }`}
+                  onClick={() => setChassisView('brake')}
+                  title="Focus Braking full-width"
+                  data-testid="toggle-chassis-brake"
+                >
+                  Brake
+                </button>
+              </div>
+            )}
+
+            {/* 10-Second Diagnostic Export Action */}
+            <div className="dashboard-export-group">
+              {isRecording ? (
+                <button
+                  type="button"
+                  className="dashboard-export-btn is-recording"
+                  onClick={handleStopRecordingEarly}
+                  title="Click to stop recording and download 10s diagnostic bundle immediately"
+                  data-testid="btn-recording-active"
+                >
+                  <span className="dashboard-record-pulse-dot" />
+                  <span>Recording: {recordingRemaining.toFixed(1)}s</span>
+                  <span className="text-[10px] underline ml-1">Save Now</span>
+                </button>
+              ) : (
+                <div className="flex items-center">
+                  <button
+                    type="button"
+                    className="dashboard-export-btn"
+                    onClick={handleStartRecording}
+                    title="Export 10-second diagnostic window (state, steering changes, manual mode, CAN IDs, heartbeats)"
+                    data-testid="btn-export-10s"
+                  >
+                    <span className="text-danger font-bold">⏺</span>
+                    <span>Export 10s</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="dashboard-export-btn dashboard-export-chevron"
+                    onClick={() => setExportDropdownOpen((v) => !v)}
+                    title="More export options"
+                    data-testid="btn-export-chevron"
+                  >
+                    ▼
+                  </button>
+                </div>
+              )}
+
+              {exportDropdownOpen && !isRecording && (
+                <div className="dashboard-export-dropdown" data-testid="export-dropdown-menu">
+                  <button
+                    type="button"
+                    className="dashboard-export-item"
+                    onClick={handleStartRecording}
+                  >
+                    <span className="dashboard-export-item-title">⏺ Capture Next 10s Window</span>
+                    <span className="dashboard-export-item-desc">
+                      Records next 10 seconds of live state, steering changes, and CAN frames.
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    className="dashboard-export-item"
+                    onClick={() => void handleExportInstantBuffer()}
+                  >
+                    <span className="dashboard-export-item-title">⚡ Export Past 10s Snapshot</span>
+                    <span className="dashboard-export-item-desc">
+                      Instantly exports recent 10s rolling buffer without waiting.
+                    </span>
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </header>
 
@@ -335,7 +416,7 @@ export function Dashboard() {
           <div className="dashboard-col-velocity">
             <MultiMeter
               title="Velocity"
-              badge={hasFrames ? (activeGear === 'D' ? 'Forward' : activeGear === 'R' ? 'Reverse' : 'Neutral') : 'Sim Preview'}
+              badge={demoMode ? 'Simulated' : undefined}
               badgeTone="ok"
               protocolAudit={
                 speedAudit
@@ -346,29 +427,40 @@ export function Dashboard() {
                   : undefined
               }
               primary={{
-                label: 'RT SPEED CMD',
-                value: rtSpeedVal ?? hostSpeedVal,
+                label: 'TARGET SPEED',
+                value: targetSpeedVal,
                 unit: speedUnit,
                 digits: 0,
                 canId: '0x204',
-                varName: 'RT_DRIVE_CMD: motor_speed_mmps (Low) · Active setpoint (MTR FBK Pending HW)',
+                varName: 'RT_DRIVE_CMD: motor_speed_mmps (Low) · Active setpoint',
               }}
-              subLeft={{
-                label: 'HOST SPEED',
-                value: hostSpeedVal,
-                unit: speedUnit,
-                digits: 0,
-                canId: '0x300',
-                varName: 'HOST_DRIVE_CMD: speed_mmps (High Planner Target)',
-              }}
-              subRight={{
-                label: 'SYS THROTTLE',
-                value: manualThrottleVal,
-                unit: speedUnit,
-                digits: 0,
-                canId: '0x120',
-                varName: 'SYS_THROTTLE_STS: speed_mmps (Low Driver Demand)',
-              }}
+              targetValue={targetSpeedVal}
+              subColumns={[
+                {
+                  label: 'FROM HOST',
+                  value: hostSpeedVal,
+                  unit: speedUnit,
+                  digits: 0,
+                  canId: '0x300',
+                  varName: 'HOST_DRIVE_CMD: speed_mmps (Autonomy Target)',
+                },
+                {
+                  label: 'RT TO SYS',
+                  value: rtSpeedVal,
+                  unit: speedUnit,
+                  digits: 0,
+                  canId: '0x204',
+                  varName: 'RT_DRIVE_CMD: motor_speed_mmps (Supervisor Setpoint)',
+                },
+                {
+                  label: 'SYS OUTPUT',
+                  value: sysOutputVal,
+                  unit: speedUnit,
+                  digits: 0,
+                  canId: '0x120',
+                  varName: 'SYS_THROTTLE_STS: speed_mmps (Actuator Command Output)',
+                },
+              ]}
               secondaryMetrics={[
                 {
                   label: 'Wheel Speed',
@@ -377,14 +469,8 @@ export function Dashboard() {
                   varName: 'RT_WHEEL_SPEED_STS: measured_speed_mmps (Low)',
                 },
                 {
-                  label: 'MTR FBK',
-                  value: 'Pending HW',
-                  canId: '0x206',
-                  varName: 'MTR_MOTOR_FBK: Motor feedback not yet implemented on hardware bench',
-                },
-                {
-                  label: 'EGAS L2',
-                  value: speedAudit?.consistencyPass ? '✓ Match' : '⚠ Delta',
+                  label: 'Plausibility',
+                  value: speedAudit?.consistencyPass ? '✓ Matched' : '⚠ Divergent',
                   varName: speedAudit?.consistencyDetail,
                 },
               ]}
@@ -395,56 +481,61 @@ export function Dashboard() {
             />
           </div>
 
-          {/* Column 2: Stacked Steering and Brake (Shrunk in height to fit with speed) */}
-          <div className="dashboard-col-stacked">
-            {/* 2. STEERING METER — Compact, Host -> RT -> SES */}
-            <SteeringMeter
-              title="Steering"
-              badge={steer.sesMode ?? 'EPS Active'}
-              badgeTone="info"
-              actualAngle={sesAngleVal}
-              hostAngle={hostSteerVal}
-              rtAngle={rtSteerVal}
-              yawRate={hostYawVal}
-              slewRate={rtSlewVal}
-              torqueNm={sesTorqueVal}
-              maxAngle={90}
-              compact={true}
-              testId="meter-steer"
-              protocolAudit={
-                steerAudit
-                  ? {
-                      status: steerAudit.status,
-                      note: `${steerAudit.summary} · ${steerAudit.consistencyDetail}`,
-                    }
-                  : undefined
-              }
-            />
+          {/* Column 2: Chassis Actuation — Steering & Braking organized side-by-side in full height */}
+          <div
+            className={`dashboard-col-chassis view-${chassisView}`}
+            data-testid="dashboard-col-chassis"
+          >
+            {(chassisView === 'both' || chassisView === 'steer') && (
+              <SteeringMeter
+                title="Steering"
+                badge={steer.sesMode && steer.sesMode !== '—' ? steer.sesMode : 'Active'}
+                badgeTone="info"
+                actualAngle={sesAngleVal}
+                hostAngle={hostSteerVal}
+                rtAngle={rtSteerVal}
+                yawRate={hostYawVal}
+                slewRate={rtSlewVal}
+                torqueNm={sesTorqueVal}
+                maxAngle={90}
+                compact={false}
+                testId="meter-steer"
+                protocolAudit={
+                  steerAudit
+                    ? {
+                        status: steerAudit.status,
+                        note: `${steerAudit.summary} · ${steerAudit.consistencyDetail}`,
+                      }
+                    : undefined
+                }
+              />
+            )}
 
-            {/* 3. BRAKE METER — Compact, Host -> RT -> SYS -> SEB */}
-            <BrakeMeter
-              title="Braking"
-              badge={actualBrakeVal != null && actualBrakeVal > 0 ? 'SEB Active' : 'SEB Standby'}
-              badgeTone={actualBrakeVal != null && actualBrakeVal > 3500 ? 'danger' : 'ok'}
-              actualPressure={actualBrakeVal}
-              hostPressure={hostBrakeVal}
-              rtPressure={rtBrakeVal}
-              actualStroke={actualStrokeVal}
-              reqStroke={reqStrokeVal}
-              diagStroke={diagStrokeVal}
-              maxPressure={5000}
-              maxStroke={50}
-              compact={true}
-              testId="meter-brake"
-              protocolAudit={
-                brakeAudit
-                  ? {
-                      status: brakeAudit.status,
-                      note: `${brakeAudit.summary} · ${brakeAudit.consistencyDetail}`,
-                    }
-                  : undefined
-              }
-            />
+            {(chassisView === 'both' || chassisView === 'brake') && (
+              <BrakeMeter
+                title="Braking"
+                badge={actualBrakeVal != null && actualBrakeVal > 0 ? 'Active' : 'Standby'}
+                badgeTone={actualBrakeVal != null && actualBrakeVal > 3500 ? 'danger' : 'ok'}
+                actualPressure={actualBrakeVal}
+                hostPressure={hostBrakeVal}
+                rtPressure={rtBrakeVal}
+                actualStroke={actualStrokeVal}
+                reqStroke={reqStrokeVal}
+                diagStroke={diagStrokeVal}
+                maxPressure={5000}
+                maxStroke={50}
+                compact={false}
+                testId="meter-brake"
+                protocolAudit={
+                  brakeAudit
+                    ? {
+                        status: brakeAudit.status,
+                        note: `${brakeAudit.summary} · ${brakeAudit.consistencyDetail}`,
+                      }
+                    : undefined
+                }
+              />
+            )}
           </div>
 
           {/* Column 3: The Third Column — CAN Audit & Refusal Logger */}
@@ -707,10 +798,137 @@ export function Dashboard() {
               </table>
             </div>
           ) : (
-            /* Controller Activation Gates Detailed Matrix */
             <ControllerActivationMatrix report={activationReport} compact={false} />
           )}
         </section>
+      )}
+
+      {/* ── LLM Diagnostic Export Modal ── */}
+      {exportBundle && (
+        <div
+          className="dashboard-modal-backdrop"
+          onClick={() => setExportBundle(null)}
+          data-testid="export-modal-backdrop"
+        >
+          <div
+            className="dashboard-modal-card"
+            onClick={(e) => e.stopPropagation()}
+            data-testid="export-diagnostic-modal"
+          >
+            <div className="dashboard-modal-header">
+              <div className="dashboard-modal-title">
+                <span>✓ 10-Second Telemetry Diagnostic Exported</span>
+              </div>
+              <button
+                type="button"
+                className="dashboard-modal-close"
+                onClick={() => setExportBundle(null)}
+                title="Close modal"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="dashboard-modal-body">
+              <div className="dashboard-summary-chips-grid">
+                <div className="dashboard-summary-chip">
+                  <div className="dashboard-summary-chip-k">Vehicle Authority</div>
+                  <div className="dashboard-summary-chip-v text-primary">
+                    {exportBundle.llm_diagnostic_context.vehicle_mode_analysis.overall_mode}
+                    {exportBundle.llm_diagnostic_context.vehicle_mode_analysis.was_in_manual_mode && ' (Manual Mode)'}
+                  </div>
+                </div>
+                <div className="dashboard-summary-chip">
+                  <div className="dashboard-summary-chip-k">Steering Net Delta</div>
+                  <div className="dashboard-summary-chip-v">
+                    {exportBundle.llm_diagnostic_context.steering_analysis.initial_ses_angle_deg != null
+                      ? `${exportBundle.llm_diagnostic_context.steering_analysis.initial_ses_angle_deg.toFixed(1)}° → ${exportBundle.llm_diagnostic_context.steering_analysis.final_ses_angle_deg?.toFixed(1)}°`
+                      : '—'}{' '}
+                    <span className="text-muted text-[11px]">
+                      ({exportBundle.llm_diagnostic_context.steering_analysis.sample_count} samples)
+                    </span>
+                  </div>
+                </div>
+                <div className="dashboard-summary-chip">
+                  <div className="dashboard-summary-chip-k">Heartbeat Continuity</div>
+                  <div className="dashboard-summary-chip-v">
+                    {exportBundle.llm_diagnostic_context.heartbeat_analysis.controllers_online_count}/
+                    {exportBundle.llm_diagnostic_context.heartbeat_analysis.total_controllers_count} Controllers Healthy
+                  </div>
+                </div>
+                <div className="dashboard-summary-chip">
+                  <div className="dashboard-summary-chip-k">Gates & Safety</div>
+                  <div className="dashboard-summary-chip-v">
+                    {exportBundle.llm_diagnostic_context.activation_gates_analysis.all_gates_cleared
+                      ? 'All Gates Ready'
+                      : `${exportBundle.llm_diagnostic_context.activation_gates_analysis.inhibitors.length} Inhibited`}{' '}
+                    ·{' '}
+                    <span className={exportBundle.llm_diagnostic_context.vehicle_mode_analysis.estop_active ? 'text-red-500 font-bold' : 'text-green-600'}>
+                      {exportBundle.llm_diagnostic_context.vehicle_mode_analysis.estop_active ? 'ESTOP' : 'ESTOP Clear'}
+                    </span>
+                  </div>
+                </div>
+                <div className="dashboard-summary-chip">
+                  <div className="dashboard-summary-chip-k">High CAN Bus (CH0)</div>
+                  <div className="dashboard-summary-chip-v">
+                    {exportBundle.llm_diagnostic_context.can_bus_inventory?.high_bus?.active_can_ids_count ?? 0}/
+                    {exportBundle.llm_diagnostic_context.can_bus_inventory?.high_bus?.total_catalog_can_ids ?? 29} Active IDs ·{' '}
+                    {exportBundle.raw_telemetry.can_frames_by_bus?.high?.length ?? 0} Frames
+                  </div>
+                </div>
+                <div className="dashboard-summary-chip">
+                  <div className="dashboard-summary-chip-k">Low CAN Bus (CH1)</div>
+                  <div className="dashboard-summary-chip-v">
+                    {exportBundle.llm_diagnostic_context.can_bus_inventory?.low_bus?.active_can_ids_count ?? 0}/
+                    {exportBundle.llm_diagnostic_context.can_bus_inventory?.low_bus?.total_catalog_can_ids ?? 33} Active IDs ·{' '}
+                    {exportBundle.raw_telemetry.can_frames_by_bus?.low?.length ?? 0} Frames
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <span className="font-semibold text-xs text-text">LLM Diagnostic Summary Prompt</span>
+                  <span className="text-[11px] text-muted">Ready to paste into ChatGPT, Claude, or Gemini</span>
+                </div>
+                <div className="dashboard-llm-preview-box">
+                  {exportBundle.llm_diagnostic_context.llm_prompt_markdown}
+                </div>
+              </div>
+            </div>
+
+            <div className="dashboard-modal-footer">
+              <span className="text-[11px] text-muted mr-auto hidden sm:inline-flex items-center gap-1">
+                📁 Saved to <code className="text-primary font-mono text-[10.5px]">tem/control-toolkit-logs/</code> (gitignored)
+              </span>
+              <button
+                type="button"
+                className="px-3 py-1 text-xs font-semibold rounded border border-border bg-surface text-text hover:bg-surface-2"
+                onClick={() => downloadExportJson(exportBundle)}
+                title="Download telemetry JSON file again"
+                data-testid="btn-redownload-json"
+              >
+                ⤓ Download JSON
+              </button>
+              <button
+                type="button"
+                className="px-3 py-1 text-xs font-semibold rounded bg-primary text-white hover:opacity-90 flex items-center gap-1.5"
+                onClick={handleCopyPrompt}
+                title="Copy prompt context to clipboard for LLM bug diagnosis"
+                data-testid="btn-copy-llm-prompt"
+              >
+                <span>{copiedPrompt ? '✓ Copied to Clipboard!' : '📋 Copy LLM Prompt'}</span>
+              </button>
+              <button
+                type="button"
+                className="px-3 py-1 text-xs font-semibold rounded border border-border bg-surface-2 text-text hover:bg-surface"
+                onClick={() => setExportBundle(null)}
+              >
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   </WorkspaceShell>

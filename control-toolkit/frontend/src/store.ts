@@ -154,6 +154,7 @@ type AppState = {
   protocolMismatch: boolean
   workspace: Workspace
   activity: Activity
+  sidebarCollapsed: boolean
   controlMethod: ControlMethod
   liveFilter: string
   selectedMessageKey: string | null
@@ -165,6 +166,8 @@ type AppState = {
   setProtocolMismatch: (v: boolean) => void
   setWorkspace: (w: Workspace, updateHistory?: boolean) => void
   setActivity: (activity: Activity) => void
+  setSidebarCollapsed: (v: boolean | ((prev: boolean) => boolean)) => void
+  toggleSidebar: () => void
   setControlMethod: (method: ControlMethod) => void
   setLiveFilter: (f: string) => void
   setSelectedMessageKey: (k: string | null) => void
@@ -182,6 +185,10 @@ export const useAppStore = create<AppState>((set) => ({
   protocolMismatch: false,
   workspace: getWorkspaceFromPath(),
   activity: 'explorer',
+  sidebarCollapsed:
+    typeof window !== 'undefined'
+      ? localStorage.getItem('ctk_sidebar_collapsed') === 'true'
+      : false,
   controlMethod: 'high',
   liveFilter: '',
   selectedMessageKey: null,
@@ -230,6 +237,27 @@ export const useAppStore = create<AppState>((set) => ({
     syncUrlWithWorkspace(workspace, updateHistory ? 'push' : 'none')
   },
   setActivity: (activity) => set({ activity }),
+  setSidebarCollapsed: (collapsedOrFn) =>
+    set((state) => {
+      const next =
+        typeof collapsedOrFn === 'function' ? collapsedOrFn(state.sidebarCollapsed) : collapsedOrFn
+      try {
+        localStorage.setItem('ctk_sidebar_collapsed', String(next))
+      } catch {
+        /* ignore */
+      }
+      return { sidebarCollapsed: next }
+    }),
+  toggleSidebar: () =>
+    set((state) => {
+      const next = !state.sidebarCollapsed
+      try {
+        localStorage.setItem('ctk_sidebar_collapsed', String(next))
+      } catch {
+        /* ignore */
+      }
+      return { sidebarCollapsed: next }
+    }),
   setControlMethod: (controlMethod) => set({ controlMethod }),
   setLiveFilter: (liveFilter) => set({ liveFilter }),
   setSelectedMessageKey: (selectedMessageKey) => set({ selectedMessageKey }),

@@ -38,3 +38,49 @@ test('activity rail swaps contextual sidebars only (main workspace unchanged)', 
   await page.getByTestId('nav-control').click()
   await expect(page.getByTestId('workspace-control')).toBeVisible()
 })
+
+test('sidebar collapses to compact rail and expands via button and keyboard shortcut', async ({
+  page,
+}) => {
+  await page.goto('/')
+
+  const sidebar = page.locator('aside.sidebar')
+  const toggleBtn = page.getByTestId('btn-toggle-sidebar')
+
+  await expect(sidebar).toBeVisible()
+  await expect(sidebar).not.toHaveClass(/is-collapsed/)
+  const expandedBox = await sidebar.boundingBox()
+  expect(expandedBox?.width).toBeGreaterThanOrEqual(200)
+
+  // 1. Click toggle button -> collapses
+  await toggleBtn.click()
+  await expect(sidebar).toHaveClass(/is-collapsed/)
+  await page.waitForTimeout(250)
+  const collapsedBox = await sidebar.boundingBox()
+  expect(collapsedBox?.width).toBeLessThanOrEqual(80)
+  await page.screenshot({
+    path: 'C:/Users/logsh/.gemini/antigravity/brain/ba92870d-875f-4c69-8960-0970c0e3456a/sidebar_collapsed.png',
+  })
+
+  // 2. Nav links remain functional while collapsed
+  await page.getByTestId('nav-settings').click()
+  await expect(page.getByTestId('workspace-settings')).toBeVisible()
+  await expect(page).toHaveURL(/\/settings/)
+
+  await page.getByTestId('nav-overview').click()
+  await expect(page.getByTestId('workspace-overview')).toBeVisible()
+  // 3. Toggle button or keyboard shortcut Ctrl+B toggles back to expanded
+  await toggleBtn.click()
+  await expect(sidebar).not.toHaveClass(/is-collapsed/)
+  await page.waitForTimeout(250)
+  const reExpandedBox = await sidebar.boundingBox()
+  expect(reExpandedBox?.width).toBeGreaterThanOrEqual(200)
+  await page.screenshot({
+    path: 'C:/Users/logsh/.gemini/antigravity/brain/ba92870d-875f-4c69-8960-0970c0e3456a/sidebar_expanded.png',
+  })
+
+  // 4. Toggle button collapses again
+  await toggleBtn.click()
+  await expect(sidebar).toHaveClass(/is-collapsed/)
+})
+

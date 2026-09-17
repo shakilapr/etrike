@@ -121,21 +121,24 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 6px;
   margin-bottom: 8px;
 }
 
 .multi-meter-title {
-  font-size: 13px;
+  font-size: 12.5px;
   font-weight: 700;
   letter-spacing: 0.02em;
   color: var(--text);
   text-transform: uppercase;
+  white-space: nowrap;
 }
 
 .multi-meter-subtitle {
-  font-size: 11px;
+  font-size: 10px;
   color: var(--text-tertiary);
-  margin-left: 6px;
+  margin-left: 4px;
+  white-space: nowrap;
 }
 
 /* Gauge SVG Container */
@@ -193,6 +196,23 @@
   transition: all 200ms cubic-bezier(0.2, 0, 0, 1);
 }
 
+/* Target Setpoint Marker ('T' on Arc) */
+.multi-meter-target-tick {
+  stroke: #0284c7;
+  stroke-width: 3.5px;
+  stroke-linecap: round;
+  transition: all 200ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.multi-meter-target-text {
+  fill: #0284c7;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 800;
+  user-select: none;
+  transition: all 200ms cubic-bezier(0.2, 0, 0, 1);
+}
+
 /* Center Digital Readout (Nested inside the arc) */
 .multi-meter-center-readout {
   position: absolute;
@@ -241,43 +261,41 @@
   border-color: #cbd5e1;
 }
 
-.protocol-pill {
+.protocol-status-tag {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  font-size: 10px;
-  font-weight: 800;
+  gap: 3px;
+  font-size: 9.5px;
+  font-family: var(--font-mono);
+  font-weight: 700;
+  padding: 1.5px 6px;
+  border-radius: 4px;
+  letter-spacing: 0.02em;
+  line-height: 1.2;
 }
 
-.protocol-pill.tone-conforming {
+.protocol-status-tag.tone-conforming {
   background: var(--success-soft);
   color: var(--success);
   border: 1px solid rgba(33, 132, 90, 0.25);
 }
 
-.protocol-pill.tone-warning {
+.protocol-status-tag.tone-warning {
   background: var(--warning-soft);
   color: var(--warning);
   border: 1px solid rgba(154, 103, 0, 0.25);
 }
 
-.protocol-pill.tone-error {
+.protocol-status-tag.tone-error {
   background: var(--danger-soft);
   color: var(--danger);
   border: 1px solid rgba(186, 45, 54, 0.25);
 }
 
-.protocol-pill.tone-unverified {
+.protocol-status-tag.tone-unverified {
   background: var(--surface-2);
   color: var(--text-tertiary);
   border: 1px solid var(--border);
-}
-
-.protocol-dot {
-  display: none;
 }
 
 .multi-meter-center-value {
@@ -353,6 +371,29 @@
   background: #e4e4e7;
   flex-shrink: 0;
   margin: 0 10px;
+}
+
+/* 3-Column Sub-meter Strip (Speed: Host -> RT -> SYS Output) */
+.multi-meter-sub-strip.cols-3 .multi-meter-sub-col {
+  padding: 0 4px;
+}
+
+.multi-meter-sub-strip.cols-3 .multi-meter-sub-label {
+  font-size: 9.5px;
+  letter-spacing: 0.04em;
+}
+
+.multi-meter-sub-strip.cols-3 .multi-meter-sub-value {
+  font-size: 21px;
+}
+
+.multi-meter-sub-strip.cols-3 .multi-meter-sub-unit {
+  font-size: 10px;
+}
+
+.multi-meter-sub-strip.cols-3 .multi-meter-sub-divider {
+  margin: 0 4px;
+  height: 38px;
 }
 
 /* Integrated Secondary Metrics (e.g. Steering Yaw/Torque, Brake Stroke) */
@@ -448,6 +489,10 @@
   background: #059669;
 }
 
+.tier-dot.clamping {
+  background: #0284c7;
+}
+
 .text-host {
   color: #2563eb !important;
 }
@@ -524,12 +569,12 @@
   stroke-width: 2.5px;
 }
 
-/* Center Readout positioned comfortably inside R_RT (radius 96) */
+/* Center Readout positioned comfortably inside R_HOST with generous clearance from 0° apex tick */
 .steering-center-readout {
   position: absolute;
-  top: 55%;
+  top: 59%;
   left: 50%;
-  transform: translate(-50%, -45%);
+  transform: translate(-50%, -42%);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -539,16 +584,24 @@
   z-index: 2;
 }
 
+.steering-direction-badge-wrap {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 1px;
+  margin-bottom: 2px;
+}
+
 .steering-direction-badge {
   font-size: 10px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  color: #64748b;
+  color: #475569;
   background: #f1f5f9;
+  border: 1px solid #e2e8f0;
   padding: 1px 7px;
   border-radius: 9999px;
-  margin-bottom: 3px;
 }
 
 .steering-overflow-badge {
@@ -560,23 +613,29 @@
   padding: 1px 6px;
   border-radius: 9999px;
   letter-spacing: 0.04em;
-  margin-bottom: 3px;
 }
 
-/* ── Brake Meter Bespoke Styles ── */
-.brake-active-arc {
-  stroke: #18181b;
-  stroke-width: 8px;
-  stroke-linecap: round;
-  transition: all 200ms cubic-bezier(0.2, 0, 0, 1);
+/* ── Brake Meter Bespoke Styles (Horizontal Architecture) ── */
+.brake-meter-card {
+  display: flex;
+  flex-direction: column;
 }
 
-.brake-active-arc.is-active {
-  stroke: #0284c7;
+.brake-horiz-section {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 4px 0;
 }
 
-.brake-active-arc.is-danger {
-  stroke: #dc2626;
+.brake-horiz-readout-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 4px 0;
 }
 
 .brake-clamp-status-tag {
@@ -586,9 +645,136 @@
   letter-spacing: 0.08em;
   color: #64748b;
   background: #f1f5f9;
-  padding: 1px 7px;
+  padding: 2px 10px;
   border-radius: 9999px;
   margin-bottom: 2px;
+}
+
+.brake-horiz-value {
+  font-family: var(--font-mono);
+  font-size: 42px;
+  font-weight: 800;
+  line-height: 1;
+  color: #0f172a;
+  letter-spacing: -0.03em;
+}
+
+.brake-horiz-unit {
+  font-size: 14px;
+  font-weight: 600;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.brake-horiz-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #52525b;
+}
+
+/* Horizontal Meter Bar */
+.brake-horiz-meter-container {
+  width: 100%;
+  background: var(--surface-2, #f8fafc);
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: 8px;
+  padding: 10px 14px 14px;
+}
+
+.brake-horiz-meter-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.brake-horiz-track-wrap {
+  position: relative;
+  width: 100%;
+  padding-bottom: 18px;
+}
+
+.brake-horiz-track {
+  position: relative;
+  width: 100%;
+  height: 14px;
+  background: #e2e8f0;
+  border-radius: 7px;
+  overflow: visible;
+  border: 1px solid #cbd5e1;
+}
+
+.brake-horiz-fill {
+  height: 100%;
+  border-radius: 6px;
+  transition: width 180ms cubic-bezier(0.2, 0, 0, 1), background-color 180ms ease;
+}
+
+.brake-horiz-fill.fill-active {
+  background: linear-gradient(90deg, #38bdf8 0%, #0284c7 100%);
+}
+
+.brake-horiz-fill.fill-danger {
+  background: linear-gradient(90deg, #f87171 0%, #dc2626 100%);
+  box-shadow: 0 0 8px rgba(220, 38, 38, 0.4);
+}
+
+.brake-horiz-fill.fill-idle {
+  background: #94a3b8;
+}
+
+/* Needles on the horizontal bar */
+.brake-horiz-marker {
+  position: absolute;
+  top: -4px;
+  width: 3px;
+  height: 22px;
+  border-radius: 1.5px;
+  transform: translateX(-50%);
+  z-index: 2;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+  transition: left 180ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.brake-horiz-marker.host-marker {
+  background: #2563eb;
+}
+
+.brake-horiz-marker.rt-marker {
+  background: #059669;
+}
+
+.brake-horiz-ticks-row {
+  position: absolute;
+  top: 18px;
+  left: 0;
+  width: 100%;
+  height: 14px;
+}
+
+.brake-horiz-tick-item {
+  position: absolute;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.brake-horiz-tick-line {
+  width: 1px;
+  height: 4px;
+  background: #94a3b8;
+}
+
+.brake-horiz-tick-label {
+  font-size: 9.5px;
+  font-family: var(--font-mono, monospace);
+  font-weight: 600;
+  color: #64748b;
+  margin-top: 2px;
 }
 
 .brake-stroke-container {
@@ -733,17 +919,47 @@
 }
 
 /* ── 3-Column Vehicle Cluster Grid ── */
+.dashboard-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  max-height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  gap: 6px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.dashboard-hud-strip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 6px 14px;
+  box-shadow: var(--shadow-sm);
+  flex-shrink: 0;
+}
+
 .dashboard-cluster-grid {
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+  max-height: 100%;
+  overflow: hidden;
   display: grid;
   grid-template-columns: 1fr;
-  gap: 16px;
+  gap: 8px;
   align-items: stretch;
   width: 100%;
 }
 
 @media (min-width: 1100px) {
   .dashboard-cluster-grid {
-    grid-template-columns: 1fr 1.05fr 1.25fr;
+    grid-template-columns: 1fr 1.95fr 1.25fr;
   }
 }
 
@@ -751,27 +967,48 @@
   display: flex;
   flex-direction: column;
   height: 100%;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .dashboard-col-velocity .multi-meter-card {
   height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  padding: 10px 14px 8px;
 }
 
-.dashboard-col-stacked {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
+/* ── Chassis Column: Steering & Braking organized side-by-side in full height ── */
+.dashboard-col-chassis {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
   height: 100%;
+  min-height: 0;
+  overflow: hidden;
 }
 
-.dashboard-col-stacked .multi-meter-card {
-  flex: 1;
+.dashboard-col-chassis.view-steer {
+  grid-template-columns: 1fr;
+}
+
+.dashboard-col-chassis.view-brake {
+  grid-template-columns: 1fr;
+}
+
+.dashboard-col-chassis .multi-meter-card {
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  padding: 10px 12px 8px;
 }
 
 .dashboard-col-logger {
   display: flex;
   flex-direction: column;
   height: 100%;
+  min-height: 0;
+  overflow: hidden;
 }
 
 /* Compact Meter Card Adjustments */
@@ -845,7 +1082,7 @@
   display: flex;
   flex-direction: column;
   height: 100%;
-  min-height: 520px;
+  min-height: 0;
   overflow: hidden;
   transition: border-color var(--transition);
 }
@@ -858,34 +1095,42 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 12px 16px 10px;
+  padding: 10px 14px 8px;
   border-bottom: 1px solid var(--border);
   background: var(--surface);
 }
 
+.can-audit-header-title-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
 .can-audit-title {
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.03em;
+  letter-spacing: 0.04em;
   color: var(--text);
+  white-space: nowrap;
 }
 
 .can-audit-subtitle {
-  font-size: 11px;
+  font-size: 10px;
   color: var(--text-tertiary);
-  margin-left: 6px;
+  white-space: nowrap;
 }
 
 .can-audit-badge {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font-size: 10.5px;
+  font-size: 10px;
   font-weight: 700;
-  padding: 2px 8px;
+  padding: 2px 7px;
   border-radius: 9999px;
   font-family: var(--font-mono);
+  white-space: nowrap;
 }
 
 .can-audit-badge.tone-refusal {
@@ -910,14 +1155,14 @@
   background: var(--surface-2);
   border: 1px solid var(--border);
   border-radius: 4px;
-  width: 26px;
-  height: 26px;
+  width: 24px;
+  height: 24px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: 10.5px;
   transition: all var(--transition);
 }
 
@@ -927,27 +1172,27 @@
 }
 
 .can-audit-controls {
-  padding: 8px 14px;
+  padding: 6px 12px;
   background: var(--surface-2);
   border-bottom: 1px solid var(--border);
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
 }
 
 .can-audit-tabs {
   display: flex;
   align-items: center;
-  gap: 6px;
-  overflow-x: auto;
+  gap: 3px;
+  overflow-x: hidden;
 }
 
 .can-audit-tab {
   background: transparent;
   border: none;
   border-radius: 4px;
-  padding: 4px 10px;
-  font-size: 11px;
+  padding: 2.5px 7px;
+  font-size: 10.5px;
   font-weight: 600;
   color: var(--text-secondary);
   cursor: pointer;
@@ -989,7 +1234,8 @@
 .can-audit-stream {
   flex: 1;
   overflow-y: auto;
-  max-height: 420px;
+  max-height: none;
+  min-height: 0;
   padding: 10px 14px;
   display: flex;
   flex-direction: column;
@@ -1079,6 +1325,57 @@
   font-weight: 600;
   color: var(--text-tertiary);
   text-transform: uppercase;
+}
+
+.can-audit-sev-badge {
+  font-size: 8.5px;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-family: var(--font-mono);
+  letter-spacing: 0.04em;
+}
+
+.can-audit-sev-badge.sev-critical {
+  background: #7f1d1d;
+  color: #fef2f2;
+}
+
+.can-audit-sev-badge.sev-error {
+  background: #fecaca;
+  color: #991b1b;
+}
+
+.can-audit-sev-badge.sev-warning {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.can-audit-sev-badge.sev-info {
+  background: #e0f2fe;
+  color: #0369a1;
+}
+
+.can-audit-rx-badge {
+  font-size: 8.5px;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-family: var(--font-mono);
+  background: #f3e8ff;
+  color: #6b21a8;
+  border: 1px solid #e9d5ff;
+}
+
+.can-audit-root-badge {
+  font-size: 8.5px;
+  font-weight: 800;
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-family: var(--font-mono);
+  background: #dc2626;
+  color: #ffffff;
+  box-shadow: 0 0 6px rgba(220, 38, 38, 0.4);
 }
 
 .can-audit-time {
@@ -1400,4 +1697,235 @@
   min-height: 0;
   overflow-y: auto;
 }
+
+/* ── 10-Second Telemetry & Diagnostic Exporter ── */
+.dashboard-export-group {
+  position: relative;
+  display: inline-flex;
+  align-items: stretch;
+}
+
+.dashboard-export-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 10px;
+  font-size: 11.5px;
+  font-weight: 600;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+  transition: all var(--transition);
+  white-space: nowrap;
+}
+
+.dashboard-export-btn:hover {
+  background: var(--surface-2);
+  border-color: #94a3b8;
+}
+
+.dashboard-export-btn.is-recording {
+  background: #fef2f2;
+  border-color: #ef4444;
+  color: #b91c1c;
+  animation: exportRecordingPulse 1.2s infinite ease-in-out;
+}
+
+@keyframes exportRecordingPulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.15);
+  }
+}
+
+.dashboard-record-pulse-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #ef4444;
+  display: inline-block;
+  animation: exportDotBlink 0.8s infinite alternate;
+}
+
+@keyframes exportDotBlink {
+  from { opacity: 0.4; }
+  to { opacity: 1; }
+}
+
+.dashboard-export-chevron {
+  padding: 0 4px;
+  border-left: 1px solid var(--border);
+  cursor: pointer;
+  font-size: 9px;
+  display: inline-flex;
+  align-items: center;
+}
+
+.dashboard-export-dropdown {
+  position: absolute;
+  top: calc(100% + 5px);
+  right: 0;
+  z-index: 60;
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.12);
+  padding: 4px;
+  min-width: 250px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.dashboard-export-item {
+  display: flex;
+  flex-direction: column;
+  padding: 6px 8px;
+  border-radius: 4px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.12s;
+}
+
+.dashboard-export-item:hover {
+  background: #f1f5f9;
+}
+
+.dashboard-export-item-title {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.dashboard-export-item-desc {
+  font-size: 10px;
+  color: #64748b;
+  margin-top: 1px;
+}
+
+/* ── LLM Diagnostic Export Modal ── */
+.dashboard-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: rgba(15, 23, 42, 0.65);
+  backdrop-filter: blur(2px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.dashboard-modal-card {
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  width: 100%;
+  max-width: 640px;
+  max-height: 88vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.22);
+  overflow: hidden;
+}
+
+.dashboard-modal-header {
+  padding: 12px 16px;
+  border-bottom: 1px solid #e2e8f0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #f8fafc;
+}
+
+.dashboard-modal-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: #0f172a;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dashboard-modal-close {
+  background: transparent;
+  border: none;
+  font-size: 16px;
+  color: #64748b;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.dashboard-modal-close:hover {
+  color: #0f172a;
+  background: #e2e8f0;
+}
+
+.dashboard-modal-body {
+  padding: 14px 16px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  font-size: 12px;
+}
+
+.dashboard-summary-chips-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+}
+
+.dashboard-summary-chip {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  padding: 8px 10px;
+}
+
+.dashboard-summary-chip-k {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: #64748b;
+  letter-spacing: 0.05em;
+}
+
+.dashboard-summary-chip-v {
+  font-size: 12px;
+  font-weight: 600;
+  color: #0f172a;
+  margin-top: 2px;
+}
+
+.dashboard-llm-preview-box {
+  background: #0f172a;
+  color: #e2e8f0;
+  border-radius: 6px;
+  padding: 10px 12px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  max-height: 180px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  line-height: 1.45;
+}
+
+.dashboard-modal-footer {
+  padding: 10px 16px;
+  border-top: 1px solid #e2e8f0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  background: #f8fafc;
+}
+
 

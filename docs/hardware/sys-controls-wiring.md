@@ -9,36 +9,29 @@ Relay: 12 V 8-ch, active-LOW (IN LOW = ON). If yours is active-HIGH, skip the UL
 GND common: Relay GND = ULN2803 GND = ESP32 GND = lamp −
 ```
 
-## Outputs: ESP32 → ULN2803A → Relay IN
+## Outputs: ESP32 → ULN2803A → Relay Module (Pin-to-Pin & Screw Terminals)
 
-| ESP32 | ULN | Relay | Function |
-|-------|-----|-------|----------|
-| GPIO48 | IN1→OUT1 | IN1/K1 | AUTO |
-| GPIO39 | IN2→OUT2 | IN2/K2 | MANUAL |
-| GPIO17 | IN3→OUT3 | IN3/K3 | READY |
-| GPIO20 | IN4→OUT4 | IN4/K4 | *(Unused - USB conflict)* |
-| GPIO14 | IN5→OUT5 | IN5/K5 | BYPASS amber |
-| GPIO18 | IN6→OUT6 | IN6/K6 | **ESTOP red** |
-| GPIO19 | IN7→OUT7 | IN7/K7 | *(Unused - USB conflict)* |
-| GPIO21 | IN8→OUT8 | IN8/K8 | Brake lamp |
+| Relay Ch | Signal Name (Code) | ESP32 Pin | ULN2803A | Screw Terminals (COM / NO / NC) | Connected Load (+12 V) |
+|:---:|---|:---:|:---:|---|---|
+| **K1** | AUTO (`kBulbAuto`) | **GPIO 48** | 1 → 18 | `COM: +12V` \| `NO: Output` \| `NC: Open` | 12 V AUTO Mode Lamp (+) |
+| **K2** | MANUAL (`kBulbManual`) | **GPIO 39** | 2 → 17 | `COM: +12V` \| `NO: Output` \| `NC: Open` | 12 V MANUAL Mode Lamp (+) |
+| **K3** | READY (`kBulbReady`) | **GPIO 17** | 3 → 16 | `COM: +12V` \| `NO: Output` \| `NC: Open` | 12 V READY Green Lamp (+) |
+| **K4** | *Reserved (Native USB D+)* | **GPIO 20** | 4 → 15 | **Leave All Terminals Open** | **DO NOT USE (Native USB D+)** |
+| **K5** | BYPASS (`kBulbBypass`) | **GPIO 14** | 5 → 14 | `COM: +12V` \| `NO: Output` \| `NC: Open` | 12 V BYPASS Amber Lamp (+) |
+| **K6** | ESTOP (`kBulbEstop`) | **GPIO 18** | 6 → 13 | `COM: +12V` \| `NO: Output` \| `NC: Open` | 12 V ESTOP Red Lamp (+) |
+| **K7** | *Reserved (Native USB D-)* | **GPIO 19** | 7 → 12 | **Leave All Terminals Open** | **DO NOT USE (Native USB D-)** |
+| **K8** | Brake (`kLightBrake`) | **GPIO 21** | 8 → 11 | `COM: +12V` \| `NO: Output` \| `NC: Open` | 12 V Rear Brake Light (+) |
 
-> **Special Note for Side Signals / Unused Pins:**
-> Relays K4 (GPIO20) and K7 (GPIO19) are connected to the ESP32-S3's Native USB data lines (D+ and D-). The side signal lamps and old ESTOP routing have been removed from the firmware. **Do not connect any side lamps or loads to Relay K4 or K7 while using USB!** If a USB cable is connected, the USB data signals will rapidly toggle these relays.
+- **Terminal Rules:** `COM` = +12 V (Fused 5 A Bus); `NO` = Switched +12 V feed to Lamp (+); `NC` = Leave open/unused.
+- **Ground & Supply:** All lamp negative (−) leads return to Common GND (0 V). ULN Pin 9 → GND; Pin 10 → +12 V Fused Rail.
 
-```
-ESP32 GPIO → ULN INx
-ULN OUTx → Relay INx
-ULN COM: not used
-```
-
-GPIO40: not used, leave unconnected.
-
-## Lamps
+> **USB Pin Conflict Warning (GPIO 19 & GPIO 20):**
+> Relays K4 (GPIO 20) and K7 (GPIO 19) are connected to the ESP32-S3's Native USB data lines (`D+` and `D-`). **Leave Relay K4 and K7 completely disconnected (NO, COM, NC all open)!** If a USB cable is connected, USB data signals will rapidly chatter these relays.
 
 ```
-+12 V (fused) → Relay COM
-Relay NO → Lamp +
-Lamp − → GND
+ESP32 GPIO (3.3V) ──► ULN2803A Sink ──► Relay Module (Active-LOW) ──► Relay NO ──► 12V Lamp (+)
++12V (Fused Bus)  ──────────────────────────────────────────────────► Relay COM
+Common GND (0V)   ────────────────────────────────────────────────────────────────► Lamp (-)
 ```
 
 ## Switches (wire to GND)

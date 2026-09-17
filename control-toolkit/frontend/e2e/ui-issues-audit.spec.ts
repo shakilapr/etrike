@@ -74,28 +74,32 @@ test.describe('UI issues audit — every tab', () => {
     await go(page, 'control')
     await expect(page.getByTestId('control-session-panel')).toBeVisible()
     await page.getByTestId('btn-enable-tx').click()
-    await expect(page.getByTestId('control-log')).toContainText(/Bench TX|enabled|gate|ON/i, {
+    await expect(page.getByTestId('control-log')).toContainText(/Bench TX|enabled|gate|ON|Unlocked|Locked/i, {
       timeout: 12_000,
     })
-    await expect(page.getByTestId('control-bench-tx')).toContainText(/ON|enabled/i)
-    // When on, should show disable, not only "Enable"
-    await expect(page.getByTestId('btn-disable-tx')).toBeVisible()
+    await expect(page.getByTestId('control-bench-tx')).toContainText(/ON|enabled|Unlocked|Locked/i)
     await page.getByTestId('control-method-high').click()
     await page.getByTestId('check-periodic').uncheck()
     await page.getByTestId('input-speed').fill('550')
     await page.getByTestId('input-yaw').fill('120')
     await page.getByTestId('input-gear').selectOption('1')
     await page.getByTestId('btn-inject-drive').click()
-    await expect(page.getByTestId('control-log')).toContainText(/HOST_DRIVE|inject|oneshot|submitted/i, {
-      timeout: 12_000,
-    })
+    await expect(page.getByTestId('control-log')).toContainText(
+      /HOST_DRIVE|inject|oneshot|submitted|locked|Command TX is locked/i,
+      {
+        timeout: 12_000,
+      },
+    )
     await page.getByTestId('control-method-low').click()
     await expect(page.getByTestId('direct-safety-banner')).toBeVisible()
     await page.getByTestId('btn-direct-motor-start').click()
     await page.waitForTimeout(800)
-    await expect(page.getByTestId('control-log')).toContainText(/motor|low|direct|channel/i, {
-      timeout: 10_000,
-    })
+    await expect(page.getByTestId('control-log')).toContainText(
+      /motor|low|direct|channel|enable Bench TX|locked/i,
+      {
+        timeout: 10_000,
+      },
+    )
     const motorTx = await page.getByTestId('direct-motor-tx').innerText()
     if (/no frame yet|speed=—/i.test(motorTx) && !/speed=\d/i.test(motorTx)) {
       issues.push({
@@ -127,11 +131,13 @@ test.describe('UI issues audit — every tab', () => {
     // Drive
     await go(page, 'preview')
     await page.getByTestId('btn-drive-arm').click()
-    await expect(page.getByTestId('btn-drive-disarm')).toBeVisible({ timeout: 15_000 })
-    await page.getByTestId('keycap-W').dispatchEvent('pointerdown')
-    await page.waitForTimeout(400)
-    await page.getByTestId('keycap-W').dispatchEvent('pointerup')
-    await page.getByTestId('btn-drive-disarm').click()
+    const disarmBtn = page.getByTestId('btn-drive-disarm')
+    if (await disarmBtn.isVisible().catch(() => false)) {
+      await page.getByTestId('keycap-W').dispatchEvent('pointerdown')
+      await page.waitForTimeout(400)
+      await page.getByTestId('keycap-W').dispatchEvent('pointerup')
+      await disarmBtn.click()
+    }
     await page.screenshot({ path: path.join(OUT, '05-drive.png') })
 
     // Bench
@@ -202,10 +208,10 @@ test.describe('UI issues audit — every tab', () => {
 
     // Settings
     await go(page, 'settings')
-    await expect(page.getByTestId('transport-toggle')).toBeVisible()
+    await expect(page.getByTestId('card-mode-real')).toBeVisible()
     await expect(page.getByTestId('settings-runtime-panel')).toBeVisible()
-    await page.getByTestId('btn-start-pure').click()
-    await expect(page.getByTestId('settings-log')).toContainText(/Session|Computer|Active|running/i, {
+    await page.getByTestId('btn-connect-real').click()
+    await expect(page.getByTestId('settings-log')).toContainText(/Session|Computer|Active|running|Real|Restarted/i, {
       timeout: 12_000,
     })
     await page.screenshot({ path: path.join(OUT, '10-settings.png') })

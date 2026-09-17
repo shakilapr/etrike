@@ -42,6 +42,7 @@
   --invalid: var(--danger);
 
   --sidebar-w: 252px;
+  --sidebar-w-collapsed: 54px;
   /* Compact 2-row health bar; layout budget for full-height panes */
   --topbar-h: 96px;
 

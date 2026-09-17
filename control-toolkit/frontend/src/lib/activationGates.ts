@@ -37,8 +37,7 @@ export function evaluateActivationGates(
   messages: MessageState[],
   isDemo = false,
 ): ActivationAuditReport {
-  const hasFrames = messages.length > 0
-  const useSim = isDemo || !hasFrames
+  const useSim = isDemo || messages.length === 0
 
   // 1. Fetch relevant messages
   const sysMode = findMsg(messages, 'SYS_MODE_CMD', 'low')

@@ -642,3 +642,158 @@ main {
   background: var(--bg);
 }
 
+/* ── Collapsed Sidebar Modifiers ────────────────────────────────── */
+
+.sidebar.is-collapsed .sidebar-nav {
+  padding: 8px 4px;
+  align-items: center;
+}
+
+.sidebar.is-collapsed .nav-section {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.sidebar.is-collapsed .nav-section + .nav-section {
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.sidebar.is-collapsed .nav-label {
+  display: none;
+}
+
+.sidebar.is-collapsed button.nav,
+.sidebar.is-collapsed button.nav:hover:not(:disabled),
+.sidebar.is-collapsed button.nav:focus:not(:disabled),
+.sidebar.is-collapsed button.nav:active:not(:disabled),
+.sidebar.is-collapsed button.nav.active,
+.sidebar.is-collapsed button.nav.active:hover:not(:disabled),
+.sidebar.is-collapsed button.nav.active:focus:not(:disabled) {
+  width: 36px;
+  min-width: 36px;
+  max-width: 36px;
+  height: 34px;
+  min-height: 34px;
+  max-height: 34px;
+  padding: 0;
+  justify-content: center;
+  border-radius: var(--radius);
+  box-shadow: none;
+  margin: 1px 0;
+}
+
+.sidebar.is-collapsed button.nav .nav-text,
+.sidebar.is-collapsed button.nav > span {
+  display: none;
+}
+
+.sidebar.is-collapsed button.nav.active {
+  background: var(--surface);
+  color: var(--primary);
+  box-shadow: inset 2px 0 0 var(--primary), 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+/* Collapsed vehicle card & system card */
+.sidebar.is-collapsed .vehicle-card {
+  margin: 6px 4px 0;
+  padding: 6px 0;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.72);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.sidebar.is-collapsed .vehicle-card-header {
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.sidebar.is-collapsed .vehicle-card-title > div,
+.sidebar.is-collapsed .vehicle-live,
+.sidebar.is-collapsed .vehicle-offline,
+.sidebar.is-collapsed .vehicle-readouts,
+.sidebar.is-collapsed .vehicle-cmd-strip {
+  display: none;
+}
+
+.sidebar.is-collapsed .system-card {
+  margin: auto 4px 8px;
+  padding: 6px 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.6);
+  border-radius: var(--radius);
+}
+
+.sidebar.is-collapsed .system-card-row {
+  align-items: center;
+  gap: 0;
+}
+
+.sidebar.is-collapsed .system-card-row .status-dot {
+  margin-top: 0;
+}
+
+.sidebar.is-collapsed .system-card-row > div {
+  display: none;
+}
+
+/* Collapsed contextual sidebars (Control / Monitor) */
+.sidebar.is-collapsed .sidebar-body.control-toolbox,
+.sidebar.is-collapsed .sidebar-body.monitor-sidebar {
+  padding: 8px 4px;
+  gap: 8px;
+  align-items: center;
+}
+
+.sidebar.is-collapsed .context-sidebar-head small,
+.sidebar.is-collapsed .context-sidebar-head strong,
+.sidebar.is-collapsed .context-sidebar-head .nav-label {
+  display: none;
+}
+
+.sidebar.is-collapsed .context-sidebar-head {
+  padding: 2px 0 6px;
+  text-align: center;
+  border-bottom: 0;
+}
+
+.sidebar.is-collapsed .control-toolbox-block .nav-label,
+.sidebar.is-collapsed .control-toolbox-block .control-kb-legend,
+.sidebar.is-collapsed .control-toolbox-block .ok-text,
+.sidebar.is-collapsed .control-toolbox-block dl,
+.sidebar.is-collapsed .context-arm-card > div,
+.sidebar.is-collapsed .control-toolbox-sticky-footer .context-warning,
+.sidebar.is-collapsed .control-toolbox-sticky-footer .control-toolbox-note,
+.sidebar.is-collapsed .monitor-filters,
+.sidebar.is-collapsed .monitor-msg-name,
+.sidebar.is-collapsed .monitor-msg-chevron,
+.sidebar.is-collapsed .monitor-msg-stats,
+.sidebar.is-collapsed .monitor-msg-signals {
+  display: none;
+}
+
+.sidebar.is-collapsed .context-arm-card {
+  grid-template-columns: 1fr;
+  padding: 4px 2px;
+  justify-items: center;
+  width: 100%;
+}
+
+.sidebar.is-collapsed .control-toolbox-actions button,
+.sidebar.is-collapsed .context-arm-card button {
+  padding: 3px 2px;
+  font-size: 9.5px;
+  width: 100%;
+}
+

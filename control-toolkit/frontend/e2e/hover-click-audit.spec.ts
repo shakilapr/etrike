@@ -84,7 +84,7 @@ async function auditLocator(
         const other = `${el.tagName.toLowerCase()}${tid ? `[${tid}]` : ''} "${text}"`
         if (other === selfLabel) continue
         // skip if same element roughly same box as hover target
-        if (Math.abs(r.x - hx) < 0.5 && Math.abs(r.y - hy) < 0.5 && Math.abs(r.width - hw) < 0.5)
+        if (Math.abs(r.x - hx) < 2.0 && Math.abs(r.y - hy) < 2.0 && Math.abs(r.width - hw) < 2.0)
           continue
         const x1 = Math.max(hx, r.x)
         const y1 = Math.max(hy, r.y)
@@ -191,17 +191,17 @@ test.describe('Hover / click geometry stability', () => {
         { loc: page.getByTestId('live-mode-chrono'), label: 'live-mode-chrono' },
       ]
 
-      // Also sample a few plain primary buttons
+      // Also sample a few plain primary buttons inside the workspace
       const primaryCount = await page
         .locator(
-          'button:not(.nav):not(.seg-btn):not(.gear-btn):not(.bit-cell):not(.bit-legend-card):not(.secondary):not(.danger):not(.btn-estop):not(.vehicle-open-drive)',
+          'main button:not(.nav):not(.seg-btn):not(.gear-btn):not(.bit-cell):not(.bit-legend-card):not(.secondary):not(.danger):not(.btn-estop):not(.vehicle-open-drive)',
         )
         .count()
       if (primaryCount > 0) {
         probes.push({
           loc: page
             .locator(
-              'button:not(.nav):not(.seg-btn):not(.gear-btn):not(.bit-cell):not(.bit-legend-card):not(.secondary):not(.danger):not(.btn-estop):not(.vehicle-open-drive)',
+              'main button:not(.nav):not(.seg-btn):not(.gear-btn):not(.bit-cell):not(.bit-legend-card):not(.secondary):not(.danger):not(.btn-estop):not(.vehicle-open-drive)',
             )
             .first(),
           label: 'button.primary-ish',

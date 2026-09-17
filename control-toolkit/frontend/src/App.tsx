@@ -25,11 +25,30 @@ export default function App() {
   useBackendStream()
   const workspace = useAppStore((s) => s.workspace)
   const setWorkspace = useAppStore((s) => s.setWorkspace)
+  const toggleSidebar = useAppStore((s) => s.toggleSidebar)
   const mainRef = useRef<HTMLElement>(null)
 
   useEffect(() => {
     mainRef.current?.scrollTo({ top: 0, left: 0 })
   }, [workspace])
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'b') {
+        const t = e.target as HTMLElement | null
+        if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT')) {
+          return
+        }
+        e.preventDefault()
+        toggleSidebar()
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [toggleSidebar])
 
   useEffect(() => {
     // 1. Initial mount sync: if root '/' normalize to '/overview' with replaceState
@@ -62,7 +81,7 @@ export default function App() {
           ref={mainRef}
           className={cn(
             'min-h-0 min-w-0 flex-1',
-            workspace === 'dashboard' ? 'overflow-hidden' : 'overflow-auto',
+            workspace === 'dashboard' ? 'overflow-hidden h-full max-h-full' : 'overflow-auto',
           )}
         >
           {workspace === 'overview' && <Overview />}

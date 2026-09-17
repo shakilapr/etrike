@@ -1,20 +1,15 @@
 import { useState, useMemo, useEffect, useRef } from "react"
 import type { MessageState, Status } from "../store"
-import { signalNum, frameRecent, findMsg, nodeStateLabel } from "../lib/signals"
+import { signalNum, frameRecent, findMsg } from "../lib/signals"
+import {
+  parseDiagEventReport,
+  parseEstopResetRsp,
+  parseNodeStatus,
+  type CanAuditCategory,
+  type CanAuditEntry,
+} from "../lib/canProtocolRules"
 
-export type CanAuditCategory = "refusal" | "state" | "report" | "fault"
-
-export type CanAuditEntry = {
-  id: string
-  timestamp: string
-  category: CanAuditCategory
-  canIdHex: string
-  msgName: string
-  subsystem: "Steering" | "Braking" | "Speed" | "System" | "Safety"
-  title: string
-  description: string
-  details?: Record<string, unknown>
-}
+export type { CanAuditCategory, CanAuditEntry }
 
 export type CanAuditLoggerProps = {
   messages: MessageState[]
@@ -29,88 +24,191 @@ const DEMO_ENTRIES: CanAuditEntry[] = [
     timestamp: "12:04:12.410",
     category: "refusal",
     canIdHex: "0x115",
-    msgName: "ESTOP_RESET_REPORT",
+    msgName: "SYS_ESTOP_RESET_RSP",
     subsystem: "Safety",
-    title: "ESTOP Reset Refused by SYS",
-    description: "SYS rejected 0x114 reset intent: active blocker asserted (SEB L3 fault active). Reset prohibited while cause is unrecovered.",
-    details: { result: "REJECTED", active_blocker: "SEB_L3", latched_cause: "0x721 error_status=3" }
+    severity: "CRITICAL",
+    reaction: "ESTOP",
+    title: "ESTOP Reset Refused: LATCHED_FAULT_ASSERTED (0x115)",
+    description: "SYS rejected 0x114 remote reset: blocker_mask=0x0002 asserted (SEB L3 transducer fault active). Reset prohibited while cause is unrecovered.",
+    details: {
+      result: "REJECTED",
+      request_seq: 14,
+      blocker_mask: "0x0002",
+      decoded_blockers: ["LATCHED_FAULT_ASSERTED: Latched safety fault remains asserted"],
+      source_rule: "sys-esp32/src/inhibit_state.h",
+    }
   },
   {
     id: "demo-2",
+    timestamp: "12:04:12.415",
+    category: "refusal",
+    canIdHex: "0x601",
+    msgName: "SYS_DIAG_EVENT_RPT",
+    subsystem: "Braking",
+    severity: "CRITICAL",
+    reaction: "ESTOP",
+    isRootEstop: true,
+    title: "[SYS] SYS_SEB_L3_FAULT (0x0104)",
+    description: "SEB reported Level-3 internal transducer/actuator fault (error_status=3). Active blocker asserts kLatchedSebL3; resets prohibited.",
+    details: {
+      diag_id: "0x0104",
+      key: "SYS_SEB_L3_FAULT",
+      reporter: "SYS",
+      subsystem: "BRAKE",
+      severity: "CRITICAL",
+      reaction: "ESTOP",
+      state: "LATCHED",
+      occurrences: 1,
+      flags: "0x01 (First Local ESTOP Cause)",
+    }
+  },
+  {
+    id: "demo-3",
     timestamp: "12:04:14.820",
     category: "refusal",
     canIdHex: "0x201",
     msgName: "SES_STATUS",
     subsystem: "Steering",
-    title: "Steering Autonomy Refused: Manual Override",
+    severity: "WARNING",
+    reaction: "INHIBIT",
+    title: "Steering Autonomy Refused: Driver Manual Override (0x201)",
     description: "Driver applied 4.8 Nm manual counter-torque to handlebars. EPS controller suspended host guidance and yielded control to operator.",
-    details: { torque_nm: 4.8, ses_mode: "MANUAL_OVERRIDE", host_target_deg: 14.0 }
+    details: {
+      torque_nm: 4.8,
+      override_threshold_nm: 3.0,
+      control_mode: 0,
+      host_target_deg: 14.0,
+    }
   },
   {
-    id: "demo-3",
+    id: "demo-4",
     timestamp: "12:04:15.110",
     category: "refusal",
     canIdHex: "0x204",
     msgName: "RT_DRIVE_CMD",
     subsystem: "Speed",
-    title: "Speed Demand Clamped by RT Safety Limiter",
+    severity: "WARNING",
+    reaction: "DERATE",
+    title: "Speed Demand Clamped: RT Dynamic Curvature Limiter (0x204)",
     description: "Host requested 100 km/h (27778 mm/s), but RT clamped output to 97 km/h (26944 mm/s) based on active steer angle curvature limits.",
-    details: { host_demand_mmps: 27778, rt_clamped_mmps: 26944, delta_kmh: -3.0 }
-  },
-  {
-    id: "demo-4",
-    timestamp: "12:04:16.050",
-    category: "state",
-    canIdHex: "0x012",
-    msgName: "RT_STATUS",
-    subsystem: "System",
-    title: "RT Node State: STANDBY → ACTIVE",
-    description: "RT supervisor confirmed heartbeats from SYS and MTR. Safety checks passed; closed-loop motion control loop engaged.",
-    details: { prev_state: "STANDBY", new_state: "ACTIVE", safety_state: "0x01 (Nominal)" }
+    details: {
+      host_demand_mmps: 27778,
+      rt_clamped_mmps: 26944,
+      delta_kmh: -3.0,
+      host_steer_deg: 24.5,
+    }
   },
   {
     id: "demo-5",
+    timestamp: "12:04:15.650",
+    category: "refusal",
+    canIdHex: "0x621",
+    msgName: "RT_DIAG_EVENT_RPT",
+    subsystem: "Steering",
+    severity: "CRITICAL",
+    reaction: "ESTOP",
+    title: "[RT] RT_STEER_FOLLOWING_ERROR (0x0203)",
+    description: "Steering tracking excursion: Absolute discrepancy between RT target (0x169) and SES actual angle (0x201) exceeded tolerance (>10°). Following Error: 12.4°.",
+    details: {
+      diag_id: "0x0203",
+      key: "RT_STEER_FOLLOWING_ERROR",
+      reporter: "RT",
+      subsystem: "STEERING",
+      severity: "CRITICAL",
+      reaction: "ESTOP",
+      state: "ACTIVE",
+      snapshot_data: 124,
+      decoded_snapshot: "Following Error: 12.4°",
+      occurrences: 2,
+    }
+  },
+  {
+    id: "demo-6",
+    timestamp: "12:04:16.050",
+    category: "state",
+    canIdHex: "0x501",
+    msgName: "RT_NODE_STATUS",
+    subsystem: "System",
+    severity: "INFO",
+    reaction: "NONE",
+    title: "Node State: RT STANDBY → ACTIVE (0x501)",
+    description: "RT motion supervisor confirmed authority from SYS. Closed-loop control active. Block mask: 0x0000.",
+    details: {
+      reporter: "RT",
+      prev_state: "STANDBY",
+      new_state: "ACTIVE",
+      block_mask: "0x0000",
+      output_enabled: true,
+    }
+  },
+  {
+    id: "demo-7",
     timestamp: "12:04:16.420",
     category: "report",
     canIdHex: "0x721",
     msgName: "SEB_STATUS",
     subsystem: "Braking",
-    title: "SEB Hydraulic Clamping Report",
+    severity: "INFO",
+    reaction: "NONE",
+    title: "SEB Hydraulic Clamping Report (0x721)",
     description: "Brake-by-wire transducer verified 1850 kPa hydraulic line pressure at 18.5 mm caliper travel. System calibrated and fully responsive.",
-    details: { pressure_kpa: 1850, stroke_mm: 18.5, error_status: 0 }
+    details: {
+      pressure_kpa: 1850,
+      stroke_mm: 18.5,
+      error_status: 0,
+    }
   },
   {
-    id: "demo-6",
+    id: "demo-8",
     timestamp: "12:04:17.150",
     category: "report",
     canIdHex: "0x201",
     msgName: "SES_STATUS",
     subsystem: "Steering",
-    title: "SES Steer-by-Wire Calibration Report",
+    severity: "INFO",
+    reaction: "NONE",
+    title: "SES Steer-by-Wire Calibration Report (0x201)",
     description: "EPS zero-point alignment confirmed valid. Measured actual angle: +12.4°, closed-loop error within ±0.2° tolerance.",
-    details: { angle_deg: 12.4, aligned: true, fault_level: "L0_NORMAL" }
+    details: {
+      angle_deg: 12.4,
+      aligned: true,
+      fault_level: "L0_NORMAL",
+    }
   },
   {
-    id: "demo-7",
+    id: "demo-9",
     timestamp: "12:04:17.650",
     category: "refusal",
     canIdHex: "0x169",
     msgName: "VCU_SES_REQ",
     subsystem: "Steering",
-    title: "Steering Autonomy Refused: Control Enable Inactive",
+    severity: "ERROR",
+    reaction: "INHIBIT",
+    title: "Steering Autonomy Refused: control_enable Inactive (0x169)",
     description: "SES Steer-by-Wire requires control_enable=1 (0x169) before engaging closed-loop tracking. Actuator is currently in passive mode.",
-    details: { control_enable: 0, required: 1, action: "Set control_enable=1 in RT VCU_SES_REQ" }
+    details: {
+      control_enable: 0,
+      required: 1,
+      action: "Set control_enable=1 in RT VCU_SES_REQ",
+    }
   },
   {
-    id: "demo-8",
+    id: "demo-10",
     timestamp: "12:04:18.020",
     category: "report",
     canIdHex: "0x110",
     msgName: "SYS_MODE_CMD",
     subsystem: "System",
-    title: "AUTO Mode Gate Matrix: 6/6 Controllers Synchronized",
+    severity: "INFO",
+    reaction: "NONE",
+    title: "AUTO Mode Gate Matrix: 6/6 Controllers Synchronized (0x110)",
     description: "SYS confirmed mode=AUTO (0x110), power=ON (0x113), zero-point aligned (0x201), SEB nominal (0x721). Autonomy pipeline fully cleared.",
-    details: { sys_mode: "AUTO", contactor: "CLOSED", ses_aligned: true, seb_error: 0 }
+    details: {
+      sys_mode: "AUTO",
+      contactor: "CLOSED",
+      ses_aligned: true,
+      seb_error: 0,
+    }
   }
 ]
 
@@ -132,12 +230,15 @@ export function CanAuditLogger({
     lastSesFault?: number
     lastSebFault?: number
     seenEventIds: Set<string>
-  }>({ seenEventIds: new Set() })
+    prevNodeStates: Record<string, string>
+  }>({ seenEventIds: new Set(), prevNodeStates: {} })
 
-  // Initialize with demo entries if no frames or in demo mode
+  // Initialize with demo entries only in explicit demo mode
   useEffect(() => {
-    if (isDemo || messages.length === 0) {
+    if (isDemo) {
       setEntries(DEMO_ENTRIES)
+    } else if (messages.length === 0) {
+      setEntries([])
     }
   }, [isDemo, messages.length])
 
@@ -150,34 +251,250 @@ export function CanAuditLogger({
     const timeStr = now.toTimeString().split(" ")[0] + "." + String(now.getMilliseconds()).padStart(3, "0")
     const obs = lastObservedRef.current
 
-    // 1. ESTOP Reset Refusal & ESTOP Transitions (0x115, 0x001)
-    const resetRpt = findMsg(messages, "ESTOP_RESET_REPORT")
-    if (resetRpt && frameRecent(resetRpt, 2000)) {
-      const res = String(resetRpt.signals?.result?.enum_label ?? resetRpt.signals?.result?.engineering_value ?? "").toUpperCase()
-      const eventKey = "reset-rpt-" + resetRpt.age_ms
-      if (res && res !== "OK" && res !== "SUCCESS" && !obs.seenEventIds.has(eventKey)) {
-        obs.seenEventIds.add(eventKey)
+    // ── 1. Canonical Diagnostic Event Reports (0x601 SYS, 0x621 RT, 0x631 MTR) ──
+    for (const msg of messages) {
+      const isDiagRpt =
+        msg.can_id === 0x601 ||
+        msg.can_id === 0x621 ||
+        msg.can_id === 0x631 ||
+        msg.name?.includes("DIAG_EVENT_RPT")
+
+      if (isDiagRpt && frameRecent(msg, 3000)) {
+        const parsed = parseDiagEventReport(msg)
+        if (parsed) {
+          const eventKey = `diag-${msg.can_id}-${parsed.diagId}-${parsed.reportCounter}-${parsed.stateNum}`
+          if (!obs.seenEventIds.has(eventKey)) {
+            obs.seenEventIds.add(eventKey)
+
+            const isEstopReaction = parsed.def?.reaction === "ESTOP"
+            const isInhibitReaction = parsed.def?.reaction === "INHIBIT"
+            const isRefusal =
+              isEstopReaction ||
+              parsed.def?.refusalType != null ||
+              (parsed.stateName === "ACTIVE" && isInhibitReaction)
+            const isFault =
+              parsed.def?.severity === "ERROR" || parsed.def?.severity === "CRITICAL"
+            const isState =
+              parsed.stateName === "RECOVERED" || parsed.stateName === "CLEARED"
+            const cat: CanAuditCategory = isRefusal
+              ? "refusal"
+              : isFault
+              ? "fault"
+              : isState
+              ? "state"
+              : "report"
+
+            const reporter =
+              parsed.def?.reporter ??
+              (msg.can_id === 0x601 ? "SYS" : msg.can_id === 0x621 ? "RT" : "MTR")
+
+            const subsystem: CanAuditEntry["subsystem"] =
+              parsed.def?.subsystem === "SAFETY"
+                ? "Safety"
+                : parsed.def?.subsystem === "STEERING"
+                ? "Steering"
+                : parsed.def?.subsystem === "BRAKE"
+                ? "Braking"
+                : parsed.def?.subsystem === "POWERTRAIN"
+                ? "Powertrain"
+                : parsed.def?.subsystem === "COMMUNICATION"
+                ? "Communication"
+                : "System"
+
+            newItems.push({
+              id: `diag-rpt-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+              timestamp: timeStr,
+              category: cat,
+              canIdHex: `0x${(msg.can_id ?? 0x601).toString(16).toUpperCase().padStart(3, "0")}`,
+              msgName: msg.name ?? `${reporter}_DIAG_EVENT_RPT`,
+              subsystem,
+              severity: parsed.def?.severity ?? "ERROR",
+              reaction: parsed.def?.reaction ?? "NONE",
+              isRootEstop: parsed.isRootEstop,
+              title: `[${reporter}] ${parsed.def?.key ?? parsed.diagIdHex} (${parsed.diagIdHex})`,
+              description: `${parsed.def?.description ?? "Diagnostic report asserted on CAN."} State: ${parsed.stateName}. Reaction: ${parsed.def?.reaction ?? "NONE"}.${parsed.decodedSnapshot !== "None" ? " " + parsed.decodedSnapshot : ""}`,
+              details: {
+                diag_id: parsed.diagIdHex,
+                key: parsed.def?.key,
+                reporter,
+                subsystem: parsed.def?.subsystem,
+                severity: parsed.def?.severity,
+                reaction: parsed.def?.reaction,
+                state: parsed.stateName,
+                occurrence_count: parsed.occurrenceCount,
+                report_counter: parsed.reportCounter,
+                is_first_local_estop_cause: parsed.isRootEstop,
+                snapshot_data: parsed.snapshotData,
+                decoded_snapshot: parsed.decodedSnapshot,
+                latching: parsed.def?.latching ?? false,
+                bus: msg.bus,
+              }
+            })
+          }
+        }
+      }
+    }
+
+    // ── 2. ESTOP Reset Response & Blocker Decoding (0x115 SYS_ESTOP_RESET_RSP) ──
+    const resetMsg =
+      findMsg(messages, "SYS_ESTOP_RESET_RSP") ||
+      findMsg(messages, "ESTOP_RESET_REPORT") ||
+      messages.find((m) => m.can_id === 0x115)
+
+    if (resetMsg && frameRecent(resetMsg, 2500)) {
+      const parsed = parseEstopResetRsp(resetMsg)
+      if (parsed) {
+        const eventKey = `reset-115-${parsed.requestSeq}-${parsed.resultNum}-${parsed.blockerMask}`
+        if (!obs.seenEventIds.has(eventKey)) {
+          obs.seenEventIds.add(eventKey)
+          if (parsed.isRejected) {
+            const blockerNames = parsed.blockers.map((b) => b.name)
+            const blockerDesc = parsed.blockers.map((b) => `${b.name}: ${b.description}`).join("; ")
+            newItems.push({
+              id: `refusal-reset-${Date.now()}`,
+              timestamp: timeStr,
+              category: "refusal",
+              canIdHex: "0x115",
+              msgName: "SYS_ESTOP_RESET_RSP",
+              subsystem: "Safety",
+              severity: "CRITICAL",
+              reaction: "ESTOP",
+              title: `ESTOP Reset Refused: ${blockerNames.join(", ") || "Active Blocker"} (0x115)`,
+              description: `SYS rejected remote reset request (result=REJECTED, seq=${parsed.requestSeq}). Blocker mask: 0x${parsed.blockerMask.toString(16).padStart(4, "0")} (${blockerNames.join(", ") || "None"}). ${blockerDesc ? blockerDesc + "." : ""} Reset prohibited while safety cause is active.`,
+              details: {
+                result: "REJECTED",
+                request_seq: parsed.requestSeq,
+                blocker_mask: `0x${parsed.blockerMask.toString(16).padStart(4, "0")}`,
+                decoded_blockers: blockerNames,
+                blocker_details: parsed.blockers,
+                specification: "protocol/contracts/sys.yaml & sys-esp32/src/inhibit_state.h",
+              }
+            })
+          } else {
+            newItems.push({
+              id: `state-reset-ack-${Date.now()}`,
+              timestamp: timeStr,
+              category: "state",
+              canIdHex: "0x115",
+              msgName: "SYS_ESTOP_RESET_RSP",
+              subsystem: "Safety",
+              severity: "INFO",
+              reaction: "NONE",
+              title: "ESTOP Reset Accepted by SYS (0x115)",
+              description: `SYS accepted reset request sequence ${parsed.requestSeq}. Vehicle emergency stop successfully de-asserted.`,
+              details: { result: "ACCEPTED", request_seq: parsed.requestSeq, blocker_mask: "0x0000" }
+            })
+          }
+        }
+      }
+    }
+
+    // ── 3. ECU Node Status & Operating Lifecycle Transitions (0x500, 0x501, 0x502) ──
+    for (const msg of messages) {
+      const isNodeStatus =
+        msg.can_id === 0x500 ||
+        msg.can_id === 0x501 ||
+        msg.can_id === 0x502 ||
+        msg.name?.includes("NODE_STATUS")
+
+      if (isNodeStatus && frameRecent(msg, 2500)) {
+        const parsed = parseNodeStatus(msg)
+        if (parsed) {
+          const prev = obs.prevNodeStates[parsed.reporter]
+          if (prev && prev !== parsed.nodeStateName) {
+            obs.prevNodeStates[parsed.reporter] = parsed.nodeStateName
+            const isInhibited =
+              parsed.nodeStateName === "INHIBITED" || parsed.nodeStateName === "ESTOP"
+            const blockerNames = parsed.blockers.map((b) => b.name)
+            newItems.push({
+              id: `state-node-${parsed.reporter}-${Date.now()}`,
+              timestamp: timeStr,
+              category: isInhibited ? "refusal" : "state",
+              canIdHex: `0x${(msg.can_id ?? 0x500).toString(16).toUpperCase().padStart(3, "0")}`,
+              msgName: msg.name ?? `${parsed.reporter}_NODE_STATUS`,
+              subsystem:
+                parsed.reporter === "SYS"
+                  ? "Safety"
+                  : parsed.reporter === "RT"
+                  ? "System"
+                  : "Powertrain",
+              severity: isInhibited ? "ERROR" : "INFO",
+              reaction:
+                parsed.nodeStateName === "ESTOP"
+                  ? "ESTOP"
+                  : parsed.nodeStateName === "INHIBITED"
+                  ? "INHIBIT"
+                  : "NONE",
+              title: `Node State: ${parsed.reporter} ${prev} → ${parsed.nodeStateName} (0x${(msg.can_id ?? 0x500).toString(16).toUpperCase()})`,
+              description: `${parsed.reporter} operating state transitioned to ${parsed.nodeStateName}.${blockerNames.length > 0 ? ` Active block mask: 0x${parsed.blockMask.toString(16).padStart(4, "0")} (${blockerNames.join(", ")}).` : ""}`,
+              details: {
+                reporter: parsed.reporter,
+                prev_state: prev,
+                new_state: parsed.nodeStateName,
+                block_mask: `0x${parsed.blockMask.toString(16).padStart(4, "0")}`,
+                blockers: blockerNames,
+                estop_active: parsed.estopActive,
+                estop_latched: parsed.estopLatched,
+                output_enabled: parsed.outputEnabled,
+                degraded: parsed.degraded,
+              }
+            })
+          } else if (!prev) {
+            obs.prevNodeStates[parsed.reporter] = parsed.nodeStateName
+          }
+        }
+      }
+    }
+
+    // ── 4. CAN Bus Controller Health & Bus-Off Detection (0x620, 0x600) ──
+    const rtDiag = findMsg(messages, "RT_DIAG_RPT")
+    if (rtDiag && frameRecent(rtDiag, 2000)) {
+      const busOff = signalNum(rtDiag, "mcp_bus_off")
+      const fallback = signalNum(rtDiag, "brake_fallback_state")
+      const tec = signalNum(rtDiag, "mcp_tec")
+      const rec = signalNum(rtDiag, "mcp_rec")
+
+      if (busOff === 1 && !obs.seenEventIds.has("rt-mcp-bus-off")) {
+        obs.seenEventIds.add("rt-mcp-bus-off")
         newItems.push({
-          id: "refusal-reset-" + Date.now(),
+          id: `bus-off-rt-${Date.now()}`,
           timestamp: timeStr,
           category: "refusal",
-          canIdHex: "0x115",
-          msgName: "ESTOP_RESET_REPORT",
-          subsystem: "Safety",
-          title: "ESTOP Reset Refused by SYS",
-          description: `SYS rejected reset attempt: ${res}. Hardware fault cause remains asserted on CAN bus.`,
-          details: { result: res, bus: resetRpt.bus }
+          canIdHex: "0x620",
+          msgName: "RT_DIAG_RPT",
+          subsystem: "System",
+          severity: "CRITICAL",
+          reaction: "ESTOP",
+          title: "CAN Bus-Off: High CAN MCP2515 Controller (0x620)",
+          description: "RT High CAN SPI controller entered Bus-Off condition. Guidance and telemetry streams severed.",
+          details: { mcp_bus_off: 1, tec, rec }
+        })
+      }
+
+      if (fallback != null && fallback > 0 && !obs.seenEventIds.has(`rt-fallback-${fallback}`)) {
+        obs.seenEventIds.add(`rt-fallback-${fallback}`)
+        const fbLabel = fallback === 2 ? "EMERGENCY_FALLBACK" : "SYS_DEGRADED"
+        newItems.push({
+          id: `fallback-rt-${Date.now()}`,
+          timestamp: timeStr,
+          category: "refusal",
+          canIdHex: "0x620",
+          msgName: "RT_DIAG_RPT",
+          subsystem: "Braking",
+          severity: fallback === 2 ? "CRITICAL" : "WARNING",
+          reaction: fallback === 2 ? "ESTOP" : "DERATE",
+          title: `Brake Fallback State: ${fbLabel} (0x620)`,
+          description: `RT activated ${fbLabel} mode. Hydraulic brake authority rerouted or supervisory limits applied.`,
+          details: { brake_fallback_state: fallback, label: fbLabel }
         })
       }
     }
 
-    // 2. Steering Autonomy Refusal: Torque Override or Inhibit (0x201, 0x169)
+    // ── 5. Steering Autonomy Refusals (0x201 SES_STATUS, 0x169 VCU_SES_REQ) ──
     const sesStatus = findMsg(messages, "SES_STATUS")
     if (sesStatus && frameRecent(sesStatus, 1500)) {
       const torque = signalNum(sesStatus, "torque_nm")
-      const sesErr = signalNum(sesStatus, "fault_level") ?? signalNum(sesStatus, "error_status")
-      
-      if (torque != null && Math.abs(torque) > 3.5 && obs.lastSesFault !== 999) {
+      if (torque != null && Math.abs(torque) > 3.0 && obs.lastSesFault !== 999) {
         obs.lastSesFault = 999
         newItems.push({
           id: "refusal-steer-torque-" + Date.now(),
@@ -186,100 +503,16 @@ export function CanAuditLogger({
           canIdHex: "0x201",
           msgName: "SES_STATUS",
           subsystem: "Steering",
-          title: "Steering Autonomy Refused: Driver Override",
-          description: `Driver applied ${Math.abs(torque).toFixed(1)} Nm manual counter-torque. Host tracking yielded to human operator.`,
-          details: { torque_nm: torque, can_id: "0x201" }
-        })
-      }
-
-      if (sesErr != null && sesErr > 0 && obs.lastSesFault !== sesErr) {
-        obs.lastSesFault = sesErr
-        newItems.push({
-          id: "fault-ses-" + Date.now(),
-          timestamp: timeStr,
-          category: "fault",
-          canIdHex: "0x201",
-          msgName: "SES_STATUS",
-          subsystem: "Steering",
-          title: `SES Actuator Fault: Level L${sesErr}`,
-          description: "Steer-by-wire controller reported internal sensor or motor drive warning.",
-          details: { fault_level: sesErr }
+          severity: "WARNING",
+          reaction: "INHIBIT",
+          title: "Steering Autonomy Refused: Driver Manual Override (0x201)",
+          description: `Driver applied ${Math.abs(torque).toFixed(1)} Nm manual counter-torque to handlebars. EPS controller yielded control to operator.`,
+          details: { torque_nm: torque, threshold_nm: 3.0, can_id: "0x201" }
         })
       }
     }
 
-    // 3. Speed Demand Clamped or Discrepancy (0x300 vs 0x204)
-    const hostDrive = findMsg(messages, "HOST_DRIVE_CMD", "high")
-    const rtDrive = findMsg(messages, "RT_DRIVE_CMD", "low")
-    if (hostDrive && rtDrive && frameRecent(hostDrive, 1500) && frameRecent(rtDrive, 1500)) {
-      const vHost = signalNum(hostDrive, "speed_mmps")
-      const vRt = signalNum(rtDrive, "motor_speed_mmps") ?? signalNum(rtDrive, "speed_mmps")
-      if (vHost != null && vRt != null) {
-        const delta = vHost - vRt
-        if (delta > 400 && (!obs.lastSpeedDelta || Math.abs(delta - obs.lastSpeedDelta) > 300)) {
-          obs.lastSpeedDelta = delta
-          newItems.push({
-            id: "refusal-spd-clamp-" + Date.now(),
-            timestamp: timeStr,
-            category: "refusal",
-            canIdHex: "0x204",
-            msgName: "RT_DRIVE_CMD",
-            subsystem: "Speed",
-            title: "Speed Demand Clamped by RT Safety Supervisor",
-            description: `Host requested ${(vHost * 0.0036).toFixed(0)} km/h, but RT clamped speed to ${(vRt * 0.0036).toFixed(0)} km/h (Δ ${(delta * 0.0036).toFixed(0)} km/h).`,
-            details: { host_mmps: vHost, rt_mmps: vRt, delta_mmps: delta }
-          })
-        }
-      }
-    }
-
-    // 4. Brake Following Error / Mechanical Lever Override (0x721, 0x600)
-    const sebStatus = findMsg(messages, "SEB_STATUS")
-    if (sebStatus && frameRecent(sebStatus, 1500)) {
-      const sebErr = signalNum(sebStatus, "error_status")
-      if (sebErr != null && sebErr > 0 && obs.lastSebFault !== sebErr) {
-        obs.lastSebFault = sebErr
-        newItems.push({
-          id: "fault-seb-" + Date.now(),
-          timestamp: timeStr,
-          category: sebErr >= 3 ? "refusal" : "fault",
-          canIdHex: "0x721",
-          msgName: "SEB_STATUS",
-          subsystem: "Braking",
-          title: `SEB Actuator ${sebErr >= 3 ? "L3 Fault (Reset Blocker)" : "Warning (L" + sebErr + ")"}`,
-          description: `Smart Electronic Brake transducer reported status code ${sebErr}. ${sebErr >= 3 ? "Causes active ESTOP reset refusal." : "Degraded clamping performance."}`,
-          details: { error_status: sebErr }
-        })
-      }
-    }
-
-    // 5. Node State Transitions
-    for (const nodeName of ["SYS_STATUS", "RT_STATUS", "MTR_STATUS"]) {
-      const nm = findMsg(messages, nodeName)
-      if (nm && frameRecent(nm, 2000)) {
-        const stateStr = nodeStateLabel(nm)
-        const key = nodeName + "_state"
-        const prev = (obs as Record<string, unknown>)[key] as string | undefined
-        if (stateStr && prev && prev !== stateStr) {
-          ;(obs as Record<string, unknown>)[key] = stateStr
-          newItems.push({
-            id: "state-" + nodeName + "-" + Date.now(),
-            timestamp: timeStr,
-            category: "state",
-            canIdHex: nm.can_id ? "0x" + nm.can_id.toString(16).toUpperCase() : "0x011",
-            msgName: nodeName,
-            subsystem: "System",
-            title: `Node State Transition: ${nodeName.replace("_STATUS", "")} ${prev} → ${stateStr}`,
-            description: `Vehicle node ${nodeName} transitioned to ${stateStr} operating lifecycle state.`,
-            details: { prev_state: prev, new_state: stateStr }
-          })
-        } else if (stateStr && !prev) {
-          ;(obs as Record<string, unknown>)[key] = stateStr
-        }
-      }
-    }
-
-    // 6. Activation Signal Refusals & Gate Blockers (0x169, 0x600)
+    // Check 0x169 control_enable when in AUTO mode
     const sysModeMsg = findMsg(messages, "SYS_MODE_CMD")
     const isAutoMode =
       sysModeMsg &&
@@ -287,7 +520,6 @@ export function CanAuditLogger({
         String(sysModeMsg.signals?.mode?.enum_label).toUpperCase() === "AUTO")
 
     if (isAutoMode) {
-      // Check 0x169 control_enable
       const sesReq = findMsg(messages, "VCU_SES_REQ")
       if (sesReq && frameRecent(sesReq, 2000)) {
         const ctrlEn = signalNum(sesReq, "control_enable")
@@ -300,8 +532,10 @@ export function CanAuditLogger({
             canIdHex: "0x169",
             msgName: "VCU_SES_REQ",
             subsystem: "Steering",
-            title: "Steering Autonomy Refused: Control Enable Inactive (0x169)",
-            description: "Vehicle is in AUTO mode, but RT has not asserted control_enable on 0x169. SES controller remains in passive manual assist.",
+            severity: "ERROR",
+            reaction: "INHIBIT",
+            title: "Steering Autonomy Refused: control_enable Inactive (0x169)",
+            description: "Vehicle is in AUTO mode, but RT has not asserted control_enable=1 on 0x169. SES controller remains in manual assist.",
             details: { control_enable: 0, required: 1, mode: "AUTO" }
           })
         }
@@ -320,14 +554,64 @@ export function CanAuditLogger({
             canIdHex: "0x600",
             msgName: "SYS_DIAG_RPT",
             subsystem: "Safety",
+            severity: "ERROR",
+            reaction: "INHIBIT",
             title: "Autonomous Drive Refused: Handlebar Brake Lever Engaged (0x600)",
-            description: "Physical brake lever sensor active (GPIO2). Hardware safety interlock immediately overrides autonomous traction.",
+            description: "Physical brake lever sensor active (GPIO2). Hardware safety interlock immediately overrides autonomous propulsion.",
             details: { brake_engaged: 1, action: "Release brake lever to re-engage autonomy" }
           })
         }
       }
     }
 
+    // ── 6. Speed Clamping Refusal (0x300 vs 0x204) ──
+    const hostDrive = findMsg(messages, "HOST_DRIVE_CMD", "high")
+    const rtDrive = findMsg(messages, "RT_DRIVE_CMD", "low")
+    if (hostDrive && rtDrive && frameRecent(hostDrive, 1500) && frameRecent(rtDrive, 1500)) {
+      const vHost = signalNum(hostDrive, "speed_mmps")
+      const vRt = signalNum(rtDrive, "motor_speed_mmps") ?? signalNum(rtDrive, "speed_mmps")
+      if (vHost != null && vRt != null) {
+        const delta = vHost - vRt
+        if (delta > 400 && (!obs.lastSpeedDelta || Math.abs(delta - obs.lastSpeedDelta) > 300)) {
+          obs.lastSpeedDelta = delta
+          newItems.push({
+            id: "refusal-spd-clamp-" + Date.now(),
+            timestamp: timeStr,
+            category: "refusal",
+            canIdHex: "0x204",
+            msgName: "RT_DRIVE_CMD",
+            subsystem: "Speed",
+            severity: "WARNING",
+            reaction: "DERATE",
+            title: "Speed Demand Clamped by RT Safety Limiter (0x204)",
+            description: `Host requested ${(vHost * 0.0036).toFixed(0)} km/h, but RT clamped speed to ${(vRt * 0.0036).toFixed(0)} km/h (Δ ${(delta * 0.0036).toFixed(0)} km/h).`,
+            details: { host_mmps: vHost, rt_mmps: vRt, delta_mmps: delta }
+          })
+        }
+      }
+    }
+
+    // ── 7. SEB Brake Hydraulic Report & Warnings (0x721) ──
+    const sebStatus = findMsg(messages, "SEB_STATUS")
+    if (sebStatus && frameRecent(sebStatus, 1500)) {
+      const sebErr = signalNum(sebStatus, "error_status")
+      if (sebErr != null && sebErr > 0 && obs.lastSebFault !== sebErr) {
+        obs.lastSebFault = sebErr
+        newItems.push({
+          id: "fault-seb-" + Date.now(),
+          timestamp: timeStr,
+          category: sebErr >= 3 ? "refusal" : "fault",
+          canIdHex: "0x721",
+          msgName: "SEB_STATUS",
+          subsystem: "Braking",
+          severity: sebErr >= 3 ? "CRITICAL" : "WARNING",
+          reaction: sebErr >= 3 ? "ESTOP" : "WARN",
+          title: `SEB Actuator ${sebErr >= 3 ? "L3 Fault (Reset Blocker)" : "Warning (L" + sebErr + ")"}`,
+          description: `Smart Electronic Brake transducer reported status code ${sebErr}. ${sebErr >= 3 ? "Causes active ESTOP reset refusal (kLatchedSebL3)." : "Degraded clamping performance."}`,
+          details: { error_status: sebErr }
+        })
+      }
+    }
 
     if (newItems.length > 0) {
       setEntries((prev) => [...newItems, ...prev].slice(0, 100))
@@ -348,7 +632,9 @@ export function CanAuditLogger({
           e.description.toLowerCase().includes(q) ||
           e.canIdHex.toLowerCase().includes(q) ||
           e.msgName.toLowerCase().includes(q) ||
-          e.subsystem.toLowerCase().includes(q)
+          e.subsystem.toLowerCase().includes(q) ||
+          (e.severity && e.severity.toLowerCase().includes(q)) ||
+          (e.reaction && e.reaction.toLowerCase().includes(q))
         )
       }
       return true
@@ -364,9 +650,9 @@ export function CanAuditLogger({
     <div className="can-audit-card" data-testid={testId} aria-label="CAN Event and Refusal Audit Logger">
       {/* Logger Header */}
       <div className="can-audit-header">
-        <div className="flex items-center gap-2">
-          <span className="can-audit-title">CAN Audit & Refusal Log</span>
-          <span className="can-audit-subtitle">Refusals · States · Reports</span>
+        <div className="can-audit-header-title-wrap">
+          <span className="can-audit-title">CAN Protocol Log</span>
+          <span className="can-audit-subtitle">Refusals & Diagnostics</span>
         </div>
 
         {/* Refusal Alert Badge */}
@@ -436,7 +722,7 @@ export function CanAuditLogger({
         <input
           type="text"
           className="can-audit-search"
-          placeholder="Filter by CAN ID (0x...), keyword, or subsystem..."
+          placeholder="Filter CAN ID (0x601...), severity, keyword..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
         />
@@ -459,7 +745,7 @@ export function CanAuditLogger({
               >
                 {/* Entry Meta Row */}
                 <div className="can-audit-entry-top">
-                  <div className="flex items-center gap-1.5">
+                  <div className="flex items-center gap-1.5 flex-wrap">
                     <span className={"can-audit-pill pill-" + item.category}>
                       {item.category.toUpperCase()}
                     </span>
@@ -467,6 +753,27 @@ export function CanAuditLogger({
                       {item.canIdHex}
                     </span>
                     <span className="can-audit-subsystem">{item.subsystem}</span>
+
+                    {/* Protocol Severity Pill */}
+                    {item.severity && (
+                      <span className={"can-audit-sev-badge sev-" + item.severity.toLowerCase()}>
+                        {item.severity}
+                      </span>
+                    )}
+
+                    {/* Reaction Badge */}
+                    {item.reaction && item.reaction !== "NONE" && (
+                      <span className="can-audit-rx-badge" title={"ECU Safety Reaction: " + item.reaction}>
+                        ⚡ {item.reaction}
+                      </span>
+                    )}
+
+                    {/* Root ESTOP Cause Highlight */}
+                    {item.isRootEstop && (
+                      <span className="can-audit-root-badge" title="First local ECU cause of emergency stop latching">
+                        ★ ROOT ESTOP
+                      </span>
+                    )}
                   </div>
                   <span className="can-audit-time">{item.timestamp}</span>
                 </div>
@@ -478,7 +785,7 @@ export function CanAuditLogger({
                 {/* Expandable Details Payload */}
                 {isExpanded && item.details && (
                   <div className="can-audit-entry-details">
-                    <div className="can-audit-details-title">CAN Payload & Diagnostic Fields:</div>
+                    <div className="can-audit-details-title">CAN Protocol Payload & Diagnostic Fields:</div>
                     <pre className="can-audit-json">{JSON.stringify(item.details, null, 2)}</pre>
                   </div>
                 )}
@@ -491,7 +798,7 @@ export function CanAuditLogger({
       {/* Logger Footer Info */}
       <div className="can-audit-footer">
         <span className="text-muted text-xs">
-          Showing {filteredEntries.length} of {entries.length} captured events · Live WebSocket Telemetry
+          Showing {filteredEntries.length} of {entries.length} events · Real Protocol Grounded
         </span>
         {isPaused && <span className="can-audit-paused-indicator">STREAM PAUSED</span>}
       </div>

@@ -9,6 +9,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { api } from '../api'
 import { isHostTxFrame } from '../lib/activeTx'
+import { CAN_UNIT_OPTIONS, getMessageUnit, type CanUnitFilter } from '../lib/canUnits'
 import { ageTone, formatAge, hexId } from '../lib/format'
 import { cn } from '../lib/utils'
 import { useAppStore } from '../store'
@@ -46,6 +47,7 @@ export function LiveCan() {
   const setSelected = useAppStore((s) => s.setSelectedMessageKey)
   const hostTxKeys = useHostTxKeys()
   const [busFilter, setBusFilter] = useState<'both' | 'high' | 'low'>('both')
+  const [unitFilter, setUnitFilter] = useState<CanUnitFilter>('all')
   const [viewMode, setViewMode] = useState<'latest' | 'chrono'>('latest')
   const [paused, setPaused] = useState(false)
   const [chrono, setChrono] = useState<HistoryFrame[]>([])
@@ -82,6 +84,10 @@ export function LiveCan() {
     return [...messages]
       .filter((m) => (busFilter === 'both' ? true : m.bus === busFilter))
       .filter((m) => {
+        if (unitFilter !== 'all') {
+          const unit = getMessageUnit(m.bus, m.can_id, m.name)
+          if (unit !== unitFilter) return false
+        }
         if (hideGhosts && (m.age_ms == null || m.age_ms > 10000)) return false
         if (!q) return true
         const id = hexId(m.can_id).toLowerCase()
@@ -90,7 +96,7 @@ export function LiveCan() {
         return id.includes(q) || name.includes(q) || sigs.includes(q) || m.bus.includes(q)
       })
       .sort((a, b) => a.bus.localeCompare(b.bus) || a.can_id - b.can_id)
-  }, [messages, liveFilter, busFilter, hideGhosts])
+  }, [messages, liveFilter, busFilter, unitFilter, hideGhosts])
 
   const chronoView = paused ? chronoFrozen : chrono
   const chronoFiltered = useMemo(() => {
@@ -98,6 +104,10 @@ export function LiveCan() {
     return chronoView
       .filter((f) => (busFilter === 'both' ? true : f.bus === busFilter))
       .filter((f) => {
+        if (unitFilter !== 'all') {
+          const unit = getMessageUnit(f.bus, f.can_id)
+          if (unit !== unitFilter) return false
+        }
         if (!q) return true
         return (
           hexId(f.can_id).toLowerCase().includes(q) ||
@@ -108,7 +118,7 @@ export function LiveCan() {
       })
       .slice()
       .reverse()
-  }, [chronoView, liveFilter, busFilter])
+  }, [chronoView, liveFilter, busFilter, unitFilter])
 
   const rowVirtualizer = useVirtualizer({
     count: chronoFiltered.length,
@@ -245,6 +255,19 @@ export function LiveCan() {
             </SegButton>
           ))}
         </Seg>
+        <select
+          data-testid="live-unit-filter"
+          aria-label="Filter by unit"
+          value={unitFilter}
+          onChange={(e) => setUnitFilter(e.target.value as CanUnitFilter)}
+          className="live-unit-select"
+        >
+          {CAN_UNIT_OPTIONS.map((opt) => (
+            <option key={opt.value} value={opt.value}>
+              {opt.label}
+            </option>
+          ))}
+        </select>
         <Seg data-testid="live-view-mode">
           <SegButton
             active={viewMode === 'latest'}
@@ -494,6 +517,10 @@ export function LiveCan() {
                   {chronoDetail.frame.bus} {hexId(chronoDetail.frame.can_id)} ·{' '}
                   {chronoDetail.decoded.name || 'unknown'}
                 </dd>
+                <dt>Unit</dt>
+                <dd className="font-semibold text-[var(--text-bright)]">
+                  {getMessageUnit(chronoDetail.frame.bus, chronoDetail.frame.can_id, chronoDetail.decoded.name) || '—'}
+                </dd>
                 <dt>Decode</dt>
                 <dd>{chronoDetail.decoded.status}</dd>
                 <dt>Payload</dt>
@@ -516,6 +543,10 @@ export function LiveCan() {
                 <dt>Identity</dt>
                 <dd className="mono">
                   {detail.bus} {hexId(detail.can_id)} · {detail.name}
+                </dd>
+                <dt>Unit</dt>
+                <dd className="font-semibold text-[var(--text-bright)]">
+                  {getMessageUnit(detail.bus, detail.can_id, detail.name) || '—'}
                 </dd>
                 <dt>Freshness</dt>
                 <dd>
