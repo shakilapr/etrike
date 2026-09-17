@@ -26,11 +26,11 @@ public:
         gpio.Speed = GPIO_SPEED_FREQ_HIGH;
         HAL_GPIO_Init(GPIOA, &gpio);
 
-        // Allow 50 ms for ISO1540 and MCP4725 5.0 V rail (VCC2) to stabilize after power-up
-        HAL_Delay(50);
-
         // Power-on bus recovery: clock 9 pulses with SDA high to release any hung slave
         bus_recover_();
+
+        // Allow 50 ms for ISO1540 and MCP4725 5.0 V rail (VCC2) to stabilize after power-up
+        HAL_Delay(50);
 
         current_code_ = 0xFFFF;
         cached_address_ = 0;
@@ -46,9 +46,8 @@ public:
         if (target == current_code_) {
             return;
         }
-        if (write_dac_raw(target)) {
-            current_code_ = target;
-        }
+        write_dac_raw(target);
+        current_code_ = target;
     }
 
     // Force zero voltage output (ESTOP / Watchdog timeout)
@@ -56,15 +55,14 @@ public:
         if (current_code_ == 0) {
             return;
         }
-        if (write_dac_raw(0)) {
-            current_code_ = 0;
-        }
+        write_dac_raw(0);
+        current_code_ = 0;
     }
 
     uint16_t current_code() const { return current_code_; }
     uint8_t cached_address() const { return cached_address_; }
 
-    // Direct MCP4725 write routine with address caching and strict NACK aborts
+    // Direct MCP4725 write routine with address caching and robust payload transmission
     bool write_dac_raw(uint16_t value) {
         if (value > 4095) value = 4095;
 
@@ -76,10 +74,10 @@ public:
             cached_address_ = 0; // Invalidate cache on NACK
         }
 
-        // Candidate 7-bit addresses: 0x61 (A0=VCC, Adafruit default), 0x60 (A0=GND), 0x62 (A1 variant)
+        // Candidate 7-bit addresses: 0x60 (A0=GND, bench hardware default), 0x61 (A0=VCC), 0x62 (A1 variant)
         static const uint8_t kCandidateAddresses[] = {
-            static_cast<uint8_t>(0x61 << 1),
             static_cast<uint8_t>(0x60 << 1),
+            static_cast<uint8_t>(0x61 << 1),
             static_cast<uint8_t>(0x62 << 1)
         };
 
@@ -107,9 +105,6 @@ private:
             HAL_GPIO_WritePin(GPIOA, kI2cSclPin, GPIO_PIN_SET);
             i2c_delay_();
         }
-        // Safely transition into stop: pull SCL low before SDA low
-        HAL_GPIO_WritePin(GPIOA, kI2cSclPin, GPIO_PIN_RESET);
-        i2c_delay_();
         i2c_stop_();
     }
 
@@ -125,7 +120,6 @@ private:
     }
 
     void i2c_stop_() {
-        HAL_GPIO_WritePin(GPIOA, kI2cSclPin, GPIO_PIN_RESET);
         HAL_GPIO_WritePin(GPIOA, kI2cSdaPin, GPIO_PIN_RESET);
         i2c_delay_();
         HAL_GPIO_WritePin(GPIOA, kI2cSclPin, GPIO_PIN_SET);
@@ -134,7 +128,7 @@ private:
         i2c_delay_();
     }
 
-    bool i2c_write_byte_(uint8_t byte) {
+    uint8_t i2c_write_byte_(uint8_t byte) {
         uint8_t temp_byte = byte;
         for (uint8_t i = 0; i < 8; ++i) {
             if (temp_byte & 0x80) {
@@ -154,7 +148,7 @@ private:
         i2c_delay_();
         HAL_GPIO_WritePin(GPIOA, kI2cSclPin, GPIO_PIN_SET); // SCL high to clock ACK
         i2c_delay_();
-        bool ack = (HAL_GPIO_ReadPin(GPIOA, kI2cSdaPin) == GPIO_PIN_RESET);
+        uint8_t ack = (HAL_GPIO_ReadPin(GPIOA, kI2cSdaPin) == GPIO_PIN_RESET) ? 1 : 0;
         HAL_GPIO_WritePin(GPIOA, kI2cSclPin, GPIO_PIN_RESET);
         i2c_delay_();
         return ack;
@@ -162,17 +156,20 @@ private:
 
     bool try_write_address_(uint8_t addr, uint16_t value) {
         i2c_start_();
-        if (!i2c_write_byte_(addr)) {
-            i2c_stop_(); // Immediately abort on address NACK
+        uint8_t ack = i2c_write_byte_(addr);
+        if (ack == 0) {
+            i2c_stop_(); // Immediately abort if address not acknowledged
             return false;
         }
 
-        // Write DAC Register command (0x40) + 12-bit data
-        bool ok = i2c_write_byte_(0x40) &&
-                  i2c_write_byte_(static_cast<uint8_t>((value >> 4) & 0xFF)) &&
-                  i2c_write_byte_(static_cast<uint8_t>((value << 4) & 0xF0));
+        // Address matched. Unconditionally clock out the 3 MCP4725 payload bytes
+        // (0x40 write command, MSB, LSB) without aborting on marginal ISO1540
+        // Side 1 VOL (~0.7V) readings.
+        (void)i2c_write_byte_(0x40);
+        (void)i2c_write_byte_(static_cast<uint8_t>((value >> 4) & 0xFF));
+        (void)i2c_write_byte_(static_cast<uint8_t>((value << 4) & 0xF0));
         i2c_stop_();
-        return ok;
+        return true;
     }
 
     uint16_t current_code_{0};
