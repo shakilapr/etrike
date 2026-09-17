@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { getWorkspaceFromPath, syncUrlWithWorkspace } from './lib/routing'
 
 export type MessageState = {
   bus: string
@@ -162,7 +163,7 @@ type AppState = {
   setStreamQuality: (q: AppState['streamQuality']) => void
   setReconnectAttempts: (n: number) => void
   setProtocolMismatch: (v: boolean) => void
-  setWorkspace: (w: Workspace) => void
+  setWorkspace: (w: Workspace, updateHistory?: boolean) => void
   setActivity: (activity: Activity) => void
   setControlMethod: (method: ControlMethod) => void
   setLiveFilter: (f: string) => void
@@ -179,7 +180,7 @@ export const useAppStore = create<AppState>((set) => ({
   streamQuality: 'connecting',
   reconnectAttempts: 0,
   protocolMismatch: false,
-  workspace: 'overview',
+  workspace: getWorkspaceFromPath(),
   activity: 'explorer',
   controlMethod: 'high',
   liveFilter: '',
@@ -224,7 +225,10 @@ export const useAppStore = create<AppState>((set) => ({
   setStreamQuality: (streamQuality) => set({ streamQuality }),
   setReconnectAttempts: (reconnectAttempts) => set({ reconnectAttempts }),
   setProtocolMismatch: (protocolMismatch) => set({ protocolMismatch }),
-  setWorkspace: (workspace) => set({ workspace }),
+  setWorkspace: (workspace, updateHistory = true) => {
+    set({ workspace })
+    syncUrlWithWorkspace(workspace, updateHistory ? 'push' : 'none')
+  },
   setActivity: (activity) => set({ activity }),
   setControlMethod: (controlMethod) => set({ controlMethod }),
   setLiveFilter: (liveFilter) => set({ liveFilter }),

@@ -9,10 +9,12 @@ import {
   observeEstop,
 } from '../lib/signals'
 import { runFullProtocolAudit } from '../lib/protocolAudit'
+import { evaluateActivationGates } from '../lib/activationGates'
 import { MultiMeter } from './MultiMeter'
 import { SteeringMeter } from './SteeringMeter'
 import { BrakeMeter } from './BrakeMeter'
 import { CanAuditLogger } from './CanAuditLogger'
+import { ControllerActivationMatrix } from './ControllerActivationMatrix'
 import { WorkspaceShell } from './WorkspaceShell'
 import { StatusPill } from './primitives'
 
@@ -23,7 +25,7 @@ export function Dashboard() {
 
   const [unitMode, setUnitMode] = useState<'kmh' | 'mmps'>('kmh')
   const [demoMode, setDemoMode] = useState<boolean>(false)
-  const [activeTab, setActiveTab] = useState<'protocol' | 'pipeline'>('protocol')
+  const [activeTab, setActiveTab] = useState<'protocol' | 'pipeline' | 'gates'>('protocol')
   const [dictMessages, setDictMessages] = useState<Array<Record<string, unknown>> | null>(null)
 
   useEffect(() => {
@@ -116,6 +118,10 @@ export function Dashboard() {
   const auditReport = useMemo(() => {
     return runFullProtocolAudit(messages, rawSignalValues, dictMessages)
   }, [messages, rawSignalValues, dictMessages])
+
+  const activationReport = useMemo(() => {
+    return evaluateActivationGates(messages, isDemo)
+  }, [messages, isDemo])
 
   const speedAudit = auditReport.subsystems.find((s) => s.subsystem === 'Speed')
   const steerAudit = auditReport.subsystems.find((s) => s.subsystem === 'Steering')
@@ -269,6 +275,15 @@ export function Dashboard() {
             )}
           </div>
         </header>
+
+        {/* ── Controller Activation & AUTO Mode Gate Matrix Strip ── */}
+        <section className="dashboard-activation-section" data-testid="dashboard-activation-section">
+          <ControllerActivationMatrix
+            report={activationReport}
+            compact={true}
+            onSelectGate={() => setActiveTab('gates')}
+          />
+        </section>
 
         {/* ── 3 Clean Minimalist Meters: Velocity, Steering, and Braking ── */}
         {/* ── 3-Column Vehicle Cluster: Velocity, Stacked (Steering + Brake), and CAN Audit & Refusal Log ── */}
@@ -424,6 +439,14 @@ export function Dashboard() {
               >
                 Command vs Feedback Pipeline
               </button>
+              <button
+                type="button"
+                className={`dashboard-tab-btn ${activeTab === 'gates' ? 'active' : ''}`}
+                onClick={() => setActiveTab('gates')}
+                data-testid="tab-activation-gates"
+              >
+                Activation Gates ({activationReport.clearedGates}/{activationReport.totalGates})
+              </button>
             </div>
 
             <div className="flex items-center gap-2 text-xs text-muted">
@@ -530,7 +553,7 @@ export function Dashboard() {
                 </tbody>
               </table>
             </div>
-          ) : (
+          ) : activeTab === 'pipeline' ? (
             /* 3-Tier Pipeline Comparison Breakdown */
             <div className="overflow-x-auto" data-testid="pipeline-table">
               <table className="dashboard-table">
@@ -644,6 +667,9 @@ export function Dashboard() {
                 </tbody>
               </table>
             </div>
+          ) : (
+            /* Controller Activation Gates Detailed Matrix */
+            <ControllerActivationMatrix report={activationReport} compact={false} />
           )}
         </section>
       </div>

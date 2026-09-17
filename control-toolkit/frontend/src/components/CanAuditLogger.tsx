@@ -89,6 +89,28 @@ const DEMO_ENTRIES: CanAuditEntry[] = [
     title: "SES Steer-by-Wire Calibration Report",
     description: "EPS zero-point alignment confirmed valid. Measured actual angle: +12.4°, closed-loop error within ±0.2° tolerance.",
     details: { angle_deg: 12.4, aligned: true, fault_level: "L0_NORMAL" }
+  },
+  {
+    id: "demo-7",
+    timestamp: "12:04:17.650",
+    category: "refusal",
+    canIdHex: "0x169",
+    msgName: "VCU_SES_REQ",
+    subsystem: "Steering",
+    title: "Steering Autonomy Refused: Control Enable Inactive",
+    description: "SES Steer-by-Wire requires control_enable=1 (0x169) before engaging closed-loop tracking. Actuator is currently in passive mode.",
+    details: { control_enable: 0, required: 1, action: "Set control_enable=1 in RT VCU_SES_REQ" }
+  },
+  {
+    id: "demo-8",
+    timestamp: "12:04:18.020",
+    category: "report",
+    canIdHex: "0x110",
+    msgName: "SYS_MODE_CMD",
+    subsystem: "System",
+    title: "AUTO Mode Gate Matrix: 6/6 Controllers Synchronized",
+    description: "SYS confirmed mode=AUTO (0x110), power=ON (0x113), zero-point aligned (0x201), SEB nominal (0x721). Autonomy pipeline fully cleared.",
+    details: { sys_mode: "AUTO", contactor: "CLOSED", ses_aligned: true, seb_error: 0 }
   }
 ]
 
@@ -256,6 +278,56 @@ export function CanAuditLogger({
         }
       }
     }
+
+    // 6. Activation Signal Refusals & Gate Blockers (0x169, 0x600)
+    const sysModeMsg = findMsg(messages, "SYS_MODE_CMD")
+    const isAutoMode =
+      sysModeMsg &&
+      (signalNum(sysModeMsg, "mode") === 1 ||
+        String(sysModeMsg.signals?.mode?.enum_label).toUpperCase() === "AUTO")
+
+    if (isAutoMode) {
+      // Check 0x169 control_enable
+      const sesReq = findMsg(messages, "VCU_SES_REQ")
+      if (sesReq && frameRecent(sesReq, 2000)) {
+        const ctrlEn = signalNum(sesReq, "control_enable")
+        if (ctrlEn === 0 && !obs.seenEventIds.has("refusal-ses-ctrlen")) {
+          obs.seenEventIds.add("refusal-ses-ctrlen")
+          newItems.push({
+            id: "refusal-ses-ctrlen-" + Date.now(),
+            timestamp: timeStr,
+            category: "refusal",
+            canIdHex: "0x169",
+            msgName: "VCU_SES_REQ",
+            subsystem: "Steering",
+            title: "Steering Autonomy Refused: Control Enable Inactive (0x169)",
+            description: "Vehicle is in AUTO mode, but RT has not asserted control_enable on 0x169. SES controller remains in passive manual assist.",
+            details: { control_enable: 0, required: 1, mode: "AUTO" }
+          })
+        }
+      }
+
+      // Check 0x600 Handlebar Brake Lever Override
+      const sysDiagMsg = findMsg(messages, "SYS_DIAG_RPT")
+      if (sysDiagMsg && frameRecent(sysDiagMsg, 2000)) {
+        const lever = signalNum(sysDiagMsg, "brake_engaged")
+        if (lever === 1 && !obs.seenEventIds.has("refusal-lever-engaged")) {
+          obs.seenEventIds.add("refusal-lever-engaged")
+          newItems.push({
+            id: "refusal-lever-" + Date.now(),
+            timestamp: timeStr,
+            category: "refusal",
+            canIdHex: "0x600",
+            msgName: "SYS_DIAG_RPT",
+            subsystem: "Safety",
+            title: "Autonomous Drive Refused: Handlebar Brake Lever Engaged (0x600)",
+            description: "Physical brake lever sensor active (GPIO2). Hardware safety interlock immediately overrides autonomous traction.",
+            details: { brake_engaged: 1, action: "Release brake lever to re-engage autonomy" }
+          })
+        }
+      }
+    }
+
 
     if (newItems.length > 0) {
       setEntries((prev) => [...newItems, ...prev].slice(0, 100))

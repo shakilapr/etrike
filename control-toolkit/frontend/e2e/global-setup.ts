@@ -53,13 +53,20 @@ export default async function globalSetup(_config: FullConfig) {
   let frontend: ChildProcess | undefined
 
   if (!(await isAlive(`${backendUrl}/api/v1/status`))) {
+    const pythonPath = `${backendDir}${path.delimiter}${path.resolve(backendDir, '../..')}`
     backend = spawn(
       'python',
       ['-m', 'uvicorn', 'control_toolkit.main:app', '--host', '127.0.0.1', '--port', '8010'],
       {
         cwd: backendDir,
         stdio: 'ignore',
-        env: { ...process.env, CTK_NATIVE_SIL_EXE: nativeSil },
+        env: {
+          ...process.env,
+          PYTHONPATH: process.env.PYTHONPATH
+            ? `${pythonPath}${path.delimiter}${process.env.PYTHONPATH}`
+            : pythonPath,
+          CTK_NATIVE_SIL_EXE: nativeSil,
+        },
       },
     )
   }
