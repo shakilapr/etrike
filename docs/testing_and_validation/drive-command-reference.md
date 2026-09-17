@@ -32,6 +32,35 @@ MTR only enables propulsion when **all** of these are present and fresh:
 
 So to make the vehicle move you must, in order: **power ON → mode AUTO → drive**.
 
+### 1.1 RT's three READY bits (why 0x204 can carry 0/N even while streaming)
+
+RT always transmits `0x204` at 100 Hz, but it zeroes speed/yaw unless **all three**
+READY bits are set (`rt-esp32/src/safety_stream_loss.h`):
+
+| Bit | Granted by | Typical blocker on the bench |
+|---|---|---|
+| `READY_BIT_HOST` (0x300) | Host drive command, fresh ≤ 500 ms | one-shot `0x300` — it must be a **stream** |
+| `READY_BIT_MODE` (0x110) | SYS `0x110` with advancing counter, fresh ≤ 500 ms | SYS absent, or `0x110` clamped to MANUAL by an inhibit (MTR `0x206` / SEB `0x721` missing → check GPIO42 jumper) |
+| `READY_BIT_SAFETY` (0x011) | **2 consecutive** CRC-valid `0x011` frames, fresh ≤ 700 ms | SYS not sending `0x011`, or CRC bad (first frame only sets a baseline) |
+
+Diagnostics: `0x501.block_mask` bit0 = no-SYS-authority; RT boot log prints
+`DEVELOPER BYPASS ACTIVE` when the GPIO42 jumper was present **at power-on**
+(the pin is sampled once at boot — adding the jumper while running does nothing
+until reboot).
+
+### 1.2 Bench-solo: driving with SYS disconnected
+
+With `SYSTEM_RUN_MODE=1` + jumper (or `=2`), RT **self-grants** `SAFETY|MODE`
+(mode AUTO) once it has never seen a valid SYS `0x011` within 2 s of boot, so
+`0x300` → `0x204/0x169/0x205` forwarding keeps working with SYS unplugged —
+the same philosophy as SYS broadcasting `0x110/0x113` with MTR/SEB absent.
+
+* A SYS that **was seen and then died** still latches ESTOP (fail-safe preserved).
+* The moment a real SYS sends a valid `0x011`, authority hands back to the
+  real stream automatically.
+* An ESTOP latched while SYS is absent can only be cleared by power-cycle
+  (the 2-frame `0x011` clear needs SYS).
+
 ---
 
 ## 2. Minimal "go" sequence
@@ -183,8 +212,11 @@ Gateway relay loss at ~100 Hz is 0 % (measured). Numbers vary with bus load.
 ## 9. Bench prerequisites (not needed on the real vehicle)
 
 * `SYSTEM_RUN_MODE=1` bench firmware requires the **developer-override jumper
-  GPIO42 → GND**; otherwise MTR-absent supervision trips `estop_reason=10` and
-  zeroes every drive command. Boot log shows `DEVELOPER BYPASS ACTIVE`.
+  GPIO42 → GND** on **both SYS and RT**, fitted **before power-on**; otherwise
+  SYS clamps `0x110`→MANUAL (`0x113`→OFF) and RT zeroes every drive command.
+  Boot log shows `DEVELOPER BYPASS ACTIVE` on both nodes.
+* With the jumper active, SYS tolerates missing MTR/SEB, and RT keeps
+  forwarding Host commands even with SYS unplugged (see §1.2).
 * The physical e-stop loop (SYS GPIO1 → GND when healthy) must be closed.
 * Sender-side: the control-toolkit backend can emit all of the above (see
   `control-toolkit/backend/tests/hw_bench/harness.py`, `start_drive`,

@@ -38,15 +38,16 @@ Common GND (0V)   ────────────────────�
 
 Every input uses the ESP32-S3 internal pull-up to 3.3 V. All switches are dry contacts wired between the GPIO pin and **GND**.
 
-| Function | GPIO | Switch / Contact Type | Operation / Logic |
-|----------|------|-----------------------|-------------------|
-| Brake lever | GPIO2 | Momentary NO (Microswitch) | Pull lever → Closes to GND (Active-LOW) |
-| START | GPIO41 | Momentary NO (Push Button) | Press → Closes to GND (Exits ESTOP → MANUAL) |
-| MODE | GPIO11 | Momentary NO (Push Button) | Press → Closes to GND (Toggles MANUAL ↔ AUTO; 3s hold exits ESTOP) |
-| Bypass | GPIO42 | Latching / Jumper | Closed to GND at boot = Developer bench bypass ON |
-| Left Turn | GPIO9 | Handlebar Switch (NO/Toggle) | Press → Closes to GND (Toggles Left Blinker in MANUAL) |
-| Right Turn | GPIO6 | Handlebar Switch (NO/Toggle) | Press → Closes to GND (Toggles Right Blinker in MANUAL) |
-| Headlight | GPIO7 | Handlebar Switch (Toggle) | Press → Closes to GND (Toggles Headlight in MANUAL) |
+| GPIO | Switch (Code) | Which to Connect (Terminals) | Normal (Run) | Triggered Action |
+|:---:|---|---|:---:|---|
+| **GPIO 1** | **ESTOP** (`kEstopGpio`) | **NC Terminals** $\longleftrightarrow$ **Common GND** | **0 V (Closed)** | **Open / Cut** → Latches ESTOP |
+| **GPIO 2** | Brake Lever (`kBrakeLeverGpio`) | **NO & COM Terminals** $\longleftrightarrow$ **Common GND** | Open (3.3 V) | Closed to GND (0 V) → Active Brake |
+| **GPIO 41** | START Button (`kStartBtnGpio`) | **NO Push Button** $\longleftrightarrow$ **Common GND** | Open (3.3 V) | Pressed to GND (0 V) → Exits ESTOP |
+| **GPIO 11** | MODE Button (`kModeBtnGpio`) | **NO Push Button** $\longleftrightarrow$ **Common GND** | Open (3.3 V) | Pressed to GND (0 V) → Mode Toggle |
+| **GPIO 42** | Dev Bypass (`DEVELOPER_OVERRIDE`) | **SPST Switch / Jumper** $\longleftrightarrow$ **Common GND** | Open (3.3 V) | Closed to GND (0 V) → Bench Mode |
+| **GPIO 9** | Left Turn (`kSwitchLeftTurn`) | **Switch Contact** $\longleftrightarrow$ **Common GND** | Open (3.3 V) | Pressed to GND (0 V) → Left Flasher ON |
+| **GPIO 6** | Right Turn (`kSwitchRightTurn`) | **Switch Contact** $\longleftrightarrow$ **Common GND** | Open (3.3 V) | Pressed to GND (0 V) → Right Flasher ON |
+| **GPIO 7** | Headlight (`kSwitchHeadlight`) | **Toggle Contact** $\longleftrightarrow$ **Common GND** | Open (3.3 V) | Closed to GND (0 V) → Headlamp ON |
 
 ## ESTOP switch
 

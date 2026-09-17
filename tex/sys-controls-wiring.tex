@@ -9,7 +9,7 @@
 \usepackage[utf8]{inputenc}
 \usepackage[T1]{fontenc}
 \usepackage{lmodern}
-\usepackage[top=8mm,bottom=8mm,left=9mm,right=9mm,headheight=14pt,footskip=14pt]{geometry}
+\usepackage[top=6.5mm,bottom=6.5mm,left=8mm,right=8mm,headheight=14pt,footskip=14pt]{geometry}
 \usepackage{booktabs}
 \usepackage{array}
 \usepackage{tabularx}
@@ -45,7 +45,7 @@
     colframe=black,
     boxrule=0.8pt,
     arc=2pt,
-    left=5pt, right=5pt, top=2pt, bottom=2pt,
+    left=5pt, right=5pt, top=1.5pt, bottom=1.5pt,
     fonttitle=\bfseries\normalsize\color{black},
     coltitle=black,
     attach boxed title to top left={yshift*=-\tcboxedtitleheight/2, xshift=8pt},
@@ -63,12 +63,12 @@
     colframe=black,
     boxrule=1.1pt,
     arc=2pt,
-    left=6pt, right=6pt, top=3pt, bottom=3pt
+    left=5pt, right=5pt, top=2.5pt, bottom=2.5pt
   }
 }
 
-\renewcommand{\arraystretch}{1.12}
-\setlength{\tabcolsep}{3.5pt}
+\renewcommand{\arraystretch}{1.08}
+\setlength{\tabcolsep}{3pt}
 
 \newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
 \newcolumntype{C}[1]{>{\centering\arraybackslash}p{#1}}
@@ -97,27 +97,27 @@
 \end{itemize}
 \end{tcolorbox}
 
-\vspace{-4pt}
+\vspace{-5pt}
 
 % ── Section 1: Pilot & Safety Switches Pin-to-Pin ──────────────────────────
-\begin{tcolorbox}[bwcard, title={1. Digital Inputs \& Pilot Switches (All Connect GPIO $\leftrightarrow$ Common GND)}]
-\begin{tabularx}{\textwidth}{@{} L{4.4cm} C{2.1cm} L{2.6cm} C{2.2cm} Y @{}}
+\begin{tcolorbox}[bwcard, title={1. Digital Inputs \& Pilot Switches (Pin-to-Pin Terminal Connections)}]
+\begin{tabularx}{\textwidth}{@{} C{1.9cm} L{3.8cm} L{4.6cm} C{2.2cm} Y @{}}
 \toprule
-\textbf{Signal Name (Code)} & \textbf{GPIO} & \textbf{Contact Type} & \textbf{Active Level} & \textbf{Safety \& Operational Logic} \\
+\textbf{GPIO} & \textbf{Switch (Code)} & \textbf{Which to Connect (Terminals)} & \textbf{Normal (Run)} & \textbf{Triggered Action} \\
 \midrule
-\textbf{ESTOP} (\texttt{kEstopGpio}) & \textbf{GPIO 1} & \textbf{NC Contact} & 3.3\,V (Open) & \textbf{0\,V = Safe.} Open/Cut $\rightarrow$ \textbf{ESTOP} \\
-\textbf{Brake Lever} (\texttt{kBrakeLeverGpio}) & \textbf{GPIO 2} & NO Microswitch & 0\,V (Closed) & Pulled $\rightarrow$ Overrides drive; sends 0x7B9 SEB \\
-\textbf{START Button} (\texttt{kStartBtnGpio}) & \textbf{GPIO 41} & Momentary NO & 0\,V (Closed) & Pressed $\rightarrow$ Exits ESTOP to MANUAL \\
-\textbf{MODE Button} (\texttt{kModeBtnGpio}) & \textbf{GPIO 11} & Momentary NO & 0\,V (Closed) & Short: Mode toggle; 3s hold: Reset \\
-\textbf{Dev Bypass} (\texttt{DEVELOPER\_OVERRIDE}) & \textbf{GPIO 42} & Latching SPST & 0\,V (Closed) & Closed $\rightarrow$ Standalone bench mode \\
-\textbf{Left Turn} (\texttt{kSwitchLeftTurn}) & \textbf{GPIO 9} & Momentary / Push & 0\,V (Closed) & Toggles Left Turn flasher in MANUAL \\
-\textbf{Right Turn} (\texttt{kSwitchRightTurn}) & \textbf{GPIO 6} & Momentary / Push & 0\,V (Closed) & Toggles Right Turn flasher in MANUAL \\
-\textbf{Headlight} (\texttt{kSwitchHeadlight}) & \textbf{GPIO 7} & Latching Toggle & 0\,V (Closed) & Toggles Headlamp output in MANUAL \\
+\textbf{GPIO 1} & ESTOP (\texttt{kEstopGpio}) & \textbf{NC Contacts} $\longleftrightarrow$ \textbf{Common GND} & \textbf{0\,V (Closed)} & \textbf{Open / Cut} $\rightarrow$ \textbf{ESTOP} \\
+\textbf{GPIO 2} & Brake (\texttt{kBrakeLeverGpio}) & \textbf{NO \& COM} $\longleftrightarrow$ \textbf{Common GND} & Open (3.3\,V) & Closed to GND $\rightarrow$ Active Brake \\
+\textbf{GPIO 41} & START (\texttt{kStartBtnGpio}) & \textbf{NO Button} $\longleftrightarrow$ \textbf{Common GND} & Open (3.3\,V) & Pressed to GND $\rightarrow$ Exits ESTOP \\
+\textbf{GPIO 11} & MODE (\texttt{kModeBtnGpio}) & \textbf{NO Button} $\longleftrightarrow$ \textbf{Common GND} & Open (3.3\,V) & Pressed to GND $\rightarrow$ Mode Toggle \\
+\textbf{GPIO 42} & Dev Bypass (\texttt{DEV\_OVERRIDE}) & \textbf{SPST / Jumper} $\longleftrightarrow$ \textbf{Common GND} & Open (3.3\,V) & Closed to GND $\rightarrow$ Bench Mode \\
+\textbf{GPIO 9} & Left Turn (\texttt{kSwitchLeftTurn}) & \textbf{Switch Pin} $\longleftrightarrow$ \textbf{Common GND} & Open (3.3\,V) & Pressed to GND $\rightarrow$ Flasher ON \\
+\textbf{GPIO 6} & Right Turn (\texttt{kSwitchRightTurn}) & \textbf{Switch Pin} $\longleftrightarrow$ \textbf{Common GND} & Open (3.3\,V) & Pressed to GND $\rightarrow$ Flasher ON \\
+\textbf{GPIO 7} & Headlight (\texttt{kSwitchHeadlight}) & \textbf{Toggle Pin} $\longleftrightarrow$ \textbf{Common GND} & Open (3.3\,V) & Closed to GND $\rightarrow$ Headlamp ON \\
 \bottomrule
 \end{tabularx}
 \end{tcolorbox}
 
-\vspace{-4pt}
+\vspace{-5pt}
 
 % ── Section 2: CAN Transceiver Module (WCMCU-230 / SN65HVD230) ─────────────
 \begin{tcolorbox}[bwcard, title={2. Low CAN Bus Transceiver (SN65HVD230 / WCMCU-230)}]

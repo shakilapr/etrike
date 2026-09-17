@@ -13,8 +13,8 @@ RT serial-log capture (COM6 @115200).
 
 | # | Finding | Status | Root cause | Severity |
 |---|---|---|---|---|
-| F1 | High bus died ~25 min | **Static root narrowed; watchdog implemented (uncommitted)** | silent MCP2515/SPI never latches `bus_off`; **not** the ESTOP latch | High |
-| F2 | RT High→Low gateway drops frames | **Confirmed; fixed (uncommitted)** | non-blocking `send()` on a single TX slot | Medium |
+| F1 | High bus died ~25 min | **Static root narrowed; watchdog implemented (committed 368b992)** | silent MCP2515/SPI never latches `bus_off`; **not** the ESTOP latch | High |
+| F2 | RT High→Low gateway drops frames | **Confirmed; fixed (committed 368b992)** | non-blocking `send()` on a single TX slot | Medium |
 | F3 | SYS boots into ESTOP | **Confirmed, fail-safe by design** | NC e-stop loop open at boot (pull-up, HIGH=active); stale `config.h` comment | Low (doc) |
 | F4 | Bounded TX-slot wait risks task overrun | **Not observed** | wait is bounded and skipped on bus-off | Low |
 | F5 | RT emergency `0x7B9` fallback untested live | **Logic unit-tested; integration gap** | needs SYS `0x7B9` loss to exercise | Medium |
@@ -24,7 +24,7 @@ RT serial-log capture (COM6 @115200).
 | F9 | `scripts/hardware_bench_suite.py` not re-validated | **Confirmed stale** | superseded by pytest suite | Low |
 | F10 | `m_actuation_pending` vs bounded wait | **OK** | bit cleared on failure/tx_done | Info |
 | F11 | Docs rate claims | **Aligned after fixes** | architecture/timing already say 50 Hz | Info |
-| F12 | RT Low (TWAI) TX dies ~3 s after boot | **Fixed (uncommitted)** | bench self-test `fail_retry_cnt=0` single-shot + `kTxSlots=1`: an arbitration-lost frame is abandoned with **no** `on_tx_done`, and the bus stays ACTIVE so Bus-Off reclamation never fires → slot leaks permanently | High |
+| F12 | RT Low (TWAI) TX dies ~3 s after boot | **Fixed (committed 368b992)** | bench self-test `fail_retry_cnt=0` single-shot + `kTxSlots=1`: an arbitration-lost frame is abandoned with **no** `on_tx_done`, and the bus stays ACTIVE so Bus-Off reclamation never fires → slot leaks permanently | High |
 
 ---
 
@@ -121,7 +121,7 @@ the vehicle is only reachable through SYS on Low.
 reset request). Notably a dropped `0x114` would prevent ESTOP recovery.
 
 **Fix:** `drv->send(gw.frame, 2)` — `send()` now honors a bounded slot wait (added with
-the rate fix). **Applied** (`rt-esp32/src/main.cpp:936`), compiles; not yet committed.
+the rate fix). **Applied** (`rt-esp32/src/main.cpp:936`), compiles; committed 368b992.
 
 ---
 
