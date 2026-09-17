@@ -99,10 +99,22 @@ test.describe('URL Routing & History Navigation', () => {
     await expect(page.getByTestId('nav-preview')).toHaveClass(/active/)
   })
 
-  test('top bar renders Inject ESTOP and Reset ESTOP buttons', async ({ page }) => {
+  test('top bar renders TX, Mode, Power, Inject ESTOP, Reset ESTOP icon buttons and Vehicle Telemetry', async ({ page }) => {
     await page.goto('/overview')
+    const txBtn = page.getByTestId('btn-header-bench-tx')
+    const modeBtn = page.getByTestId('btn-header-hmi-mode')
+    const powerBtn = page.getByTestId('btn-header-hmi-power')
     const injectBtn = page.getByTestId('btn-header-estop')
     const resetBtn = page.getByTestId('btn-header-estop-reset')
+
+    await expect(txBtn).toBeVisible()
+    await expect(txBtn).toContainText(/Bench TX/i)
+
+    await expect(modeBtn).toBeVisible()
+    await expect(modeBtn).toContainText(/Mode:/i)
+
+    await expect(powerBtn).toBeVisible()
+    await expect(powerBtn).toContainText(/Power/i)
 
     await expect(injectBtn).toBeVisible()
     await expect(injectBtn).toContainText(/Inject ESTOP/i)
@@ -110,12 +122,22 @@ test.describe('URL Routing & History Navigation', () => {
     await expect(resetBtn).toBeVisible()
     await expect(resetBtn).toContainText(/Reset ESTOP/i)
 
-    // Capture topbar screenshot showing both buttons
+    // Verify Vehicle Telemetry cluster (Gear, Controller Modes, Power)
+    const telemetryCluster = page.getByTestId('topbar-vehicle-telemetry')
+    await expect(telemetryCluster).toBeVisible()
+    await expect(page.getByTestId('chip-gear')).toBeVisible()
+    await expect(page.getByTestId('chip-controller-modes')).toBeVisible()
+    await expect(telemetryCluster.getByTestId('chip-power')).toBeVisible()
+
+    // Capture topbar screenshot showing all 5 icon actions and dynamic telemetry cluster
     await page.locator('[data-testid="topbar"]').screenshot({
-      path: 'C:/Users/logsh/.gemini/antigravity/brain/ba92870d-875f-4c69-8960-0970c0e3456a/topbar_estop_buttons.png',
+      path: 'C:/Users/logsh/.gemini/antigravity/brain/ba92870d-875f-4c69-8960-0970c0e3456a/topbar_actions_complete.png',
     })
 
-    // Clicking reset should execute smoothly without crashing
+    // Clicking buttons should execute smoothly without crashing
+    await txBtn.click()
+    await modeBtn.click()
+    await powerBtn.click()
     await resetBtn.click()
   })
 })

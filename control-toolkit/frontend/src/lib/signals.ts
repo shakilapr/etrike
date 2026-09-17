@@ -524,6 +524,116 @@ export function getAuthorityPipeline(messages: MessageState[]) {
   }
 }
 
+/** Confirmed vehicle gear from CAN signals (MTR feedback, RT drive cmd, Host drive cmd). Disconnected -> '—' */
+export function getVehicleGear(messages: MessageState[]): string {
+  const mtrFbk = findMsg(messages, 'MTR_MOTOR_FBK')
+  const rtDrive = findMsg(messages, 'RT_DRIVE_CMD')
+  const hostDrive = findMsg(messages, 'HOST_DRIVE_CMD')
+
+  if (mtrFbk && frameRecent(mtrFbk)) {
+    const g = signalText(mtrFbk, 'gear_state')
+    if (g && g !== '—') return g
+  }
+  if (rtDrive && frameRecent(rtDrive)) {
+    const g = signalText(rtDrive, 'gear')
+    if (g && g !== '—') return g
+  }
+  if (hostDrive && frameRecent(hostDrive)) {
+    const g = signalText(hostDrive, 'gear')
+    if (g && g !== '—') return g
+  }
+  return '—'
+}
+
+export type ControllerModes = {
+  sys: string
+  rt: string
+  mtr: string
+  hmi?: string
+}
+
+/** Drive mode of each controller (SYS, RT, MTR) from real CAN messages */
+export function getControllerModes(messages: MessageState[]): ControllerModes {
+  const sysMode = findMsg(messages, 'SYS_MODE_CMD')
+  const sysDiag = findMsg(messages, 'SYS_DIAG_RPT')
+  const sysHb = findMsg(messages, 'SYS_HEARTBEAT')
+  const rtState = findMsg(messages, 'RT_STATE_RPT')
+  const mtrFbk = findMsg(messages, 'MTR_MOTOR_FBK')
+  const mtrStatus = findMsg(messages, 'MTR_NODE_STATUS')
+  const hmiMode = findMsg(messages, 'HMI_MODE_REQ')
+
+  let sys = '—'
+  if (sysMode && frameRecent(sysMode)) {
+    const m = signalText(sysMode, 'mode')
+    if (m && m !== '—') sys = m.toUpperCase()
+  } else if (sysDiag && frameRecent(sysDiag)) {
+    const m = signalText(sysDiag, 'mode')
+    if (m && m !== '—') sys = m.toUpperCase()
+  } else if (sysHb && frameRecent(sysHb)) {
+    const auto = sysHb.signals?.mode_auto?.engineering_value
+    sys = auto === 1 || auto === '1' || String(auto).toLowerCase() === 'true' ? 'AUTO' : 'MANUAL'
+  }
+
+  let rt = '—'
+  if (rtState && frameRecent(rtState)) {
+    const m = signalText(rtState, 'mode')
+    if (m && m !== '—') rt = m.toUpperCase()
+  }
+
+  let mtr = '—'
+  const isMtrLive =
+    (mtrFbk && frameRecent(mtrFbk)) || (mtrStatus && frameRecent(mtrStatus))
+  if (isMtrLive) {
+    const estop = mtrStatus?.signals?.estop_active?.engineering_value === 1
+    const fault = (signalNum(mtrFbk, 'fault_flags') ?? 0) > 0
+    if (estop) mtr = 'ESTOP'
+    else if (fault) mtr = 'FAULT'
+    else if (sys !== '—') mtr = sys
+    else mtr = 'READY'
+  }
+
+  let hmi = '—'
+  if (hmiMode && frameRecent(hmiMode)) {
+    const m = signalText(hmiMode, 'req_mode')
+    if (m && m !== '—') hmi = m.toUpperCase()
+  }
+
+  return { sys, rt, mtr, hmi }
+}
+
+export type VehiclePowerInfo = {
+  state: 'ON' | 'OFF' | '—'
+  detail: string
+}
+
+/** Vehicle power state from SYS_PWR_CMD, HMI_PWR_REQ, and session */
+export function getVehiclePower(
+  messages: MessageState[],
+  ses?: { confirmed_power?: string | null; requested_power?: string | null } | null,
+): VehiclePowerInfo {
+  const sysPwr = findMsg(messages, 'SYS_PWR_CMD')
+  const hmiPwr = findMsg(messages, 'HMI_PWR_REQ')
+
+  const sysLive = sysPwr && frameRecent(sysPwr)
+  const hmiLive = hmiPwr && frameRecent(hmiPwr)
+
+  const sysVal = sysLive ? signalText(sysPwr, 'power_state') : null
+  const hmiVal = hmiLive ? signalText(hmiPwr, 'req_start') : null
+
+  if (sysVal === 'ON' || hmiVal === 'ON' || ses?.confirmed_power === 'ON') {
+    return { state: 'ON', detail: 'Drive power energized (SYS/HMI ON)' }
+  }
+  if (
+    sysVal === 'OFF' ||
+    hmiVal === 'OFF' ||
+    ses?.confirmed_power === 'OFF' ||
+    ses?.requested_power === 'OFF'
+  ) {
+    return { state: 'OFF', detail: 'Drive power isolated' }
+  }
+  return { state: '—', detail: 'No power telemetry active' }
+}
+
 export type IndicatorStatus = 'ok' | 'warn' | 'danger' | 'info' | 'muted'
 
 export type DiagnosticItem = {

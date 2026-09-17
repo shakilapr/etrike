@@ -30,13 +30,177 @@
   background: linear-gradient(180deg, #fff 0%, #fafbfc 100%);
 }
 
-.topbar-row-primary .topbar-estop-actions {
+.topbar-row-primary .topbar-actions {
   margin-left: auto;
   align-self: center;
   display: flex;
   align-items: center;
   gap: 6px;
   flex-shrink: 0;
+}
+
+.topbar-actions-divider {
+  width: 1px;
+  height: 20px;
+  background: var(--border);
+  margin: 0 2px;
+}
+
+/* Vehicle Telemetry Cluster (Gear, Modes, Power) in Topbar Row 1 */
+.topbar-vehicle-cluster {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: 12px;
+  padding: 2px 10px;
+  background: var(--surface-2, #f8fafc);
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: var(--radius);
+  flex-shrink: 0;
+}
+
+.vehicle-cluster-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.vehicle-cluster-divider {
+  width: 1px;
+  height: 16px;
+  background: var(--border, #e2e8f0);
+}
+
+.v-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-tertiary, #64748b);
+}
+
+.v-gear-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 20px;
+  padding: 0 5px;
+  font-size: 11px;
+  font-weight: 800;
+  font-family: var(--font-mono);
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: #f1f5f9;
+  color: #334155;
+}
+
+.v-gear-pill.gear-d {
+  background: #eff6ff;
+  color: #1d4ed8;
+  border-color: #93c5fd;
+}
+
+.v-gear-pill.gear-r {
+  background: #fff7ed;
+  color: #c2410c;
+  border-color: #fdba74;
+}
+
+.v-gear-pill.gear-s {
+  background: #faf5ff;
+  color: #7e22ce;
+  border-color: #d8b4fe;
+}
+
+.v-gear-pill.gear-n {
+  background: #f1f5f9;
+  color: #334155;
+  border-color: #cbd5e1;
+}
+
+.v-gear-pill.gear-— {
+  background: #f8fafc;
+  color: #94a3b8;
+  border-color: #e2e8f0;
+}
+
+.v-controller-tags {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.v-ctrl-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 700;
+  font-family: var(--font-mono);
+  border: 1px solid var(--border, #e2e8f0);
+  background: #f8fafc;
+  color: #64748b;
+}
+
+.v-ctrl-tag .c-name {
+  font-size: 9px;
+  font-weight: 600;
+  color: var(--text-tertiary, #94a3b8);
+  margin-right: 1px;
+}
+
+.v-ctrl-tag.mode-auto {
+  background: #eff6ff;
+  color: #1d4ed8;
+  border-color: #bfdbfe;
+}
+
+.v-ctrl-tag.mode-manual {
+  background: #f0fdf4;
+  color: #15803d;
+  border-color: #bbf7d0;
+}
+
+.v-ctrl-tag.mode-estop {
+  background: #fef2f2;
+  color: #b91c1c;
+  border-color: #fecaca;
+}
+
+.v-ctrl-tag.mode-— {
+  background: #f8fafc;
+  color: #94a3b8;
+  border-color: #e2e8f0;
+}
+
+.v-power-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  font-family: var(--font-mono);
+  border: 1px solid var(--border, #e2e8f0);
+  background: #f8fafc;
+  color: #64748b;
+}
+
+.v-power-pill.pwr-on {
+  background: #f0fdf4;
+  color: #15803d;
+  border-color: #86efac;
+}
+
+.v-power-pill.pwr-off,
+.v-power-pill.pwr-— {
+  background: #f8fafc;
+  color: #94a3b8;
+  border-color: #e2e8f0;
 }
 
 .topbar-action-error {
@@ -747,6 +911,112 @@ button.topbar-mode-btn.btn {
   color: #92400e;
 }
 
+.btn-topbar-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  background: var(--surface);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  width: 32px;
+  min-width: 32px;
+  max-width: 32px;
+  height: 32px;
+  min-height: 32px;
+  max-height: 32px;
+  padding: 0;
+  cursor: pointer;
+  box-shadow: none;
+  transition: all var(--transition);
+}
+
+.btn-topbar-action svg {
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+}
+
+.btn-topbar-action:hover:not(:disabled) {
+  background: var(--surface-2);
+  color: var(--text);
+  border-color: var(--border-focus, #94a3b8);
+}
+
+.btn-topbar-action:focus-visible {
+  outline: 2px solid #cbd5e1;
+  outline-offset: 2px;
+}
+
+/* Bench TX Toggle */
+.btn-bench-tx.tx-armed {
+  background: #fef3c7;
+  color: #b45309;
+  border-color: #f59e0b;
+}
+
+.btn-bench-tx.tx-armed:hover:not(:disabled) {
+  background: #fde68a;
+  border-color: #d97706;
+}
+
+/* HMI Mode Toggle */
+.btn-hmi-mode.mode-auto {
+  background: #eff6ff;
+  color: #1d4ed8;
+  border-color: #93c5fd;
+}
+
+.btn-hmi-mode.mode-auto:hover:not(:disabled) {
+  background: #dbeafe;
+  border-color: #60a5fa;
+}
+
+/* HMI Power Toggle */
+.btn-hmi-power.pwr-on {
+  background: #f0fdf4;
+  color: #15803d;
+  border-color: #86efac;
+}
+
+.btn-hmi-power.pwr-on:hover:not(:disabled) {
+  background: #dcfce7;
+  border-color: #4ade80;
+}
+
+/* ESTOP Inject Icon */
+.btn-estop-icon {
+  background: #fff1f2;
+  color: #e11d48;
+  border-color: #fda4af;
+}
+
+.btn-estop-icon:hover:not(:disabled) {
+  background: #ffe4e6;
+  border-color: #f43f5e;
+  color: #be123c;
+}
+
+/* ESTOP Reset Icon */
+.btn-estop-reset-icon {
+  background: var(--surface);
+  color: var(--text-secondary);
+  border-color: var(--border-strong);
+}
+
+.btn-estop-reset-icon.is-active-reset {
+  background: #fffbeb;
+  color: #b45309;
+  border-color: #f59e0b;
+}
+
+.btn-estop-reset-icon.is-active-reset:hover:not(:disabled) {
+  background: #fef3c7;
+  border-color: #d97706;
+  color: #92400e;
+}
+
 .status-dot.muted {
   color: var(--text-tertiary);
 }
@@ -757,7 +1027,7 @@ button.topbar-mode-btn.btn {
     order: 3;
   }
 
-  .topbar-row-primary .topbar-estop-actions {
+  .topbar-row-primary .topbar-actions {
     margin-left: 0;
   }
 

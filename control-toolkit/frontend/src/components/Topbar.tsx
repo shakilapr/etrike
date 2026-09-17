@@ -4,6 +4,10 @@ import { linkLabelFromStatus } from '../lib/session'
 import { buildEcuPresence } from '../lib/ecuPresence'
 import {
   busActivityTone,
+  getAuthorityPipeline,
+  getControllerModes,
+  getVehicleGear,
+  getVehiclePower,
   observeEstop,
   PROFILE_LABELS,
   transportModeOf,
@@ -15,8 +19,10 @@ import {
   IconCpu,
   IconNetwork,
   IconOctagonAlert,
+  IconPower,
   IconRadio,
   IconRotateCcw,
+  IconSliders,
 } from './icons'
 
 /** green=clean live · yellow=late or live+errors · red=dead · muted=unknown */
@@ -136,8 +142,65 @@ export function Topbar() {
     }
   }
 
+  const auth = useMemo(() => getAuthorityPipeline(messages), [messages])
+  const vehicleGear = useMemo(() => getVehicleGear(messages), [messages])
+  const ctrlModes = useMemo(() => getControllerModes(messages), [messages])
+  const pwrInfo = useMemo(() => getVehiclePower(messages, ses), [messages, ses])
 
-  // Fault = safety/protocol problem. Offline = no backend/API.
+  const isAuto =
+    auth.hmiReqMode === 'AUTO' ||
+    ctrlModes.sys === 'AUTO' ||
+    ctrlModes.rt === 'AUTO' ||
+    ses?.requested_mode === 'AUTO' ||
+    ses?.confirmed_mode === 'AUTO'
+  const isPowerOn =
+    pwrInfo.state === 'ON' ||
+    auth.hmiReqStart === 'ON' ||
+    ses?.requested_power === 'ON' ||
+    ses?.confirmed_power === 'ON'
+
+  async function handleBenchTx() {
+    setModeErr(null)
+    try {
+      const st = await api.status()
+      if (!st.session?.session_id) {
+        setModeErr('No active session — start one in Settings to enable CAN transmission')
+        return
+      }
+      const nextTx = !benchOn
+      await api.setBenchTx(st.session.session_id, nextTx, st.session.revision)
+      const fresh = await api.status()
+      setStatus(fresh)
+      setModeErr(nextTx ? 'Bench TX Armed: host CAN frame transmission active' : 'Bench TX Disarmed: listen-only safe mode')
+    } catch (e) {
+      setModeErr(String(e).replace(/^Error:\s*/i, '').slice(0, 180))
+    }
+  }
+
+  async function handleHmiMode() {
+    setModeErr(null)
+    try {
+      const nextMode = isAuto ? 0 : 1
+      await api.hmiMode(nextMode, true)
+      setStatus(await api.status())
+      setModeErr(`High CAN HMI_MODE_REQ (0x111): ${nextMode === 1 ? 'AUTO' : 'MANUAL'} commanded (1 Hz)`)
+    } catch (e) {
+      setModeErr(String(e).replace(/^Error:\s*/i, '').slice(0, 180))
+    }
+  }
+
+  async function handleHmiPower() {
+    setModeErr(null)
+    try {
+      const nextPwr = isPowerOn ? 0 : 1
+      await api.hmiPower(nextPwr, true)
+      setStatus(await api.status())
+      setModeErr(`High CAN HMI_PWR_REQ (0x112): ${nextPwr === 1 ? 'ON' : 'OFF'} commanded (1 Hz)`)
+    } catch (e) {
+      setModeErr(String(e).replace(/^Error:\s*/i, '').slice(0, 180))
+    }
+  }
+
   // Real + no adapter is Degraded (mode is intentional), not Offline.
   // ESTOP uses multi-source observeEstop (latch + bus 0x001 + SYS/RT), not latch alone.
   const overall: OverallHealth = (() => {
@@ -412,25 +475,141 @@ export function Topbar() {
           </div>
         </div>
 
-        <div className="topbar-estop-actions flex items-center gap-1.5">
+        {/* Vehicle Dynamic Telemetry: Gear, Drive Mode of each controller, Power */}
+        <div
+          className="topbar-vehicle-cluster flex items-center gap-2"
+          data-testid="topbar-vehicle-telemetry"
+          aria-label="Vehicle Dynamic Telemetry"
+        >
+          {/* Gear */}
+          <div
+            className="vehicle-cluster-item vehicle-gear"
+            data-testid="chip-gear"
+            title={`Vehicle Gear: ${vehicleGear} (physical feedback MTR 0x206 / RT 0x204 / Host 0x300)`}
+          >
+            <span className="v-label">Gear</span>
+            <span className={`v-gear-pill gear-${vehicleGear.toLowerCase()}`}>
+              {vehicleGear}
+            </span>
+          </div>
+
+          <div className="vehicle-cluster-divider" aria-hidden />
+
+          {/* Drive Mode of each controller */}
+          <div
+            className="vehicle-cluster-item vehicle-modes"
+            data-testid="chip-controller-modes"
+            title={`Drive Mode of each controller · SYS: ${ctrlModes.sys} · RT: ${ctrlModes.rt} · MTR: ${ctrlModes.mtr}`}
+          >
+            <span className="v-label">Mode</span>
+            <div className="v-controller-tags" aria-label="Controller Modes">
+              <span
+                className={`v-ctrl-tag ctrl-sys mode-${ctrlModes.sys.toLowerCase()}`}
+                title={`SYS Controller Mode: ${ctrlModes.sys} (SYS_MODE_CMD 0x110 / SYS_DIAG_RPT 0x600)`}
+              >
+                <span className="c-name">SYS</span>
+                <span className="c-val">{ctrlModes.sys}</span>
+              </span>
+              <span
+                className={`v-ctrl-tag ctrl-rt mode-${ctrlModes.rt.toLowerCase()}`}
+                title={`RT Controller Mode: ${ctrlModes.rt} (RT_STATE_RPT 0x210)`}
+              >
+                <span className="c-name">RT</span>
+                <span className="c-val">{ctrlModes.rt}</span>
+              </span>
+              <span
+                className={`v-ctrl-tag ctrl-mtr mode-${ctrlModes.mtr.toLowerCase()}`}
+                title={`MTR Motor Mode: ${ctrlModes.mtr} (MTR_MOTOR_FBK 0x206 / MTR_NODE_STATUS 0x502)`}
+              >
+                <span className="c-name">MTR</span>
+                <span className="c-val">{ctrlModes.mtr}</span>
+              </span>
+            </div>
+          </div>
+
+          <div className="vehicle-cluster-divider" aria-hidden />
+
+          {/* Power */}
+          <div
+            className="vehicle-cluster-item vehicle-power"
+            data-testid="chip-power"
+            title={`Drive Power: ${pwrInfo.state} (${pwrInfo.detail})`}
+          >
+            <span className="v-label">Power</span>
+            <span className={`v-power-pill pwr-${pwrInfo.state.toLowerCase()}`}>
+              <span className={`status-dot ${pwrInfo.state === 'ON' ? 'live' : 'muted'}`} />
+              <span>{pwrInfo.state}</span>
+            </span>
+          </div>
+        </div>
+
+        {/* Action Buttons (Icon-only with standard tooltips & states) */}
+        <div className="topbar-actions flex items-center gap-1.5" aria-label="System command actions">
+          {/* Bench TX Toggle Button */}
           <button
             type="button"
-            className="btn-estop"
+            className={`btn-topbar-action btn-bench-tx ${benchOn ? 'tx-armed' : 'tx-off'}`}
+            data-testid="btn-header-bench-tx"
+            aria-label={`Bench TX: ${benchOn ? 'Armed' : 'Off'}`}
+            title={`Bench TX: ${benchOn ? 'Armed (Caution: Active CAN Transmission)' : 'Off (Listen-only Safe)'} · Click to ${benchOn ? 'Disarm' : 'Arm'}`}
+            onClick={() => void handleBenchTx()}
+          >
+            <IconRadio />
+            <span className="sr-only">Bench TX: {benchOn ? 'Armed' : 'Off'}</span>
+          </button>
+
+          {/* High Bus HMI Mode Toggle (AUTO / MANUAL) */}
+          <button
+            type="button"
+            className={`btn-topbar-action btn-hmi-mode ${isAuto ? 'mode-auto' : 'mode-manual'}`}
+            data-testid="btn-header-hmi-mode"
+            aria-label={`HMI Mode: ${isAuto ? 'AUTO' : 'MANUAL'}`}
+            title={`Toggle High-bus HMI_MODE_REQ (0x111) · Current: ${isAuto ? 'AUTO' : 'MANUAL'} · Click to switch to ${isAuto ? 'MANUAL' : 'AUTO'}`}
+            onClick={() => void handleHmiMode()}
+          >
+            <IconSliders />
+            <span className="sr-only">{isAuto ? 'Mode: AUTO' : 'Mode: MANUAL'}</span>
+          </button>
+
+          {/* High Bus HMI Power Toggle (ON / OFF) */}
+          <button
+            type="button"
+            className={`btn-topbar-action btn-hmi-power ${isPowerOn ? 'pwr-on' : 'pwr-off'}`}
+            data-testid="btn-header-hmi-power"
+            aria-label={`HMI Power: ${isPowerOn ? 'ON' : 'OFF'}`}
+            title={`Send High-bus HMI_PWR_REQ (0x112) · Current: ${isPowerOn ? 'ON' : 'OFF'} · Click to turn ${isPowerOn ? 'OFF' : 'ON'}`}
+            onClick={() => void handleHmiPower()}
+          >
+            <IconPower />
+            <span className="sr-only">{isPowerOn ? 'Power: ON' : 'Power OFF'}</span>
+          </button>
+
+          <div className="topbar-actions-divider" aria-hidden />
+
+          {/* ESTOP Inject Button */}
+          <button
+            type="button"
+            className="btn-topbar-action btn-estop-icon"
             data-testid="btn-header-estop"
-            title="Inject SAFETY_ESTOP (DLC=0) on High and Low · latches host ESTOP · requires TX armed"
+            aria-label="Inject ESTOP"
+            title="Inject SAFETY_ESTOP (DLC=0) on High and Low · Latches host ESTOP · Requires TX armed"
             onClick={() => void injectEstop()}
           >
-            Inject ESTOP
+            <IconOctagonAlert />
+            <span className="sr-only">Inject ESTOP</span>
           </button>
+
+          {/* ESTOP Reset Button */}
           <button
             type="button"
-            className={`btn-estop-reset ${estopOn || estopObs.hostLatch ? 'is-active-reset' : ''}`}
+            className={`btn-topbar-action btn-estop-reset-icon ${estopOn || estopObs.hostLatch ? 'is-active-reset' : ''}`}
             data-testid="btn-header-estop-reset"
+            aria-label="Reset ESTOP"
             title="Reset ESTOP latch and rearm vehicle safety path (sends 0x011 clear & power cycle when Bench TX armed)"
             onClick={() => void resetEstop()}
           >
             <IconRotateCcw />
-            <span>Reset ESTOP</span>
+            <span className="sr-only">Reset ESTOP</span>
           </button>
         </div>
       </div>
@@ -499,25 +678,24 @@ export function Topbar() {
           </span>
         </div>
 
-        <div className="meta-group" data-testid="chip-mode" title="Requested vs confirmed vehicle mode">
-          <span className="meta-k">Mode</span>
+        <div className="meta-group" data-testid="chip-gear-meta" title="Confirmed vehicle gear">
+          <span className="meta-k">Gear</span>
+          <span className="meta-v mono font-bold">{vehicleGear}</span>
+        </div>
+
+        <div className="meta-group" data-testid="chip-mode" title={`Controller Modes · SYS: ${ctrlModes.sys} · RT: ${ctrlModes.rt} · MTR: ${ctrlModes.mtr}`}>
+          <span className="meta-k">Modes</span>
           <span className="meta-v mono">
-            {ses?.confirmed_mode
-              ? (ses.requested_mode && ses.requested_mode !== ses.confirmed_mode
-                  ? `${ses.requested_mode} → ${ses.confirmed_mode}`
-                  : ses.confirmed_mode)
-              : (ses?.requested_mode || 'Standby')}
+            {ctrlModes.sys !== '—' || ctrlModes.rt !== '—' || ctrlModes.mtr !== '—'
+              ? `SYS:${ctrlModes.sys} RT:${ctrlModes.rt} MTR:${ctrlModes.mtr}`
+              : (ses?.confirmed_mode || 'Standby')}
           </span>
         </div>
 
-        <div className="meta-group" data-testid="chip-power" title="Requested vs confirmed power">
+        <div className="meta-group" data-testid="chip-power-meta" title={pwrInfo.detail}>
           <span className="meta-k">Power</span>
-          <span className="meta-v mono">
-            {ses?.confirmed_power
-              ? (ses.requested_power && ses.requested_power !== ses.confirmed_power
-                  ? `${ses.requested_power} → ${ses.confirmed_power}`
-                  : ses.confirmed_power)
-              : (ses?.requested_power || 'Off')}
+          <span className={`meta-v mono ${pwrInfo.state === 'ON' ? 'ok-text font-bold' : ''}`}>
+            {pwrInfo.state !== '—' ? pwrInfo.state : (ses?.confirmed_power || 'Off')}
           </span>
         </div>
 
