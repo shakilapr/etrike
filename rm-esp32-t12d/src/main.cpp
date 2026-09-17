@@ -67,6 +67,10 @@ static bool send_can_frame(can::Frame& fr) {
 
 // ── Task: CAN Transmit & Encode (100 Hz / 10 ms) ──────────────────
 [[noreturn]] static void task_can_tx(void*) {
+    // 1-second startup hold: allow SES and downstream actuators to initialize
+    // and stabilize sensors before CAN command transmission begins (actuator initialization requirement).
+    vTaskDelay(pdMS_TO_TICKS(1000));
+
     TickType_t period = pdMS_TO_TICKS(1000 / rm::kCanTxHz);
     TickType_t last = xTaskGetTickCount();
     static bool was_in_link_loss = false;

@@ -7,7 +7,7 @@
  * - RT-L: Real-time controller on Low bus (actuator commands, state reports)
  * - SYS: Safety & system supervisor (safety status, power/mode commands, SEB requests)
  * - MTR: Motor inverter / controller (feedback, throttle status, diagnostics)
- * - SBW: Steering-by-wire (SES / SES status, error info)
+ * - SBW: Steering-by-wire (SES status, error info)
  * - BBW: Brake-by-wire (SEB status, error info)
  */
 
@@ -36,7 +36,7 @@ export function getMessageUnit(
   const normBus = (bus || '').toLowerCase()
   const normName = (name || '').toUpperCase()
 
-  // 1. SBW (Steering By Wire: SES / SES)
+  // 1. SBW (Steering By Wire: SES)
   if (
     canId === 0x201 ||
     canId === 0x202 ||

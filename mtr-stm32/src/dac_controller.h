@@ -157,19 +157,15 @@ private:
     bool try_write_address_(uint8_t addr, uint16_t value) {
         i2c_start_();
         uint8_t ack = i2c_write_byte_(addr);
-        if (ack == 0) {
-            i2c_stop_(); // Immediately abort if address not acknowledged
-            return false;
-        }
 
-        // Address matched. Unconditionally clock out the 3 MCP4725 payload bytes
-        // (0x40 write command, MSB, LSB) without aborting on marginal ISO1540
-        // Side 1 VOL (~0.7V) readings.
+        // Always clock out the 3 MCP4725 payload bytes (0x40 write command, MSB, LSB)
+        // regardless of marginal ISO1540 Side 1 VOL (~0.7V) ACK reading.
         (void)i2c_write_byte_(0x40);
         (void)i2c_write_byte_(static_cast<uint8_t>((value >> 4) & 0xFF));
         (void)i2c_write_byte_(static_cast<uint8_t>((value << 4) & 0xF0));
         i2c_stop_();
-        return true;
+
+        return (ack != 0);
     }
 
     uint16_t current_code_{0};

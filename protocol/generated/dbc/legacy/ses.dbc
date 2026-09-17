@@ -69,11 +69,11 @@ BO_ 1786 SES_Test: 8 SES
  SG_ SES_PowVolt : 40|16@1+ (0.00390625,0) [0|18] "V" Vector__XXX
 
 
-CM_ BO_ 361  "SES/SEB SES command. 50 Hz continuous. Byte 5 overlap: Speed[15:8] shares with security nibble per CSV.";
-CM_ BO_ 513  "SES/SEB SES status feedback. 100 Hz. Byte 5 overlap: StrAngleSpd[15:8] / Torq share byte 5 per CSV.";
-CM_ BO_ 514  "SES/SEB SES detailed fault flags. 8 L3 faults (redundant sensor loss) -> RT must escalate to ESTOP.";
-CM_ BO_ 515  "SES/SEB SES firmware version. Log on boot for compatibility check.";
-CM_ BO_ 1786  "SES/SEB SES telemetry. 100 Hz. Bytes 0,7 reserved. Narrower ranges than brake SEB_Test.";
+CM_ BO_ 361  "SES steer-by-wire command. 50 Hz continuous. Byte 5 overlap: Speed[15:8] shares with security nibble per CSV.";
+CM_ BO_ 513  "SES steer-by-wire status feedback. 100 Hz. Byte 5 overlap: StrAngleSpd[15:8] / Torq share byte 5 per CSV.";
+CM_ BO_ 514  "SES steer-by-wire detailed fault flags. 8 L3 faults (redundant sensor loss) -> RT must escalate to ESTOP.";
+CM_ BO_ 515  "SES steer-by-wire firmware version. Log on boot for compatibility check.";
+CM_ BO_ 1786  "SES steer-by-wire telemetry. 100 Hz. Bytes 0,7 reserved. Narrower ranges than brake SEB_Test.";
 
 CM_ SG_ 361 SES_AlignEnable "Angle Initial Alignment Enable. 0=disabled, 1=centering.";
 CM_ SG_ 361 SES_CtrlEnable "Direction Control Enable. 0=Disabled, 1=Enable (Angle Control).";
@@ -127,7 +127,7 @@ CM_ SG_ 1786 SES_ECUTemp "ECU temperature. For thermal throttling.";
 CM_ SG_ 1786 SES_PowVolt "Supply voltage. 0-18V range.";
 
 CM_ BU_ RT "ESP32-S3, FreeRTOS, realtime kinematics + CAN gateway";
-CM_ BU_ SES "SES/SEB SES, steer-by-wire module, preprogrammed CAN IDs";
+CM_ BU_ SES "SES steer-by-wire module, preprogrammed CAN IDs";
 
 BA_DEF_ BO_ "GenMsgCycleTime" INT 0 65535;
 BA_DEF_ SG_ "GenSigStartValue" FLOAT 0 100000000000;

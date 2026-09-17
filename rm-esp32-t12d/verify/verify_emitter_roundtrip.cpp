@@ -50,10 +50,10 @@ void run_mode(rm::OperatingMode mode, const char* mode_name,
             can::custom::ses::Command c{};
             auto st = can::custom::ses::decode_command(fr, c);
             check(st == can::gen::CodecStatus::Ok &&
-                  c.alignment_enable == true && c.control_enable == true &&
+                  c.alignment_enable == false && c.control_enable == true &&
                   c.rolling_counter < 16,
                   "BARE/SYS 0x169 VCU_SES_REQ",
-                  "decode OK + alignment/control enabled");
+                  "decode OK + alignment disabled + control enabled");
         } else if (fr.id == 0x7B9u) {
             can::custom::seb::Command c{};
             auto st = can::custom::seb::decode_command(fr, c);

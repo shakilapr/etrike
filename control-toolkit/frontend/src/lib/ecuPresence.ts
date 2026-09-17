@@ -148,7 +148,7 @@ export const ECU_PROBES: readonly EcuProbe[] = [
     bus: 'low',
     can_id: 0x201,
     names: ['SES_STATUS'],
-    title: 'Steering-by-wire (SES / SES) · SES_STATUS 0x201 Low (offline: unpowered on bench harness)',
+    title: 'Steering-by-wire (SES) · SES_STATUS 0x201 Low (offline: unpowered on bench harness)',
     faults: {
       onIfTruthy: ['error_status'],
       companions: [

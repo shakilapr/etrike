@@ -51,43 +51,48 @@ private:
     // ── Mode 1: BARE (Direct Actuator Control on Low-CAN) ────────────
     template <typename SendFn>
     void emit_bare(const RcSnapshot& snap, bool drive_active, uint32_t tick_10ms, SendFn&& send) {
-        // 1. Steering: 0x169 VCU_SES_REQ (100 Hz)
-        can::custom::ses::Command ses_cmd{};
-        ses_cmd.alignment_enable = snap.signal_valid;
-        ses_cmd.control_enable   = drive_active;
-        int16_t angle_raw = static_cast<int16_t>(kSbwAngleOffset);
-        if (snap.signal_valid) {
-            angle_raw = static_cast<int16_t>(std::round(snap.steering_deg * 10.0f)) + static_cast<int16_t>(kSbwAngleOffset);
-            angle_raw = std::clamp(angle_raw, kMinSteerRaw, kMaxSteerRaw);
+        // 1. Steering: 0x169 VCU_SES_REQ (50 Hz / 20 ms per SES spec)
+        if (tick_10ms % 2 == 0) {
+            can::custom::ses::Command ses_cmd{};
+            ses_cmd.alignment_enable = false;
+            // Hold angle control disabled for first 1000ms after boot (actuator initialization requirement)
+            ses_cmd.control_enable   = drive_active && (tick_10ms >= 100);
+            int16_t angle_raw = static_cast<int16_t>(kSbwAngleOffset);
+            if (snap.signal_valid) {
+                angle_raw = static_cast<int16_t>(std::round(snap.steering_deg * 10.0f)) + static_cast<int16_t>(kSbwAngleOffset);
+                angle_raw = std::clamp(angle_raw, kMinSteerRaw, kMaxSteerRaw);
+            }
+            ses_cmd.target_angle_raw  = angle_raw;
+            ses_cmd.target_speed_raw  = 328; // Standard nominal slew rate (within 400 deg/s rating)
+            ses_cmd.rolling_counter   = roll_ses_;
+            roll_ses_ = (roll_ses_ + 1) & 0x0F;
+            ses_cmd.vehicle_speed_raw = 0;
+
+            can::Frame ses_fr;
+            if (can::custom::ses::encode_command(ses_cmd, ses_fr) == can::gen::CodecStatus::Ok) {
+                send(ses_fr);
+            }
         }
-        ses_cmd.target_angle_raw  = angle_raw;
-        ses_cmd.target_speed_raw  = 328; // Standard nominal slew rate
-        ses_cmd.rolling_counter   = roll_ses_;
-        roll_ses_ = (roll_ses_ + 1) & 0x0F;
-        ses_cmd.vehicle_speed_raw = 0;
 
-        can::Frame ses_fr;
-        if (can::custom::ses::encode_command(ses_cmd, ses_fr) == can::gen::CodecStatus::Ok) {
-            send(ses_fr);
-        }
+        // 2. Braking: 0x7B9 VCU_SEB_REQ (50 Hz / 20 ms per SEB spec)
+        if (tick_10ms % 2 == 0) {
+            can::custom::seb::Command seb_cmd{};
+            seb_cmd.alignment_enable = true;
+            seb_cmd.control_enable   = true;
+            seb_cmd.control_mode     = can::custom::seb::ControlMode::Stroke;
+            seb_cmd.auto_brake       = false;
 
-        // 2. Braking: 0x7B9 VCU_SEB_REQ (100 Hz)
-        can::custom::seb::Command seb_cmd{};
-        seb_cmd.alignment_enable = true;
-        seb_cmd.control_enable   = true;
-        seb_cmd.control_mode     = can::custom::seb::ControlMode::Stroke;
-        seb_cmd.auto_brake       = false;
+            float commanded_stroke = snap.brake_stroke_mm;
+            uint16_t stroke_raw = static_cast<uint16_t>((commanded_stroke - shared::kBrakeStrokeOffset) / shared::kBrakeStrokeScale);
+            seb_cmd.stroke_request_raw   = stroke_raw;
+            seb_cmd.pressure_request_raw = 0;
+            seb_cmd.rolling_counter      = roll_seb_;
+            roll_seb_ = (roll_seb_ + 1) & 0x0F;
 
-        float commanded_stroke = snap.brake_stroke_mm;
-        uint16_t stroke_raw = static_cast<uint16_t>((commanded_stroke - shared::kBrakeStrokeOffset) / shared::kBrakeStrokeScale);
-        seb_cmd.stroke_request_raw   = stroke_raw;
-        seb_cmd.pressure_request_raw = 0;
-        seb_cmd.rolling_counter      = roll_seb_;
-        roll_seb_ = (roll_seb_ + 1) & 0x0F;
-
-        can::Frame seb_fr;
-        if (can::custom::seb::encode_command(seb_cmd, seb_fr) == can::gen::CodecStatus::Ok) {
-            send(seb_fr);
+            can::Frame seb_fr;
+            if (can::custom::seb::encode_command(seb_cmd, seb_fr) == can::gen::CodecStatus::Ok) {
+                send(seb_fr);
+            }
         }
 
         // 3. Traction: 0x204 RT_DRIVE_CMD (100 Hz)
@@ -150,24 +155,27 @@ private:
     // ── Mode 2: SYS (Targeting sys-esp32 on Low-CAN) ─────────────────
     template <typename SendFn>
     void emit_sys(const RcSnapshot& snap, bool drive_active, uint32_t tick_10ms, SendFn&& send) {
-        // Direct actuator setpoints (same as BARE)
-        can::custom::ses::Command ses_cmd{};
-        ses_cmd.alignment_enable = snap.signal_valid;
-        ses_cmd.control_enable   = drive_active;
-        int16_t angle_raw = static_cast<int16_t>(kSbwAngleOffset);
-        if (snap.signal_valid) {
-            angle_raw = static_cast<int16_t>(std::round(snap.steering_deg * 10.0f)) + static_cast<int16_t>(kSbwAngleOffset);
-            angle_raw = std::clamp(angle_raw, kMinSteerRaw, kMaxSteerRaw);
-        }
-        ses_cmd.target_angle_raw  = angle_raw;
-        ses_cmd.target_speed_raw  = 328;
-        ses_cmd.rolling_counter   = roll_ses_;
-        roll_ses_ = (roll_ses_ + 1) & 0x0F;
-        ses_cmd.vehicle_speed_raw = 0;
+        // Direct actuator setpoints (50 Hz / 20 ms per SES spec)
+        if (tick_10ms % 2 == 0) {
+            can::custom::ses::Command ses_cmd{};
+            ses_cmd.alignment_enable = false;
+            // Hold angle control disabled for first 1000ms after boot (actuator initialization requirement)
+            ses_cmd.control_enable   = drive_active && (tick_10ms >= 100);
+            int16_t angle_raw = static_cast<int16_t>(kSbwAngleOffset);
+            if (snap.signal_valid) {
+                angle_raw = static_cast<int16_t>(std::round(snap.steering_deg * 10.0f)) + static_cast<int16_t>(kSbwAngleOffset);
+                angle_raw = std::clamp(angle_raw, kMinSteerRaw, kMaxSteerRaw);
+            }
+            ses_cmd.target_angle_raw  = angle_raw;
+            ses_cmd.target_speed_raw  = 328;
+            ses_cmd.rolling_counter   = roll_ses_;
+            roll_ses_ = (roll_ses_ + 1) & 0x0F;
+            ses_cmd.vehicle_speed_raw = 0;
 
-        can::Frame ses_fr;
-        if (can::custom::ses::encode_command(ses_cmd, ses_fr) == can::gen::CodecStatus::Ok) {
-            send(ses_fr);
+            can::Frame ses_fr;
+            if (can::custom::ses::encode_command(ses_cmd, ses_fr) == can::gen::CodecStatus::Ok) {
+                send(ses_fr);
+            }
         }
 
         // Braking: 0x205 RT_BRAKE_CMD (RT brake *intent* in kPa). In SYS mode the

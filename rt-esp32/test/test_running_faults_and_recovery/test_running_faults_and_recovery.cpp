@@ -430,7 +430,7 @@ public:
             // Send 0x169 to SES (suppressed in Manual mode)
             if (rt_mode != can::Mode::Manual) {
                 etrike::protocol::codecs::ses::Command ses_cmd{};
-                ses_cmd.alignment_enable = true;
+                ses_cmd.alignment_enable = false;
                 ses_cmd.control_enable = (!rt_estop_active && !rt_disable_steering);
                 ses_cmd.target_angle_raw = cmd_angle_0_1deg;
                 ses_cmd.target_speed_raw = 328;

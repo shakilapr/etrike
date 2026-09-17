@@ -69,11 +69,11 @@ BO_ 1787 SEB_Test: 8 SEB
  SG_ SEB_PowVolt : 40|16@1+ (0.00390625,0) [0|32] "V" Vector__XXX
 
 
-CM_ BO_ 1977  "SES/SEB SEB brake command. 50 Hz continuous. Byte 3 mode-mux: Stroke[15:8] in Mode 0, Pressure in Mode 1.";
-CM_ BO_ 1825  "SES/SEB SEB status feedback. 100 Hz. RT monitors pressure for 0x311 BRAKE_DIAG. SYS usage: boot sync -> read StrokeValue; active -> confirm AlignStatus==1.";
-CM_ BO_ 1841  "SES/SEB SEB detailed fault flags. 16 of 23 faults are L3 -> SYS must escalate to ESTOP.";
-CM_ BO_ 1857  "SES/SEB SEB firmware version. Log on boot for compatibility check.";
-CM_ BO_ 1787  "SES/SEB SEB telemetry. 100 Hz. RT monitors for 0x311 BRAKE_DIAG population.";
+CM_ BO_ 1977  "SEB brake command. 50 Hz continuous. Byte 3 mode-mux: Stroke[15:8] in Mode 0, Pressure in Mode 1.";
+CM_ BO_ 1825  "SEB status feedback. 100 Hz. RT monitors pressure for 0x311 BRAKE_DIAG. SYS usage: boot sync -> read StrokeValue; active -> confirm AlignStatus==1.";
+CM_ BO_ 1841  "SEB detailed fault flags. 16 of 23 faults are L3 -> SYS must escalate to ESTOP.";
+CM_ BO_ 1857  "SEB firmware version. Log on boot for compatibility check.";
+CM_ BO_ 1787  "SEB telemetry. 100 Hz. RT monitors for 0x311 BRAKE_DIAG population.";
 
 CM_ SG_ 1977 SEB_AlignEnable "Calibration enable.";
 CM_ SG_ 1977 SEB_CtrlEnable "Active control enable.";
@@ -127,7 +127,7 @@ CM_ SG_ 1787 SEB_ECUTemp "ECU temperature. Offset=-40 per manufacturer CSV physi
 CM_ SG_ 1787 SEB_PowVolt "Supply voltage. 0-32V range.";
 
 CM_ BU_ SYS "ESP32-S3, FreeRTOS, safety + motor + body control";
-CM_ BU_ SEB "SES/SEB SEB, electro-hydraulic brake module, preprogrammed CAN IDs";
+CM_ BU_ SEB "SEB electro-hydraulic brake module, preprogrammed CAN IDs";
 
 BA_DEF_ BO_ "GenMsgCycleTime" INT 0 65535;
 BA_DEF_ SG_ "GenSigStartValue" FLOAT 0 100000000000;

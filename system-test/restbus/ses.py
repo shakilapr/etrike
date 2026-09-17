@@ -1,4 +1,4 @@
-"""SES / SES (steer-by-wire) restbus model.
+"""SES (steer-by-wire) restbus model.
 
 Consumes 0x169 VCU_SES_REQ from the *real* RT ECU and reports 0x201 SES_STATUS
 (+ 0x202 err info / 0x203 version). Payload mirrors protocol/codecs/python/ses.py

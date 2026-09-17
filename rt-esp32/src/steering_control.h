@@ -229,10 +229,10 @@ public:
 
 private:
     void build_command(etrike::protocol::codecs::ses::Command& out) {
-        out.alignment_enable = true;
+        out.alignment_enable = false;
         out.control_enable = 1;
         out.target_angle_raw = m_active_angle + kSbwAngleOffset;  // 0.1° → CAN raw (steer-by-wire offset)
-        // Dynamic slew rate: 125°/s at low speed, 525°/s at high speed
+        // Dynamic slew rate: 125°/s at low speed, 400°/s at high speed
         float speed_kmh = std::abs(m_speed_mmps) * 3.6f / 1000.0f;
         float rate_deg_s = kSteerRateMinDegS
             + (speed_kmh - 2.0f) * (kSteerRateRangeDegS / kAngleClampSpeedRange);

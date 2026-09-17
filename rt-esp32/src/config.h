@@ -35,10 +35,10 @@ constexpr float kAngleClampBaseDeg      =  40.0f;   // max at 2 km/h
 constexpr float kAngleClampMinDeg       =   5.0f;   // min at ≥25 km/h
 constexpr float kAngleClampRangeDeg     =  35.0f;   // base − min
 constexpr float kAngleClampSpeedRange   =  23.0f;   // 25 − 2 km/h
-// Steering slew rate: rate_deg_s = 125 + (speed_kmh − 2) × (400/23), clamped [125, 525]
+// Steering slew rate: rate_deg_s = 125 + (speed_kmh − 2) × (275/23), clamped [125, 400]
 constexpr float kSteerRateMinDegS       = 125.0f;   // at low speed
-constexpr float kSteerRateMaxDegS       = 525.0f;   // at high speed
-constexpr float kSteerRateRangeDegS     = 400.0f;   // max − min
+constexpr float kSteerRateMaxDegS       = 400.0f;   // at high speed (SES hardware rated max: 400 deg/s)
+constexpr float kSteerRateRangeDegS     = 275.0f;   // max − min (400 - 125)
 constexpr int   kSteerSyncTimeoutMs     = 5000;     // LISTEN_SYNC timeout → FAULT (gap C1)
 constexpr int   kSbwAngleOffset     = 30000;    // steer-by-wire CSV offset: raw = angle_0_1deg + offset (0° → raw=30000)
 constexpr float kSteerEstopRampDegS     = 20.0f;    // ESTOP ramp-to-zero rate (gap C3)

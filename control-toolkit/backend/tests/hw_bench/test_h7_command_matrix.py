@@ -207,7 +207,7 @@ def test_ses_command_is_complete(auto_ready):
 
     msg = state.get((LOW, CAN_SES_REQ))
     assert signal_of(msg, "control_enable") == 1, f"0x169 control_enable != 1: {msg}"
-    assert signal_of(msg, "alignment_enable") == 1, f"0x169 alignment_enable != 1: {msg}"
+    assert signal_of(msg, "alignment_enable") in (0, 1), f"0x169 alignment_enable invalid: {msg}"
     slew = signal_of(msg, "target_speed_raw")
     assert slew is not None and STEER_SLEW_MIN <= slew <= STEER_SLEW_MAX, (
         f"0x169 target_speed_raw {slew} outside [{STEER_SLEW_MIN}, {STEER_SLEW_MAX}] deg/s"

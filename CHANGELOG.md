@@ -247,8 +247,8 @@ SYS and MTR builds follow the same pattern. See individual `config.h` files for 
 | Powertrain Gateway | ESP32-S3 | Config defined |
 | High CAN Bus | MCP2515 + SN65HVD230 @ 1 Mbps | Verified |
 | Low CAN Bus | TWAI + SN65HVD230 @ 500 kbps | Verified |
-| Steering Actuator | SES (SES/SEB) | Protocol verified |
-| Brake Actuator | SEB (SES/SEB) | Protocol verified |
+| Steering Actuator | SES (Steer-by-Wire) | Protocol verified |
+| Brake Actuator | SEB (Brake-by-Wire) | Protocol verified |
 | Motor Controller | Kelly (or compatible) via 0-5V throttle | Bench tested |
 | ESTOP Button | NC mushroom, dual-path to SYS and MTR | Designed |
 | Watchdog IC | TPS3850 (programmable) | Designed |
@@ -426,7 +426,7 @@ SYS and MTR builds follow the same pattern. See individual `config.h` files for 
 - Option D: mode-gated dual control of SES/SEB actuators
 
 ### CAN Protocol
-- CAN IDs corrected to match SES/SEB CSV factory defaults (row-by-row audit)
+- CAN IDs corrected to match SES/SEB factory defaults (row-by-row audit)
 - CAN wire protocol encoding errors fixed
 - 18 CAN tests passed after protocol field fixes
 - Dual-bus CAN topology: low-speed (500 kbps) and high-speed (1 Mbps)
@@ -478,7 +478,7 @@ SYS and MTR builds follow the same pattern. See individual `config.h` files for 
 ### Protocol
 - CAN protocol header rewritten for 3-node architecture
 - Inter-MCU link moved to legacy
-- CAN IDs aligned with SES/SEB CSV factory defaults
+- CAN IDs aligned with SES/SEB factory defaults
 
 ---
 

@@ -457,7 +457,7 @@ class ControlIntentService:
             values = {"motor_speed_mmps": 0, "gear": GEAR_N}
         elif channel == "steering":
             values = {
-                "alignment_enable": True,
+                "alignment_enable": False,
                 "control_enable": False,
                 "target_angle_raw": 0,
                 "target_speed_raw": 125,
@@ -501,13 +501,13 @@ class ControlIntentService:
             return {"motor_speed_mmps": speed, "gear": gear}
         if channel == "steering":
             # target_angle_raw: signed 0.1° units, clamp ±450 (45°)
-            # Safety bypass for toolkit direct path: control + alignment always ON.
+            # Direct path: control_enable active, alignment_enable disabled per SES spec.
             angle = int(values.get("target_angle_raw", values.get("angle_raw", 0)))
             angle = int(_clamp(angle, -450, 450))
             speed = int(values.get("target_speed_raw", 328))
-            speed = int(_clamp(speed, 125, 525))
+            speed = int(_clamp(speed, 125, 400))
             return {
-                "alignment_enable": True,
+                "alignment_enable": False,
                 "control_enable": True,
                 "target_angle_raw": angle,
                 "target_speed_raw": speed,

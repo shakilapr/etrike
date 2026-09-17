@@ -211,7 +211,7 @@ export function evaluateActivationGates(
     blocker: rtBlocked ? 'RT supervisor not active (0x012/0x7FD)' : null,
   }
 
-  // ── GATE 3: SES Steer-by-Wire (SES) Controller ──
+  // ── GATE 3: SES Steer-by-Wire Controller ──
   const sesCtrlEnVal = useSim ? 1 : (signalNum(rtSesReq, 'control_enable') ?? (signalIsOn(rtSesReq, 'control_enable') ? 1 : 0))
   const sesCtrlEnMet = sesCtrlEnVal === 1
 
@@ -271,7 +271,7 @@ export function evaluateActivationGates(
       condition: '== 0 (L0 Normal)',
       liveValue: sesFaultMet ? '0 (Normal)' : `L${sesFaultVal}`,
       isMet: sesFaultMet,
-      impactIfMissing: 'EPS internal sensor or driver fault locks out closed-loop steering',
+      impactIfMissing: 'SES internal sensor or driver fault locks out closed-loop steering',
     },
   ]
 

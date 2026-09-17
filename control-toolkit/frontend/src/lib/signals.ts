@@ -757,7 +757,7 @@ export function getDiagnosticIndicators(messages: MessageState[]) {
         valueText:
           sesAligned === null ? '—' : sesAligned ? 'Calibrated' : 'Syncing',
         tooltip:
-          'SES SES Steer-by-Wire zero-point calibration status (0x201 SES_STATUS)',
+          'SES Steer-by-Wire zero-point calibration status (0x201 SES_STATUS)',
       },
       {
         id: 'ses-err',
@@ -777,7 +777,7 @@ export function getDiagnosticIndicators(messages: MessageState[]) {
               ? 'Normal'
               : `L${sesErrLevel}`,
         tooltip:
-          'SES SES Actuator Fault Level (0=Normal, 1=L1 Warning, 2=L2 Degraded, 3=L3 Fault) (0x201)',
+          'SES Actuator Fault Level (0=Normal, 1=L1 Warning, 2=L2 Degraded, 3=L3 Fault) (0x201)',
       },
       {
         id: 'seb-align',
