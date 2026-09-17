@@ -15,7 +15,7 @@ export async function resetComputerSession(request: APIRequestContext) {
   const sessionId = body.session?.session_id
   if (sessionId) {
     await request.delete(`/api/v1/sessions/${sessionId}`, {
-      failOnStatusCode: true,
+      failOnStatusCode: false,
     })
   }
   await request.post('/api/v1/sessions', {

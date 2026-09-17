@@ -111,10 +111,10 @@ export function Dashboard() {
   const isDemo = demoMode // Grounded in explicit demoMode state
 
   // 1. Speed values (raw in mm/s)
-  const rawMtrSpeed = isDemo ? 27222 : (speed.mtrFbkSpeed ?? speed.physicalSpeed ?? null)
-  const rawHostSpeed = isDemo ? 27778 : (speed.hostSpeed ?? null)
-  const rawRtSpeed = isDemo ? 26944 : (speed.rtSpeed ?? null)
-  const rawSysOutputSpeed = isDemo ? 25000 : (speed.manualSpeed ?? speed.mtrFbkSpeed ?? null)
+  const rawMtrSpeed = isDemo ? 2450 : (speed.mtrFbkSpeed ?? speed.physicalSpeed ?? null)
+  const rawHostSpeed = isDemo ? 2778 : (speed.hostSpeed ?? null)
+  const rawRtSpeed = isDemo ? 2500 : (speed.rtSpeed ?? null)
+  const rawSysOutputSpeed = isDemo ? 2350 : (speed.manualSpeed ?? speed.mtrFbkSpeed ?? null)
 
   const mtrSpeedVal = toDisplaySpeed(rawMtrSpeed)
   const hostSpeedVal = toDisplaySpeed(rawHostSpeed)
@@ -141,7 +141,7 @@ export function Dashboard() {
   const diagStrokeVal = isDemo ? 18.0 : (brake.actualStrokeMm != null ? brake.actualStrokeMm * 0.98 : null)
 
   // Secondary speed metrics
-  const wheelSpeedVal = toDisplaySpeed(isDemo ? 26800 : (speed.physicalSpeed ?? null))
+  const wheelSpeedVal = toDisplaySpeed(isDemo ? 2450 : (speed.physicalSpeed ?? null))
   const manualThrottleVal = sysOutputVal
 
   // Programmatic Protocol Audit execution
@@ -175,9 +175,9 @@ export function Dashboard() {
   const steerAudit = auditReport.subsystems.find((s) => s.subsystem === 'Steering')
   const brakeAudit = auditReport.subsystems.find((s) => s.subsystem === 'Braking')
 
-  const speedMax = unitMode === 'kmh' ? 200 : 25000
+  const speedMax = unitMode === 'kmh' ? 20 : 5556
   const speedTicks =
-    unitMode === 'kmh' ? [0, 50, 100, 150, 200] : [0, 5000, 10000, 15000, 20000, 25000]
+    unitMode === 'kmh' ? [0, 5, 10, 15, 20] : [0, 1000, 2000, 3000, 4000, 5000]
   const speedUnit = unitMode === 'kmh' ? 'km/h' : 'mm/s'
 
   return (

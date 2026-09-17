@@ -542,7 +542,14 @@ export function Control() {
     try {
       let st = await ensureSessionReady()
       if (String(st.session.bench_tx).toLowerCase() !== 'enabled') {
-        await api.setBenchTx(st.session.session_id!, true, st.session.revision)
+        try {
+          await api.setBenchTx(st.session.session_id!, true, st.session.revision)
+        } catch {
+          const fresh = await refresh()
+          if (fresh.session?.session_id) {
+            await api.setBenchTx(fresh.session.session_id, true, fresh.session.revision)
+          }
+        }
         st = await refresh()
       }
       setLog('Command TX unlocked')
@@ -557,7 +564,7 @@ export function Control() {
   async function disableTx() {
     setBusy(true)
     try {
-      const st = await refresh()
+      let st = await refresh()
       const sid = st.session?.session_id
       if (!sid) {
         setLog('No session · command TX already locked')
@@ -569,7 +576,14 @@ export function Control() {
       }
       setKbEnabled(false)
       await api.controlRelease('bench_tx_off').catch(() => undefined)
-      await api.setBenchTx(sid, false, st.session.revision)
+      try {
+        await api.setBenchTx(sid, false, st.session.revision)
+      } catch {
+        const fresh = await refresh()
+        if (fresh.session?.session_id) {
+          await api.setBenchTx(fresh.session.session_id, false, fresh.session.revision)
+        }
+      }
       setLog('Command TX locked')
       await refresh()
     } catch (e) {
