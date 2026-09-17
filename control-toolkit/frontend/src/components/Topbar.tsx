@@ -614,13 +614,7 @@ export function Topbar() {
         </div>
       </div>
 
-      {modeErr && (
-        <div className="topbar-action-error" role="status" data-testid="topbar-action-error">
-          {modeErr}
-        </div>
-      )}
-
-      {/* Secondary context — session meta left, ECU presence right */}
+      {/* Secondary context — session meta left, inline action notice, ECU presence right */}
       <div className="topbar-row topbar-row-meta" data-testid="topbar-row-session">
         <div className="meta-group" data-testid="chip-profile" title="Operating profile / destination">
           <span className="meta-k">Profile</span>
@@ -629,24 +623,6 @@ export function Topbar() {
           <span className="meta-v muted" data-testid="chip-destination">
             {dest}
           </span>
-        </div>
-
-        <div
-          className="topbar-mode-toggle"
-          data-testid="topbar-mode-toggle"
-          role="group"
-          aria-label="Transport mode"
-          title="Real · physical CANalyst-II (CH0 High / CH1 Low) USB device"
-        >
-          <button
-            type="button"
-            className="topbar-mode-btn mode-real active"
-            data-testid="topbar-mode-real"
-            title="Real · physical CANalyst-II (CH0 High / CH1 Low)"
-          >
-            <IconCable />
-            <span>Real</span>
-          </button>
         </div>
 
         <div className="meta-group" data-testid="chip-phase" title="Session phase and id">
@@ -659,49 +635,9 @@ export function Topbar() {
           </span>
         </div>
 
-        <div
-          className="meta-group"
-          data-testid="chip-adapter"
-          title={status?.adapter?.identity || 'Adapter health'}
-        >
-          <span className="meta-k">Adapter</span>
-          <span
-            className={`meta-v ${
-              adapterHealth === 'open' || adapterHealth === 'ok' || adapterHealth === 'healthy'
-                ? 'ok-text'
-                : adapterHealth === 'absent' || adapterHealth === 'failed'
-                  ? 'danger-text'
-                  : ''
-            }`}
-          >
-            {status?.adapter?.health ?? '—'}
-          </span>
-        </div>
-
-        <div className="meta-group" data-testid="chip-gear-meta" title="Confirmed vehicle gear">
-          <span className="meta-k">Gear</span>
-          <span className="meta-v mono font-bold">{vehicleGear}</span>
-        </div>
-
-        <div className="meta-group" data-testid="chip-mode" title={`Controller Modes · SYS: ${ctrlModes.sys} · RT: ${ctrlModes.rt} · MTR: ${ctrlModes.mtr}`}>
-          <span className="meta-k">Modes</span>
-          <span className="meta-v mono">
-            {ctrlModes.sys !== '—' || ctrlModes.rt !== '—' || ctrlModes.mtr !== '—'
-              ? `SYS:${ctrlModes.sys} RT:${ctrlModes.rt} MTR:${ctrlModes.mtr}`
-              : (ses?.confirmed_mode || 'Standby')}
-          </span>
-        </div>
-
-        <div className="meta-group" data-testid="chip-power-meta" title={pwrInfo.detail}>
-          <span className="meta-k">Power</span>
-          <span className={`meta-v mono ${pwrInfo.state === 'ON' ? 'ok-text font-bold' : ''}`}>
-            {pwrInfo.state !== '—' ? pwrInfo.state : (ses?.confirmed_power || 'Off')}
-          </span>
-        </div>
-
-        <div className="meta-group" data-testid="chip-record">
+        <div className="meta-group" data-testid="chip-record" title="CAN telemetry recording state">
           <span className="meta-k">Rec</span>
-          <span className={`meta-v ${ses?.recording ? 'ok-text' : ''}`}>
+          <span className={`meta-v ${ses?.recording ? 'ok-text font-bold' : ''}`}>
             {ses?.recording ? 'On' : 'Off'}
           </span>
         </div>
@@ -714,6 +650,32 @@ export function Topbar() {
           <span className="meta-k">Wire</span>
           <span className="meta-v">{(status?.wire_hash ?? '').slice(0, 10) || '—'}…</span>
         </div>
+
+        {/* Action notice / error rendered cleanly inline in second topbar */}
+        {modeErr && (
+          <div
+            className={`meta-action-notice ${
+              modeErr.toLowerCase().includes('error') ||
+              modeErr.toLowerCase().includes('failed') ||
+              modeErr.toLowerCase().includes('lost')
+                ? 'is-error'
+                : 'is-info'
+            }`}
+            role="status"
+            data-testid="topbar-action-error"
+          >
+            <span className="notice-text">{modeErr}</span>
+            <button
+              type="button"
+              className="notice-close"
+              onClick={() => setModeErr(null)}
+              aria-label="Dismiss message"
+              title="Dismiss message"
+            >
+              ×
+            </button>
+          </div>
+        )}
 
         <div
           className="ecu-rail"

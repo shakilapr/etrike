@@ -139,5 +139,14 @@ test.describe('URL Routing & History Navigation', () => {
     await modeBtn.click()
     await powerBtn.click()
     await resetBtn.click()
+
+    // Assert that action notice is shown inline in the second top bar
+    const inlineNotice = page.getByTestId('topbar-action-error')
+    await expect(inlineNotice).toBeVisible()
+
+    // Capture screenshot showing the inline notice inside the second top bar
+    await page.locator('[data-testid="topbar"]').screenshot({
+      path: 'C:/Users/logsh/.gemini/antigravity/brain/ba92870d-875f-4c69-8960-0970c0e3456a/topbar_with_inline_notice.png',
+    })
   })
 })
