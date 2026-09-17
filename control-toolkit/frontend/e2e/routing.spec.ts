@@ -98,4 +98,24 @@ test.describe('URL Routing & History Navigation', () => {
     await expect(page.getByTestId('app')).toBeVisible()
     await expect(page.getByTestId('nav-preview')).toHaveClass(/active/)
   })
+
+  test('top bar renders Inject ESTOP and Reset ESTOP buttons', async ({ page }) => {
+    await page.goto('/overview')
+    const injectBtn = page.getByTestId('btn-header-estop')
+    const resetBtn = page.getByTestId('btn-header-estop-reset')
+
+    await expect(injectBtn).toBeVisible()
+    await expect(injectBtn).toContainText(/Inject ESTOP/i)
+
+    await expect(resetBtn).toBeVisible()
+    await expect(resetBtn).toContainText(/Reset ESTOP/i)
+
+    // Capture topbar screenshot showing both buttons
+    await page.locator('[data-testid="topbar"]').screenshot({
+      path: 'C:/Users/logsh/.gemini/antigravity/brain/ba92870d-875f-4c69-8960-0970c0e3456a/topbar_estop_buttons.png',
+    })
+
+    // Clicking reset should execute smoothly without crashing
+    await resetBtn.click()
+  })
 })

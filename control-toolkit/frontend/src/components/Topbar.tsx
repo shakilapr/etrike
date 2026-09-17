@@ -16,6 +16,7 @@ import {
   IconNetwork,
   IconOctagonAlert,
   IconRadio,
+  IconRotateCcw,
 } from './icons'
 
 /** green=clean live · yellow=late or live+errors · red=dead · muted=unknown */
@@ -102,13 +103,34 @@ export function Topbar() {
     }
   }
 
-  async function clearEstop() {
+  async function resetEstop() {
     setModeErr(null)
     try {
-      // Only clears host inject latch — not ECU-latched ESTOP on the bus.
-      await api.clearEstop()
+      const ses = status?.session
+      const benchOn = String(ses?.bench_tx ?? '').toLowerCase() === 'enabled'
+      if (benchOn) {
+        try {
+          const res = await api.rearmEstop()
+          setStatus(await api.status())
+          const estop = res.estop as { active?: boolean; summary?: string } | undefined
+          if (estop?.active) {
+            setModeErr(`Bench REARM emitted · remaining: ${estop.summary}`)
+          } else {
+            setModeErr('ESTOP reset & rearmed successfully (SYS clear frames + power cycle emitted)')
+          }
+          return
+        } catch {
+          // Fallback to clearEstop if rearm is unsupported or failed
+        }
+      }
+      const clearRes = await api.clearEstop()
       setStatus(await api.status())
-      setModeErr('Host ESTOP latch cleared (bus/SYS/RT may still report ESTOP)')
+      const remaining = clearRes.estop as { active?: boolean; summary?: string } | undefined
+      if (remaining?.active) {
+        setModeErr(`Host latch cleared · active on bus/ECUs: ${remaining.summary}`)
+      } else {
+        setModeErr('Host ESTOP latch cleared')
+      }
     } catch (e) {
       setModeErr(String(e).replace(/^Error:\s*/i, '').slice(0, 180))
     }
@@ -400,18 +422,16 @@ export function Topbar() {
           >
             Inject ESTOP
           </button>
-          {/* Clear only applies to host inject latch — not bus/SYS/RT vehicle ESTOP. */}
-          {estopObs.hostLatch ? (
-            <button
-              type="button"
-              className="btn secondary"
-              data-testid="btn-header-estop-clear"
-              title="Clear host inject latch only. Does not clear ECU-latched ESTOP on the bus."
-              onClick={() => void clearEstop()}
-            >
-              Clear latch
-            </button>
-          ) : null}
+          <button
+            type="button"
+            className={`btn-estop-reset ${estopOn || estopObs.hostLatch ? 'is-active-reset' : ''}`}
+            data-testid="btn-header-estop-reset"
+            title="Reset ESTOP latch and rearm vehicle safety path (sends 0x011 clear & power cycle when Bench TX armed)"
+            onClick={() => void resetEstop()}
+          >
+            <IconRotateCcw />
+            <span>Reset ESTOP</span>
+          </button>
         </div>
       </div>
 

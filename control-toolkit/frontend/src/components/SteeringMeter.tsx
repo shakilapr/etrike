@@ -253,20 +253,17 @@ export function SteeringMeter({
 
       {/* Layered Meter Lines Legend — in physical order: Host (inner) → RT (middle) → SES (outer) */}
       <div className="steering-tier-legend" data-testid={`${testId}-tier-legend`}>
-        <div className="tier-legend-item">
+        <div className="tier-legend-item" title="Host Guidance Target (CAN 0x303)">
           <span className="tier-dot host" />
           <span>Host Target</span>
-          <span className="can-id-tag">0x303</span>
         </div>
-        <div className="tier-legend-item">
+        <div className="tier-legend-item" title="RT Actuator Setpoint (CAN 0x169)">
           <span className="tier-dot rt" />
           <span>RT Setpoint</span>
-          <span className="can-id-tag">0x169</span>
         </div>
-        <div className="tier-legend-item">
+        <div className="tier-legend-item" title="SES Actual Steering Feedback (CAN 0x201)">
           <span className="tier-dot actual" />
           <span>Actual SES</span>
-          <span className="can-id-tag">0x201</span>
         </div>
       </div>
 
@@ -380,15 +377,12 @@ export function SteeringMeter({
           <div className="multi-meter-center-value" data-testid={`${testId}-center-value`}>
             {angleNum != null ? `${angleNum > 0 ? '+' : ''}${angleNum.toFixed(1)}°` : '—'}
           </div>
-          <div className="multi-meter-center-label" data-testid={`${testId}-center-label`}>
+          <div
+            className="multi-meter-center-label"
+            data-testid={`${testId}-center-label`}
+            title="SES_STATUS: angle_deg (CAN 0x201)"
+          >
             <span>SES ANGLE</span>
-            <span
-              className="can-id-tag"
-              title="SES_STATUS: angle_deg (Low 0x201)"
-              data-testid={`${testId}-primary-can`}
-            >
-              0x201
-            </span>
           </div>
         </div>
       </div>
@@ -397,16 +391,12 @@ export function SteeringMeter({
       <div className="multi-meter-sub-strip" data-testid={`${testId}-sub-strip`}>
         {/* Left Sub-Meter: Host Command */}
         <div className="multi-meter-sub-col" data-testid={`${testId}-sub-left`}>
-          <div className="multi-meter-sub-label-row">
+          <div
+            className="multi-meter-sub-label-row"
+            title="HOST_STEER_CMD: steer_angle_0_1deg (CAN 0x303)"
+          >
             <span className="tier-dot host" />
             <span className="multi-meter-sub-label">HOST STEER</span>
-            <span
-              className="can-id-tag"
-              title="HOST_STEER_CMD: steer_angle_0_1deg (High 0x303)"
-              data-testid={`${testId}-sub-left-can`}
-            >
-              0x303
-            </span>
           </div>
           <span className="multi-meter-sub-value text-host">
             {hostNum != null
@@ -421,16 +411,12 @@ export function SteeringMeter({
 
         {/* Right Sub-Meter: RT Command */}
         <div className="multi-meter-sub-col" data-testid={`${testId}-sub-right`}>
-          <div className="multi-meter-sub-label-row">
+          <div
+            className="multi-meter-sub-label-row"
+            title="VCU_SES_REQ: target_angle_raw (CAN 0x169)"
+          >
             <span className="tier-dot rt" />
             <span className="multi-meter-sub-label">RT TARGET</span>
-            <span
-              className="can-id-tag"
-              title="VCU_SES_REQ: target_angle_raw (Low 0x169)"
-              data-testid={`${testId}-sub-right-can`}
-            >
-              0x169
-            </span>
           </div>
           <span className="multi-meter-sub-value text-rt">
             {rtNum != null
@@ -443,12 +429,9 @@ export function SteeringMeter({
 
       {/* Combined Integrated Steering Dynamics (Yaw, Slew, Torque) */}
       <div className="multi-meter-integrated-strip" data-testid={`${testId}-dynamics-strip`}>
-        <div className="multi-meter-integrated-item" title="HOST_DRIVE_CMD: yaw_rate_mrad_s (High 0x300)">
+        <div className="multi-meter-integrated-item" title="HOST_DRIVE_CMD: yaw_rate_mrad_s (CAN 0x300)">
           <div className="integrated-label-row">
             <span className="integrated-label">Host Yaw</span>
-            <span className="can-id-tag" title="HOST_DRIVE_CMD: yaw_rate_mrad_s">
-              0x300
-            </span>
           </div>
           <span className="integrated-value mono">
             {typeof yawRate === 'number' && Number.isFinite(yawRate)
@@ -457,12 +440,9 @@ export function SteeringMeter({
           </span>
         </div>
 
-        <div className="multi-meter-integrated-item" title="VCU_SES_REQ: target_speed_raw (Low 0x169)">
+        <div className="multi-meter-integrated-item" title="VCU_SES_REQ: target_speed_raw (CAN 0x169)">
           <div className="integrated-label-row">
             <span className="integrated-label">RT Slew</span>
-            <span className="can-id-tag" title="VCU_SES_REQ: target_speed_raw">
-              0x169
-            </span>
           </div>
           <span className="integrated-value mono">
             {typeof slewRate === 'number' && Number.isFinite(slewRate)
@@ -471,12 +451,9 @@ export function SteeringMeter({
           </span>
         </div>
 
-        <div className="multi-meter-integrated-item" title="SES_STATUS: torque_nm (Low 0x201)">
+        <div className="multi-meter-integrated-item" title="SES_STATUS: torque_nm (CAN 0x201)">
           <div className="integrated-label-row">
             <span className="integrated-label">EPS Torque</span>
-            <span className="can-id-tag" title="SES_STATUS: torque_nm">
-              0x201
-            </span>
           </div>
           <span className="integrated-value mono">
             {typeof torqueNm === 'number' && Number.isFinite(torqueNm)

@@ -30,12 +30,13 @@
   background: linear-gradient(180deg, #fff 0%, #fafbfc 100%);
 }
 
-.topbar-row-primary .btn-estop {
+.topbar-row-primary .topbar-estop-actions {
   margin-left: auto;
   align-self: center;
-  width: 112px;
-  min-width: 112px;
-  max-width: 112px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
 }
 
 .topbar-action-error {
@@ -697,6 +698,55 @@ button.topbar-mode-btn.btn {
   outline-offset: 2px;
 }
 
+.btn-estop-reset,
+.btn-estop-reset:hover:not(:disabled),
+.btn-estop-reset:focus:not(:disabled),
+.btn-estop-reset:active:not(:disabled) {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+  background: var(--surface);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  min-height: 32px;
+  height: 32px;
+  max-height: 32px;
+  padding: 0 10px;
+  font-weight: 600;
+  font-size: 12px;
+  line-height: 1.2;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  box-shadow: none;
+  transition: all var(--transition);
+}
+
+.btn-estop-reset:hover:not(:disabled) {
+  background: var(--surface-2);
+  color: var(--text);
+  border-color: var(--border-focus, #94a3b8);
+}
+
+.btn-estop-reset:focus-visible {
+  outline: 2px solid #cbd5e1;
+  outline-offset: 2px;
+}
+
+.btn-estop-reset.is-active-reset {
+  background: #fffbeb;
+  color: #b45309;
+  border-color: #f59e0b;
+  font-weight: 700;
+}
+
+.btn-estop-reset.is-active-reset:hover:not(:disabled) {
+  background: #fef3c7;
+  border-color: #d97706;
+  color: #92400e;
+}
+
 .status-dot.muted {
   color: var(--text-tertiary);
 }
@@ -707,7 +757,7 @@ button.topbar-mode-btn.btn {
     order: 3;
   }
 
-  .topbar-row-primary .btn-estop {
+  .topbar-row-primary .topbar-estop-actions {
     margin-left: 0;
   }
 

@@ -530,6 +530,13 @@ export const api = {
       session: Record<string, unknown>
       estop?: Record<string, unknown>
     }>('/control/estop/clear', { method: 'POST', body: '{}' }),
+  rearmEstop: () =>
+    json<{
+      control: Record<string, unknown>
+      session: Record<string, unknown>
+      estop?: Record<string, unknown>
+      tx: Array<Record<string, unknown>>
+    }>('/control/estop/rearm', { method: 'POST', body: '{}' }),
   /** Structured ESTOP report (causes, RT estop_reason, bus 0x001, SYS flags). */
   estopReport: () =>
     json<{ estop: Record<string, unknown>; session_id?: string | null }>('/control/estop'),
