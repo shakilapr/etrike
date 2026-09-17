@@ -1173,10 +1173,23 @@ static uint8_t task_health_snapshot() {
                                  static_cast<std::uint16_t>(
                                      (now - g_last_sys_safety_sts_us.load()) / 1000));
             }
-            if (sst.state == rt::SafetyStreamState::LOST || sst.sys_absent_fault || m_estop_pending) {
+            // Bench-solo SYS-absent self-grant (developer override): a SYS that
+            // has NEVER appeared on the bus must not silence RT — self-grant
+            // SAFETY|MODE authority (AUTO) so Host drive commands still reach
+            // the Low bus, mirroring SYS's MTR/SEB peer bypasses. A SYS that
+            // was seen and then died (LOST) still latches ESTOP, and the first
+            // valid 0x011 hands authority back to the real stream.
+            const bool solo_sys_absent = (sst.sys_absent_fault && g_bench_solo_mode);
+            if (sst.state == rt::SafetyStreamState::LOST || m_estop_pending
+                || (sst.sys_absent_fault && !g_bench_solo_mode)) {
                 g_ready_mask.fetch_and(
                     static_cast<uint8_t>(~(rt::READY_BIT_SAFETY | rt::READY_BIT_MODE | rt::READY_BIT_HOST)),
                     std::memory_order_release);
+            } else if (solo_sys_absent) {
+                g_ready_mask.fetch_or(
+                    static_cast<uint8_t>(rt::READY_BIT_SAFETY | rt::READY_BIT_MODE),
+                    std::memory_order_release);
+                m_current_mode = static_cast<uint8_t>(can::Mode::Auto);
             } else if (sst.motion_authorized) {
                 g_ready_mask.fetch_or(rt::READY_BIT_SAFETY, std::memory_order_release);
             } else {
@@ -1185,7 +1198,7 @@ static uint8_t task_health_snapshot() {
             }
 
             if (sst.sys_absent_fault) {
-                g_no_sys_authority.store(true, std::memory_order_relaxed);
+                g_no_sys_authority.store(!g_bench_solo_mode, std::memory_order_relaxed);
                 rt::diag().raise(etrike::diagnostics::DiagId::RtSysSafetyStsLoss,
                                  static_cast<std::uint16_t>(rt::kSysSafetyAcquireTimeoutUs / 1000));
             } else {
@@ -1468,6 +1481,7 @@ extern "C" void app_main() {
             ESP_LOGE(TAG, "***********************************");
             ESP_LOGE(TAG, "* DEVELOPER BYPASS ACTIVE         *");
             ESP_LOGE(TAG, "* BYPASSING SAFETY SYNC CHECKS!   *");
+            ESP_LOGE(TAG, "* SYS-ABSENT: RT SELF-GRANTS AUTO *");
             ESP_LOGE(TAG, "***********************************");
         } else if (SYSTEM_RUN_MODE == 1) {
             ESP_LOGI(TAG, "Prototype mode: Override pin not jumped. Enforcing safety.");
