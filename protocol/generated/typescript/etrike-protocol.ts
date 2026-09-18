@@ -3,7 +3,7 @@
 // NETWORK_HASH: buses + routes + instances.
 export const SEMANTIC_HASH = "ad2e52255a457025c9961683c434fd42af1c3a074e39f61127c00e243bf29ea5" as const;
 export const WIRE_HASH = SEMANTIC_HASH;
-export const NETWORK_HASH = "6922db4cc5f2bb1b0e8de9f24d619d605d627c84fa83cad337a26f7f4314cd9f" as const;
+export const NETWORK_HASH = "381b049e2b4426cff71982b37c92f9cd1c06ed390a846353bb3966916df66d44" as const;
 export const METADATA = {
   "hmi:hmi_mode_req": {
     "byte_order": "big",
