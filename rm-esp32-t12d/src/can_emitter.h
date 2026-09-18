@@ -55,8 +55,7 @@ private:
         if (tick_10ms % 2 == 0) {
             can::custom::ses::Command ses_cmd{};
             ses_cmd.alignment_enable = false;
-            // Hold angle control disabled for first 1000ms after boot (actuator initialization requirement)
-            ses_cmd.control_enable   = drive_active && (tick_10ms >= 100);
+            ses_cmd.control_enable   = drive_active;
             int16_t angle_raw = static_cast<int16_t>(kSbwAngleOffset);
             if (snap.signal_valid) {
                 angle_raw = static_cast<int16_t>(std::round(snap.steering_deg * 10.0f)) + static_cast<int16_t>(kSbwAngleOffset);
@@ -159,8 +158,7 @@ private:
         if (tick_10ms % 2 == 0) {
             can::custom::ses::Command ses_cmd{};
             ses_cmd.alignment_enable = false;
-            // Hold angle control disabled for first 1000ms after boot (actuator initialization requirement)
-            ses_cmd.control_enable   = drive_active && (tick_10ms >= 100);
+            ses_cmd.control_enable   = drive_active;
             int16_t angle_raw = static_cast<int16_t>(kSbwAngleOffset);
             if (snap.signal_valid) {
                 angle_raw = static_cast<int16_t>(std::round(snap.steering_deg * 10.0f)) + static_cast<int16_t>(kSbwAngleOffset);
