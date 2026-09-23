@@ -1,6 +1,8 @@
-# brake-by-wire unit — Electro-Hydraulic Brake Unit
+# SEB (Brake-by-Wire) Actuator Unit
 
-CAN-controlled brake actuator. Factory-programmed IDs (not reconfigurable).
+> **Canonical Technical Reference**: See [`docs/hardware/seb-unit.md`](seb-unit.md) for the complete bit-level layout, fault bitmap, and production C++ driver.
+
+CAN-controlled electro-hydraulic brake actuator. Factory-programmed IDs (not reconfigurable).
 
 ---
 
@@ -11,10 +13,11 @@ CAN-controlled brake actuator. Factory-programmed IDs (not reconfigurable).
 | Bus | Low-level CAN (500 kbit/s) |
 | Command ID | `0x7B9` VCU_SEB_REQ (customized from factory default `0x720`) |
 | Status ID | `0x721` SEB_STATUS |
+| Fault Info ID | `0x731` SEB_ErrInfo |
 | Command rate | 20 ms (50 Hz) — **continuous transmission required** |
 | Status rate | 10 ms (100 Hz) |
-| Endianness | Motorola LSB (little-endian) |
-| DLC (both) | 8 |
+| Endianness | **Motorola (Big-Endian)** (MSB first) |
+| DLC | 8 |
 
 ---
 

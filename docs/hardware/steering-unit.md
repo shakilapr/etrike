@@ -1,4 +1,6 @@
-# steer-by-wire unit — Steer-by-Wire Unit
+# SES (Steer-by-Wire) Actuator Unit
+
+> **Canonical Technical Reference**: See [`docs/hardware/ses-unit.md`](ses-unit.md) for the complete bit-level layout, rising-edge state machine, hot-plug recovery, and production C++ driver.
 
 CAN-controlled steering actuator. Factory-programmed IDs (not reconfigurable).
 
@@ -13,7 +15,7 @@ CAN-controlled steering actuator. Factory-programmed IDs (not reconfigurable).
 | Status ID | `0x201` SES_STATUS |
 | Command rate | 20 ms (50 Hz) — **continuous transmission required** |
 | Status rate | 10 ms (100 Hz) |
-| Endianness | Motorola LSB (little-endian) |
+| Endianness | **Motorola (Big-Endian)** (MSB first) |
 | DLC (both) | 8 |
 
 > **ID note**: Factory command ID `0x200` is the factory default, customized to `0x169`. `RT_DRIVE_CMD` is placed at `0x204` to avoid collision.
@@ -137,7 +139,9 @@ Same as SEB: 4-bit value (0–15), increment every frame. Two consecutive frames
 
 ### Checksum
 
-Same algorithm as SEB: `XOR(bytes[0..6]) ^ 0xFF`. Placed in Byte 7.
+**8-bit Additive Sum**: Byte 7 contains the low byte of the sum of bytes 0 through 6:
+$$\text{CheckSum} = \left(\sum_{i=0}^6 \text{Byte}_i\right) \ \& \ \text{0xFF}$$
+*(Note: Do not use XOR; the physical hardware requires additive sum modulo 256).*
 
 ### Security Enable Bits (Byte 5) — Unique to SES
 

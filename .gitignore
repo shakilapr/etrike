@@ -228,3 +228,6 @@ control-ui/frontend/playwright-report/
 *.sqlite-wal
 rt-aurix-lite/board/TriCore Debug (GCC)/
 rt-aurix-lite/test/
+
+# ── Research Papers ──────────────────────────────────────────────────
+/tex/research/
