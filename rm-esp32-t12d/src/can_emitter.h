@@ -16,10 +16,47 @@ namespace rm {
 
 class CanEmitter {
 public:
-    // Sender callback type: returns true if frame successfully queued
+    // Helper: 8-bit Additive Sum Checksum required by physical actuator
+    static uint8_t calc_sum8(const uint8_t* data, size_t len) noexcept {
+        uint8_t sum = 0;
+        for (size_t i = 0; i < len; ++i) sum = static_cast<uint8_t>(sum + data[i]);
+        return sum;
+    }
+
+    // Called from CAN RX when 0x201 SES_STATUS is received
+    void on_ses_status_rx(uint8_t control_mode_status, uint32_t now_ms) noexcept {
+        if (!ses_online_) {
+            // Reconnected! Trigger 200ms disarm pulse to force a fresh rising edge
+            rearm_ses_ticks_ = 20;
+        }
+        ses_online_ = true;
+        ses_mode_status_ = control_mode_status;
+        last_0x201_ms_ = now_ms;
+    }
+
     template <typename SendFn>
     void emit_cluster(const RcSnapshot& snap, uint32_t tick_10ms, SendFn&& send) {
+        emit_cluster(snap, tick_10ms, 0, send);
+    }
+
+    // Sender callback type: returns true if frame successfully queued
+    template <typename SendFn>
+    void emit_cluster(const RcSnapshot& snap, uint32_t tick_10ms, uint32_t now_ms, SendFn&& send) {
         const bool drive_active = snap.signal_valid && snap.drive_enable_req && !snap.park_hold_req;
+
+        // Auto-detect link loss: if no 0x201 for >250ms, mark offline
+        if (now_ms > 0 && last_0x201_ms_ > 0 && (now_ms - last_0x201_ms_ > 250)) {
+            ses_online_ = false;
+        }
+
+        // Auto re-arm if actuator fell out of Auto mode (e.g. power cycle/reconnect) while drive active
+        if (ses_online_ && drive_active && (ses_mode_status_ == 0) && (rearm_ses_ticks_ == 0)) {
+            rearm_ses_ticks_ = 20; // 200ms disarm pulse
+        }
+
+        if (rearm_ses_ticks_ > 0) {
+            --rearm_ses_ticks_;
+        }
 
         switch (snap.op_mode) {
             case OperatingMode::Bare:
@@ -35,6 +72,10 @@ public:
     }
 
     void reset_counters() noexcept {
+        rearm_ses_ticks_ = 20;
+        ses_online_ = false;
+        last_0x201_ms_ = 0;
+        ses_mode_status_ = 0;
         roll_ses_ = 0;
         roll_seb_ = 0;
         roll_sys_mode_ = 0;
@@ -48,6 +89,10 @@ public:
     }
 
 private:
+    uint32_t rearm_ses_ticks_{20};   // Countdown ticks for Control_Enable rising edge (200ms)
+    uint32_t last_0x201_ms_{0};       // Timestamp of last received 0x201 SES_STATUS
+    uint8_t  ses_mode_status_{0};     // 0 = Manual/Assist, 1 = Auto/Angle Control
+    bool     ses_online_{false};
     // ── Mode 1: BARE (Direct Actuator Control on Low-CAN) ────────────
     template <typename SendFn>
     void emit_bare(const RcSnapshot& snap, bool drive_active, uint32_t tick_10ms, SendFn&& send) {
@@ -55,7 +100,8 @@ private:
         if (tick_10ms % 2 == 0) {
             can::custom::ses::Command ses_cmd{};
             ses_cmd.alignment_enable = false;
-            ses_cmd.control_enable   = drive_active;
+            // Control enable requires a clean 0 -> 1 rising edge to engage Angle Control Mode
+            ses_cmd.control_enable   = (rearm_ses_ticks_ == 0) && drive_active;
             int16_t angle_raw = static_cast<int16_t>(kSbwAngleOffset);
             if (snap.signal_valid) {
                 angle_raw = static_cast<int16_t>(std::round(snap.steering_deg * 10.0f)) + static_cast<int16_t>(kSbwAngleOffset);
@@ -65,24 +111,28 @@ private:
             ses_cmd.target_speed_raw  = 328; // Standard nominal slew rate (within 400 deg/s rating)
             ses_cmd.rolling_counter   = roll_ses_;
             roll_ses_ = (roll_ses_ + 1) & 0x0F;
-            ses_cmd.vehicle_speed_raw = 0;
+            // Note 11: Vehicle speed >= 5 km/h during active drive prevents motor shutdown at 0 deg
+            ses_cmd.vehicle_speed_raw = drive_active ? 10 : 0;
 
             can::Frame ses_fr;
             if (can::custom::ses::encode_command(ses_cmd, ses_fr) == can::gen::CodecStatus::Ok) {
+                // Hardware protocol requires 8-bit additive sum checksum over bytes 0..6
+                ses_fr.data[7] = calc_sum8(ses_fr.data.data(), 7);
                 send(ses_fr);
             }
         }
 
-        // 2. Braking: 0x7B9 VCU_SEB_REQ (50 Hz / 20 ms per SEB spec)
+        // 2. Braking: 0x7B9 VCU_SEB_REQ (50 Hz / 20 ms per SEB specification)
         if (tick_10ms % 2 == 0) {
             can::custom::seb::Command seb_cmd{};
-            seb_cmd.alignment_enable = true;
+            seb_cmd.alignment_enable = false; // Normal braking: alignment MUST be false (true resets zero datum)
             seb_cmd.control_enable   = true;
             seb_cmd.control_mode     = can::custom::seb::ControlMode::Stroke;
             seb_cmd.auto_brake       = false;
 
+            // Stroke Resolution: 0.1 mm/count, 0 mm = 0 raw (0..270 raw for 0..27.0 mm)
             float commanded_stroke = snap.brake_stroke_mm;
-            uint16_t stroke_raw = static_cast<uint16_t>((commanded_stroke - shared::kBrakeStrokeOffset) / shared::kBrakeStrokeScale);
+            uint16_t stroke_raw = static_cast<uint16_t>(std::clamp(std::round(commanded_stroke * 10.0f), 0.0f, 270.0f));
             seb_cmd.stroke_request_raw   = stroke_raw;
             seb_cmd.pressure_request_raw = 0;
             seb_cmd.rolling_counter      = roll_seb_;
@@ -90,6 +140,8 @@ private:
 
             can::Frame seb_fr;
             if (can::custom::seb::encode_command(seb_cmd, seb_fr) == can::gen::CodecStatus::Ok) {
+                // Actuator family requires 8-bit additive sum over bytes 0..6
+                seb_fr.data[7] = calc_sum8(seb_fr.data.data(), 7);
                 send(seb_fr);
             }
         }
@@ -158,7 +210,8 @@ private:
         if (tick_10ms % 2 == 0) {
             can::custom::ses::Command ses_cmd{};
             ses_cmd.alignment_enable = false;
-            ses_cmd.control_enable   = drive_active;
+            // Control enable requires a clean 0 -> 1 rising edge to engage Angle Control Mode
+            ses_cmd.control_enable   = (rearm_ses_ticks_ == 0) && drive_active;
             int16_t angle_raw = static_cast<int16_t>(kSbwAngleOffset);
             if (snap.signal_valid) {
                 angle_raw = static_cast<int16_t>(std::round(snap.steering_deg * 10.0f)) + static_cast<int16_t>(kSbwAngleOffset);
@@ -168,10 +221,13 @@ private:
             ses_cmd.target_speed_raw  = 328;
             ses_cmd.rolling_counter   = roll_ses_;
             roll_ses_ = (roll_ses_ + 1) & 0x0F;
-            ses_cmd.vehicle_speed_raw = 0;
+            // Note 11: Vehicle speed >= 5 km/h during active drive prevents motor shutdown at 0 deg
+            ses_cmd.vehicle_speed_raw = drive_active ? 10 : 0;
 
             can::Frame ses_fr;
             if (can::custom::ses::encode_command(ses_cmd, ses_fr) == can::gen::CodecStatus::Ok) {
+                // Hardware protocol requires 8-bit additive sum checksum over bytes 0..6
+                ses_fr.data[7] = calc_sum8(ses_fr.data.data(), 7);
                 send(ses_fr);
             }
         }

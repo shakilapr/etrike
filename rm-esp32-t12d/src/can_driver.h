@@ -36,12 +36,20 @@ public:
         int bitrate_hz;
     };
 
+    struct RxItem {
+        uint32_t id;
+        uint8_t dlc;
+        bool extended;
+        uint8_t data[8];
+    };
+
     explicit CanDriver(const Config& config) : config_(config) {}
     ~CanDriver() {
         if (node_) {
             twai_node_disable(node_);
             twai_node_delete(node_);
         }
+        if (rx_queue_) vQueueDelete(rx_queue_);
         if (free_tx_slots_) vQueueDelete(free_tx_slots_);
         if (control_mutex_) vSemaphoreDelete(control_mutex_);
     }
@@ -50,9 +58,10 @@ public:
     CanDriver& operator=(const CanDriver&) = delete;
 
     bool init() {
+        if (!rx_queue_) rx_queue_ = xQueueCreate(32, sizeof(RxItem));
         if (!free_tx_slots_) free_tx_slots_ = xQueueCreate(kTxSlots, sizeof(uint8_t));
         if (!control_mutex_) control_mutex_ = xSemaphoreCreateMutex();
-        if (!free_tx_slots_ || !control_mutex_) return false;
+        if (!rx_queue_ || !free_tx_slots_ || !control_mutex_) return false;
         if (xSemaphoreTake(control_mutex_, pdMS_TO_TICKS(500)) != pdTRUE) return false;
 
         if (node_) {
@@ -88,6 +97,7 @@ public:
         esp_err_t result = twai_new_node_onchip(&config, &node_);
         if (result == ESP_OK) {
             twai_event_callbacks_t callbacks{};
+            callbacks.on_rx_done = &CanDriver::on_rx_done_;
             callbacks.on_tx_done = &CanDriver::on_tx_done_;
             callbacks.on_state_change = &CanDriver::on_state_change_;
             result = twai_node_register_event_callbacks(node_, &callbacks, this);
@@ -104,6 +114,15 @@ public:
         }
         xSemaphoreGive(control_mutex_);
         return initialized_;
+    }
+
+    bool receive(Frame& out, TickType_t timeout_ms = 100) {
+        if (!initialized_) return false;
+        RxItem item{};
+        if (xQueueReceive(rx_queue_, &item, pdMS_TO_TICKS(timeout_ms)) != pdTRUE) return false;
+        out = Frame(item.id, item.extended, item.dlc);
+        std::memcpy(out.data.data(), item.data, item.dlc);
+        return true;
     }
 
     bool send(const Frame& source, TickType_t timeout_ms = 20) {
@@ -223,6 +242,9 @@ private:
         uint8_t data[8]{};
     };
 
+    static bool IRAM_ATTR on_rx_done_(twai_node_handle_t node,
+                                      const twai_rx_done_event_data_t* event,
+                                      void* user_ctx);
     static bool IRAM_ATTR on_tx_done_(twai_node_handle_t node,
                                       const twai_tx_done_event_data_t* event,
                                       void* user_ctx);
@@ -256,6 +278,7 @@ private:
 
     Config config_;
     twai_node_handle_t node_{nullptr};
+    QueueHandle_t rx_queue_{nullptr};
     QueueHandle_t free_tx_slots_{nullptr};
     SemaphoreHandle_t control_mutex_{nullptr};
     TxSlot tx_slots_[kTxSlots]{};

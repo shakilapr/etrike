@@ -2,6 +2,25 @@
 
 namespace can {
 
+bool IRAM_ATTR CanDriver::on_rx_done_(twai_node_handle_t node,
+                                      const twai_rx_done_event_data_t*,
+                                      void* user_ctx) {
+    auto* self = static_cast<CanDriver*>(user_ctx);
+    RxItem item{};
+    twai_frame_t frame{};
+    frame.buffer = item.data;
+    frame.buffer_len = sizeof(item.data);
+    if (twai_node_receive_from_isr(node, &frame) != ESP_OK || frame.header.dlc > 8) {
+        return false;
+    }
+    item.id = frame.header.id;
+    item.dlc = static_cast<uint8_t>(frame.header.dlc);
+    item.extended = frame.header.ide;
+    BaseType_t wake = pdFALSE;
+    xQueueSendFromISR(self->rx_queue_, &item, &wake);
+    return wake == pdTRUE;
+}
+
 bool IRAM_ATTR CanDriver::on_tx_done_(twai_node_handle_t,
                                       const twai_tx_done_event_data_t* event,
                                       void* user_ctx) {

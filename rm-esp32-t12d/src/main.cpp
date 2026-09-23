@@ -35,6 +35,23 @@ static rm::CanEmitter g_emitter;
 static std::atomic<uint32_t> g_can_tx_ok{0};
 static std::atomic<uint32_t> g_can_tx_fail{0};
 
+// Actuator Feedback State (0x201 SES_STATUS)
+static std::atomic<float>    g_ses_fbk_angle{0.0f};
+static std::atomic<uint8_t>  g_ses_mode{0};
+static std::atomic<bool>     g_ses_aligned{false};
+static std::atomic<uint8_t>  g_ses_error{0};
+static std::atomic<bool>     g_ses_seen{false};
+
+// Actuator Feedback State (0x721 SEB_STATUS / 0x731 SEB_ErrInfo)
+static std::atomic<float>    g_seb_fbk_stroke{0.0f};
+static std::atomic<float>    g_seb_fbk_pressure{0.0f};
+static std::atomic<uint8_t>  g_seb_mode{0};
+static std::atomic<bool>     g_seb_aligned{false};
+static std::atomic<bool>     g_seb_enabled{false};
+static std::atomic<uint8_t>  g_seb_error{0};
+static std::atomic<bool>     g_seb_seen{false};
+static std::atomic<uint32_t> g_seb_err_info{0};
+
 static bool send_can_frame(can::Frame& fr) {
     if (!g_can.send(fr, 2)) {
         g_can_tx_fail.fetch_add(1, std::memory_order_relaxed);
@@ -42,6 +59,55 @@ static bool send_can_frame(can::Frame& fr) {
     }
     g_can_tx_ok.fetch_add(1, std::memory_order_relaxed);
     return true;
+}
+
+// ── Task: CAN Receive & Actuator Feedback (Event-driven) ───────────
+[[noreturn]] static void task_can_rx(void*) {
+    can::Frame rx_fr;
+    while (1) {
+        if (g_can.receive(rx_fr, 50)) {
+            uint32_t now_ms = static_cast<uint32_t>(esp_timer_get_time() / 1000);
+            if (rx_fr.id == can::custom::ses::kStatusId) { // 0x201 SES_STATUS
+                // Hardware protocol: Byte 0: Bit 0 = Align, Bits 1..2 = Mode, Bits 6..7 = Error
+                bool aligned = (rx_fr.data[0] & 0x01) != 0;
+                uint8_t mode = (rx_fr.data[0] >> 1) & 0x03;
+                uint8_t err  = (rx_fr.data[0] >> 6) & 0x03;
+                uint16_t raw_angle = (static_cast<uint16_t>(rx_fr.data[1]) << 8) | rx_fr.data[2];
+                float angle_deg = static_cast<float>(static_cast<int32_t>(raw_angle) - rm::kSbwAngleOffset) / 10.0f;
+
+                g_ses_fbk_angle.store(angle_deg, std::memory_order_relaxed);
+                g_ses_mode.store(mode, std::memory_order_relaxed);
+                g_ses_aligned.store(aligned, std::memory_order_relaxed);
+                g_ses_error.store(err, std::memory_order_relaxed);
+                g_ses_seen.store(true, std::memory_order_relaxed);
+
+                g_emitter.on_ses_status_rx(mode, now_ms);
+            } else if (rx_fr.id == 0x721) { // 0x721 SEB_STATUS
+                // SEB Status: Byte 0: b0=Align, b1=CtrlEn, b2..3=Mode, b6..7=Error
+                bool aligned = (rx_fr.data[0] & 0x01) != 0;
+                bool enabled = (rx_fr.data[0] & 0x02) != 0;
+                uint8_t mode = (rx_fr.data[0] >> 2) & 0x03;
+                uint8_t err  = (rx_fr.data[0] >> 6) & 0x03;
+                uint16_t raw_stroke = (static_cast<uint16_t>(rx_fr.data[1]) << 8) | rx_fr.data[2];
+                float stroke_mm = static_cast<float>(raw_stroke) * 0.1f; // 0.1 mm/count
+                float pressure_mpa = static_cast<float>(rx_fr.data[3]) * 0.05f; // 0.05 MPa/count
+
+                g_seb_fbk_stroke.store(stroke_mm, std::memory_order_relaxed);
+                g_seb_fbk_pressure.store(pressure_mpa, std::memory_order_relaxed);
+                g_seb_mode.store(mode, std::memory_order_relaxed);
+                g_seb_aligned.store(aligned, std::memory_order_relaxed);
+                g_seb_enabled.store(enabled, std::memory_order_relaxed);
+                g_seb_error.store(err, std::memory_order_relaxed);
+                g_seb_seen.store(true, std::memory_order_relaxed);
+            } else if (rx_fr.id == 0x731) { // 0x731 SEB_ErrInfo
+                uint32_t err_map = static_cast<uint32_t>(rx_fr.data[0]) |
+                                  (static_cast<uint32_t>(rx_fr.data[1]) << 8) |
+                                  (static_cast<uint32_t>(rx_fr.data[2]) << 16) |
+                                  (static_cast<uint32_t>(rx_fr.data[3]) << 24);
+                g_seb_err_info.store(err_map, std::memory_order_relaxed);
+            }
+        }
+    }
 }
 
 // ── Task: RC SBUS Capture (Event-driven UART receiver) ─────────────
@@ -102,7 +168,8 @@ static bool send_can_frame(can::Frame& fr) {
         // 2. Emit canonical CAN cluster for current operating mode (BARE, SYS, RT)
         uint8_t sent_n = 0;
         uint8_t sent_fail = 0;
-        g_emitter.emit_cluster(snap, tick_10ms_count++, [&](can::Frame& fr) {
+        uint32_t now_ms = static_cast<uint32_t>(esp_timer_get_time() / 1000);
+        g_emitter.emit_cluster(snap, tick_10ms_count++, now_ms, [&](can::Frame& fr) {
             const bool ok = send_can_frame(fr);
             if (ok) {
                 ++sent_n;
@@ -159,9 +226,29 @@ static bool send_can_frame(can::Frame& fr) {
             const char* can_str = (health.state == can::CanDriver::HealthState::BusOff) ? "OFF" :
                                   ((sent_fail > 0 && sent_n == 0) ? "FAIL" : "ON");
 
-            ESP_LOGI("tx", "STR:%+5.1f BRK:%4.1f  THR:%3.0f%% GOV:%3.0f%% MTR:%+5ld[%s]  ARM:%-3s PRK:%-4s  MOD:%-4s C:%s [%u] RF:%s",
+            const char* ses_mode_str = !g_ses_seen.load(std::memory_order_relaxed) ? "WAIT" :
+                                       (g_ses_mode.load(std::memory_order_relaxed) == 1 ? "AUTO" : "ASST");
+            float ses_angle = g_ses_fbk_angle.load(std::memory_order_relaxed);
+            int ses_aln = g_ses_aligned.load(std::memory_order_relaxed) ? 1 : 0;
+            int ses_err = g_ses_error.load(std::memory_order_relaxed);
+
+            const char* seb_str = !g_seb_seen.load(std::memory_order_relaxed) ? "WAIT" :
+                                  (g_seb_enabled.load(std::memory_order_relaxed) ? "EN" : "DIS");
+            float seb_stroke = g_seb_fbk_stroke.load(std::memory_order_relaxed);
+            float seb_prs = g_seb_fbk_pressure.load(std::memory_order_relaxed);
+            int seb_err = g_seb_error.load(std::memory_order_relaxed);
+
+            ESP_LOGI("tx", "STR:%+5.1f [SES:%s A:%d FBK:%+5.1f° E:%d] BRK:%4.1f [SEB:%s STRK:%4.1f P:%.2f E:%d] THR:%3.0f%% GOV:%3.0f%% MTR:%+5ld[%s]  ARM:%-3s PRK:%-4s  MOD:%-4s C:%s [%u] RF:%s",
                      snap.steering_deg,
+                     ses_mode_str,
+                     ses_aln,
+                     ses_angle,
+                     ses_err,
                      snap.brake_stroke_mm,
+                     seb_str,
+                     seb_stroke,
+                     seb_prs,
+                     seb_err,
                      snap.throttle_norm * 100.0f,
                      snap.aux_vra * 100.0f,
                      static_cast<long>(target_motor_speed),
@@ -219,6 +306,7 @@ extern "C" void app_main() {
     // 3. Spawn FreeRTOS Tasks
     xTaskCreatePinnedToCore(task_rc_capture, "rc_capture", 4096, nullptr, 8, nullptr, 1);
     xTaskCreatePinnedToCore(task_can_tx,     "can_tx",     4096, nullptr, 4, nullptr, 0);
+    xTaskCreatePinnedToCore(task_can_rx,     "can_rx",     4096, nullptr, 6, nullptr, 0);
     xTaskCreatePinnedToCore(task_heartbeat,  "heartbeat",  3072, nullptr, 1, nullptr, 1);
 
     ESP_LOGI(TAG, "All tasks created successfully. RM-ESP32-T12D operational.");
