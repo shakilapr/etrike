@@ -213,6 +213,31 @@ void test_steering_command_wire_format(void) {
     TEST_ASSERT_EQUAL_UINT8_ARRAY(expected, frame.data.data(), sizeof(expected));
 }
 
+void test_steering_centering_hold_then_silent(void) {
+    SteeringControl sc;
+    sc.init();
+    uint32_t now_ms = 0;
+    boot_to_active(sc, now_ms, 100);
+    sc.start_estop(false);
+
+    etrike::protocol::codecs::ses::Command out;
+    int16_t cmd = 100;
+    // Ramp to 0 takes 25 ticks (500 ms). Centering hold is 1500 ms (75 ticks).
+    // Total ticks until silent-stop: 25 + 75 = 100 ticks (2000 ms).
+    for (int i = 0; i < 110; ++i, now_ms += 20) {
+        if (cmd > 4) cmd -= 4; else cmd = 0;
+        int16_t actual = cmd;
+        sc.tick(actual, 1, now_ms, out);
+    }
+    TEST_ASSERT_EQUAL(SteerState::STEER_FAULT, sc.state());
+
+    // Clean recovery via exit_estop() directly restores LISTEN_SYNC
+    sc.exit_estop(now_ms);
+    TEST_ASSERT_EQUAL(SteerState::STEER_LISTEN_SYNC, sc.state());
+    sc.tick(0, 1, now_ms += 20, out);
+    TEST_ASSERT_EQUAL(SteerState::STEER_ACTIVE, sc.state());
+}
+
 extern "C" void app_main() {
     UNITY_BEGIN();
     RUN_TEST(test_steering_obstacle_estop_hold_angle_clamp);
@@ -220,6 +245,7 @@ extern "C" void app_main() {
     RUN_TEST(test_steering_non_obstacle_estop_ramp_to_zero);
     RUN_TEST(test_steering_ramp_following_error_fault);
     RUN_TEST(test_steering_ramp_following_error_not_triggered);
+    RUN_TEST(test_steering_centering_hold_then_silent);
     RUN_TEST(test_steering_hold_then_silent_timeout);
     RUN_TEST(test_steering_exit_estop_deferred_ramp);
     RUN_TEST(test_steering_exit_estop_deferred_hold);

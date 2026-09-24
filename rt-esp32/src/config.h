@@ -43,6 +43,7 @@ constexpr int   kSteerSyncTimeoutMs     = 5000;     // LISTEN_SYNC timeout → F
 constexpr int   kSbwAngleOffset     = 30000;    // steer-by-wire CSV offset: raw = angle_0_1deg + offset (0° → raw=30000)
 constexpr float kSteerEstopRampDegS     = 20.0f;    // ESTOP ramp-to-zero rate (gap C3)
 constexpr int   kSteerEstopHoldMs       = 500;      // obstacle ESTOP: hold then silent-stop (gap C3)
+constexpr int   kSteerEstopCenteringHoldMs = 1500;  // centering ESTOP: hold at center then silent-stop
 
 // ── timing (ms / Hz) ──────────────────────────────────────────────
 constexpr int kControlLoopHz           =  100;

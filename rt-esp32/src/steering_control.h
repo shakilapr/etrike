@@ -38,6 +38,7 @@ public:
         m_estop_hold_start_ms = 0;
         m_estop_hold_angle = 0;
         m_estop_following_err_start_ms = 0;
+        m_centering_complete_ms = 0;
     }
     SteerState state() const { return m_state.load(std::memory_order_relaxed); }
 
@@ -58,6 +59,9 @@ public:
             return false;
 
         case SteerState::STEER_LISTEN_SYNC: {
+            if (m_sync_start_ms == 0) {
+                m_sync_start_ms = now_ms;
+            }
             if (g_bypass_eps_sync && g_bench_solo_mode) {
                 // Bench mode: skip SES listen-sync, assume centered
                 m_active_angle = 0;
@@ -112,8 +116,17 @@ public:
                 if (m_estop_exit_pending) {
                     m_state = SteerState::STEER_ACTIVE;
                     m_estop_exit_pending = false;
+                    m_centering_complete_ms = 0;
+                } else {
+                    // Ramp complete — hold at 0° for kSteerEstopCenteringHoldMs, then silent-stop
+                    // to de-energize the motor and avoid fighting stationary ground scrub friction.
+                    if (m_centering_complete_ms == 0) {
+                        m_centering_complete_ms = now_ms;
+                    } else if (now_ms - m_centering_complete_ms >= static_cast<uint32_t>(kSteerEstopCenteringHoldMs)) {
+                        m_state = SteerState::STEER_FAULT;
+                        return false;
+                    }
                 }
-                // Ramp complete — hold at 0°, continue transmitting
             }
 
             // Gap C3: following-error check during ESTOP centering ramp.
@@ -138,7 +151,7 @@ public:
             }
 
             build_command(out);
-            return true;  // continue transmitting during ramp
+            return true;  // continue transmitting during ramp / hold
         }
 
         case SteerState::ESTOP_HOLD_THEN_SILENT: {
@@ -195,6 +208,7 @@ public:
             } else {
                 m_state = SteerState::ESTOP_RAMP_TO_ZERO;
                 m_estop_following_err_start_ms = 0;
+                m_centering_complete_ms = 0;
                 // ramp starts from current m_active_angle toward 0°
             }
         }
@@ -219,11 +233,16 @@ public:
     // Gap #6: Exit ESTOP states — deferred until ramp/hold completes.
     // Pressing START during centering ramp must NOT stop 0x169 mid-ramp.
     // The steering ramp completes first, then transitions to ACTIVE.
-    // Brake/motor/lights transition immediately (handled by caller).
-    void exit_estop() {
+    // If steering already completed centering hold and entered silent-stop (STEER_FAULT),
+    // or entered STEER_FAULT due to stationary scrub / jam, transition to STEER_LISTEN_SYNC
+    // so normal operation can re-acquire without requiring a full ECU reboot.
+    void exit_estop(uint32_t now_ms = 0) {
         if (m_state == SteerState::ESTOP_RAMP_TO_ZERO ||
             m_state == SteerState::ESTOP_HOLD_THEN_SILENT) {
             m_estop_exit_pending = true;  // defer until ramp/hold completes
+        } else if (m_state == SteerState::STEER_FAULT) {
+            m_state = SteerState::STEER_LISTEN_SYNC;
+            m_sync_start_ms = now_ms;
         }
     }
 
@@ -252,6 +271,7 @@ private:
     uint32_t   m_estop_hold_start_ms = 0;
     int16_t    m_estop_hold_angle = 0;
     uint32_t   m_estop_following_err_start_ms = 0;
+    uint32_t   m_centering_complete_ms = 0;
     bool       m_estop_exit_pending = false;  // Gap #6: deferred exit flag
 };
 }

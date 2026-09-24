@@ -199,9 +199,9 @@ RT implements **layered, decoupled supervisors** evaluating vehicle state every 
   - `STEER_BOOT_WAIT`: 500 ms silent wait after power-on.
   - `STEER_LISTEN_SYNC`: Awaits valid `0x201 SES_STATUS` with `angle_aligned == 1` and angle plausibility check (`< 30°` offset). Timeout (5000 ms) → `STEER_FAULT`.
   - `STEER_ACTIVE`: Normal operation. Emits `0x169` at 50 Hz. Slew rate scales dynamically between 125°/s (at 2 km/h) and 525°/s (at ≥25 km/h).
-  - `ESTOP_RAMP_TO_ZERO`: Non-obstacle ESTOP. Ramps steering angle to center (0°) at 20°/s. Checks for linkage jam (following error `> 5°` for 1000 ms → `STEER_FAULT`).
+  - `ESTOP_RAMP_TO_ZERO`: Non-obstacle ESTOP. Ramps steering angle to center (0°) at 20°/s. Checks for linkage jam (following error `> 5°` for 1000 ms → `STEER_FAULT`). Once centered at 0°, holds for 1500 ms before entering silent-stop (`STEER_FAULT`) to de-energize the motor and avoid fighting stationary ground scrub friction.
   - `ESTOP_HOLD_THEN_SILENT`: Obstacle ESTOP. Clamps hold angle to dynamic rollover limit, holds for 500 ms, then enters `STEER_FAULT` (stops transmitting).
-  - `STEER_FAULT`: Transmission ceases; actuator reverts to mechanical/standalone damping.
+  - `STEER_FAULT`: Transmission ceases; actuator reverts to mechanical/standalone damping. Recovers cleanly to `STEER_LISTEN_SYNC` upon operator reset / `exit_estop()` without requiring an ECU reboot.
 
 ---
 
