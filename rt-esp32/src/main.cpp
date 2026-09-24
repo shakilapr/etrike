@@ -1165,18 +1165,21 @@ static uint8_t task_health_snapshot() {
         {
             const auto sst = rt::g_safety_authority.update(
                 now, g_last_sys_safety_sts_us.load());
-            if (sst.estop_latch_required && !m_estop_pending) {
-                m_estop_pending = true;
-                m_estop_reason = rt::kEstopReasonCanEstop;
-                rt::diag().raise(etrike::diagnostics::DiagId::RtSysSafetyStsLoss,
-                                 static_cast<std::uint16_t>(
-                                     (now - g_last_sys_safety_sts_us.load()) / 1000));
+            if (sst.state == rt::SafetyStreamState::LOST) {
+                // Loss of 0x011 removes motion authority (zeroes propulsion) while
+                // preserving active steering control to prevent delta tricycle rollover.
+                static int64_t last_diag_log_us = 0;
+                if (now - last_diag_log_us > 1'000'000) {
+                    last_diag_log_us = now;
+                    rt::diag().raise(etrike::diagnostics::DiagId::RtSysSafetyStsLoss,
+                                     static_cast<std::uint16_t>(
+                                         (now - g_last_sys_safety_sts_us.load()) / 1000));
+                }
             }
             // Bench-solo SYS-absent self-grant (developer override): a SYS that
             // has NEVER appeared on the bus must not silence RT — self-grant
             // SAFETY|MODE authority (AUTO) so Host drive commands still reach
-            // the Low bus, mirroring SYS's MTR/SEB peer bypasses. A SYS that
-            // was seen and then died (LOST) still latches ESTOP, and the first
+            // the Low bus, mirroring SYS's MTR/SEB peer bypasses. The first
             // valid 0x011 hands authority back to the real stream.
             const bool solo_sys_absent = (sst.sys_absent_fault && g_bench_solo_mode);
             if (sst.state == rt::SafetyStreamState::LOST || m_estop_pending

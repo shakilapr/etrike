@@ -70,9 +70,9 @@ bool test_frozen_rt_mode_cmd() {
     return true;
 }
 
-// 10.2 Frozen 0x011 (SYS_SAFETY_STS) counter -> fail-safe estop latch.
+// 10.2 Frozen 0x011 (SYS_SAFETY_STS) counter -> fail-safe motion stop (steering preserved).
 bool test_frozen_rt_safety_sts() {
-    std::cout << "TEST: frozen 0x011 counter -> rt fail-safe (estop latch)\n";
+    std::cout << "TEST: frozen 0x011 counter -> rt fail-safe motion stop (steering preserved)\n";
     RtSysHarness h;
     h.run(100, 1200);
     bool authorized = h.rt.is_motion_authorized() && h.rt.is_safety_stream_ok();
@@ -88,8 +88,9 @@ bool test_frozen_rt_safety_sts() {
     std::cout << "  authorized=" << authorized << " safety_ok_after=" << h.rt.is_safety_stream_ok()
               << " estop=" << (latched ? "LATCHED" : "NO") << " cmd=" << h.rt.commanded_speed_mmps() << "\n";
 
-    if (!authorized || !safety_lost || !latched || !stopped) {
-        std::cerr << "  FAIL: frozen 0x011 did not trip the fail-safe\n";
+    // Invariant: Motion is stopped, but ESTOP must NOT be latched (steering preserved)
+    if (!authorized || !safety_lost || latched || !stopped) {
+        std::cerr << "  FAIL: frozen 0x011 did not safely zero motion\n";
         return false;
     }
     return true;

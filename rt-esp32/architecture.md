@@ -177,7 +177,7 @@ RT implements **layered, decoupled supervisors** evaluating vehicle state every 
 
 ### 5.1. SYS 0x011 Safety Authority & Asymmetric Clear
 * **Acquisition State Machine ([`safety_stream_loss.h`](src/safety_stream_loss.h)):**
-  `UNACQUIRED` → `ACQUIRED` → `LOST`. Boot grants zero motion authority. RT must receive consecutive fresh `0x011` frames with valid CRC-8 before authority is confirmed. If stream is lost after acquisition, ESTOP latches.
+  `UNACQUIRED` → `ACQUIRED` → `LOST`. Boot grants zero motion authority. RT must receive consecutive fresh `0x011` frames with valid CRC-8 before authority is confirmed. If stream is lost after acquisition, motion authority is safely revoked (propulsion zeroed) without latching hard ESTOP, preserving active steering control to prevent delta tricycle rollover.
 * **Asymmetric Clear Sequence ([`can_dispatch.h:L202-L228`](src/can_dispatch.h#L202-L228)):**
   Entering ESTOP takes **1 frame**. Releasing an ESTOP latch requires **TWO consecutive fresh frames** with `estop_active == 0` whose rolling counters advance by exactly `+1` (`counter == last + 1`). Any gap or jump restarts the confirmation counter.
 

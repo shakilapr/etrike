@@ -54,7 +54,7 @@ static void test_acquired_after_n_valid_frames() {
     TEST_ASSERT_FALSE(s.estop_latch_required);
 }
 
-static void test_acquired_stream_loss_latches_estop() {
+static void test_acquired_stream_loss_inhibits_motion_without_estop() {
     rt::SafetyStreamSupervisor sup;
     sup.reset(0);
     int64_t now = 1'000'000;
@@ -69,12 +69,12 @@ static void test_acquired_stream_loss_latches_estop() {
     s = sup.update(now, last_valid);
     TEST_ASSERT_EQUAL(uint8_t(rt::SafetyStreamState::ACQUIRED),
                       uint8_t(s.state));
-    // Beyond the timeout -> LOST -> estop latch required.
+    // Beyond the timeout -> LOST -> motion inhibited, but no global estop latch (steering preserved).
     now += 2;
     s = sup.update(now, last_valid);
     TEST_ASSERT_EQUAL(uint8_t(rt::SafetyStreamState::LOST),
                       uint8_t(s.state));
-    TEST_ASSERT_TRUE(s.estop_latch_required);
+    TEST_ASSERT_FALSE(s.estop_latch_required);
     TEST_ASSERT_FALSE(s.motion_authorized);
 }
 
@@ -224,7 +224,7 @@ int main() {
     RUN_TEST(test_legacy_loss_trips_after_700ms);
     RUN_TEST(test_unacquired_grants_no_authority);
     RUN_TEST(test_acquired_after_n_valid_frames);
-    RUN_TEST(test_acquired_stream_loss_latches_estop);
+    RUN_TEST(test_acquired_stream_loss_inhibits_motion_without_estop);
     RUN_TEST(test_acquired_stream_resume_reauthorizes);
     RUN_TEST(test_never_received_deadline_is_sys_absent_fault_not_estop);
     RUN_TEST(test_stray_frames_do_not_grant_authority);

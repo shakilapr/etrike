@@ -202,7 +202,7 @@ bool test_rm_rt_low_sys_011_loss() {
     bool authorized = rt.is_motion_authorized();
     bool was_moving = (rt.commanded_speed_mmps() == 1500);
 
-    // Drop 0x011 (> 700 ms): ACQUIRED -> LOST must latch ESTOP (fail-safe).
+    // Drop 0x011 (> 700 ms): ACQUIRED -> LOST safely zeroes motion without latching ESTOP.
     low.drop(0x011, 200);
     for (uint32_t t = 1010; t <= 2000; t += 10) {
         rt.step(t, 10); sys.step(t, 10); rm_op.step(t, 10);
@@ -216,8 +216,9 @@ bool test_rm_rt_low_sys_011_loss() {
               << " after-loss: safety_ok=" << !lost << " estop=" << (latched ? "LATCHED" : "NO")
               << " cmd=" << rt.commanded_speed_mmps() << "\n";
 
-    if (!authorized || !was_moving || !lost || !latched || !stopped) {
-        std::cerr << "  FAIL: 0x011 loss did not trip the rt fail-safe\n";
+    // Invariant: Motion is stopped safely, but ESTOP must NOT be latched (steering preserved)
+    if (!authorized || !was_moving || !lost || latched || !stopped) {
+        std::cerr << "  FAIL: 0x011 loss did not safely zero motion while preserving steering\n";
         return false;
     }
     return true;

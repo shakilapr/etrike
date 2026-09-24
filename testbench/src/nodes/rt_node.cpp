@@ -227,7 +227,7 @@ void RtNode::step(uint32_t now_ms, uint32_t dt_ms) {
                                     ? -1
                                     : static_cast<int64_t>(last_safety_sts_ms_) * 1000;
         rt::SafetyStreamStatus sst = safety_sup_.update(now_us, last_us);
-        if (sst.estop_latch_required) estop_latched_ = true;  // ACQUIRED -> LOST fail-safe
+        // 0x011 loss withdraws safety_ok_ without latching hard ESTOP (preserves steering)
         safety_ok_ = sst.motion_authorized && !sys_estop_;
 
         const uint32_t mode_window = can::gen::SysModeCmd::kCycleMs * 5;

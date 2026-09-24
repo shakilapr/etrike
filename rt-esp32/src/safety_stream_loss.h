@@ -6,17 +6,18 @@
 // not "clear". This is modelled as an explicit state machine:
 //
 //   UNACQUIRED (boot) --N consecutive valid frames--> ACQUIRED
-//   ACQUIRED   --0x011 lost > kSysSafetyStsTimeoutUs--> LOST  (estop latch)
+//   ACQUIRED   --0x011 lost > kSysSafetyStsTimeoutUs--> LOST  (motion zeroed, steering preserved)
 //
-// Safety invariants (issue #10):
+// Safety invariants:
 //   * While UNACQUIRED no propulsion/steering authority is granted (boot must
 //     not be treated as "all clear").
 //   * A stream that NEVER arrives within kSysSafetyAcquireTimeoutUs is a
 //     SYS-absent fail-safe: motion is inhibited and a fault is reported, but a
 //     global ESTOP is NOT latched — a dead SYS could never send the two-frame
 //     0x011 clear, so latching would brick the vehicle.
-//   * Once ACQUIRED, loss of the stream > kSysSafetyStsTimeoutUs keeps/sets the
-//     E-stop latch (fail-safe) — never a silent clear.
+//   * Once ACQUIRED, loss of the stream > kSysSafetyStsTimeoutUs removes motion
+//     authority (sp.motor_speed_mmps = 0) while preserving active steering
+//     authority (SES) to prevent delta tricycle rollover hazards.
 //
 // The class is pure C++ so it can be unit-tested without the control loop /
 // FreeRTOS. t_control calls update() once per cycle.
@@ -37,7 +38,7 @@ enum class SafetyStreamState : uint8_t {
 
 struct SafetyStreamStatus {
     SafetyStreamState state = SafetyStreamState::UNACQUIRED;
-    bool estop_latch_required = false;  // ACQUIRED -> LOST: keep/set estop (fail-safe)
+    bool estop_latch_required = false;  // (Retired: 0x011 loss withdraws motion without hard ESTOP latch)
     bool motion_authorized     = false; // true only when ACQUIRED and stream fresh
     bool sys_absent_fault      = false; // UNACQUIRED past deadline: inhibit + fault (no estop)
 };
@@ -100,7 +101,7 @@ public:
 
         const int64_t since_rx = (last_rx_us_ < 0) ? int64_t(0) : (now_us - last_rx_us_);
         s.state = state_;
-        s.estop_latch_required = (state_ == SafetyStreamState::LOST);
+        s.estop_latch_required = false;
         s.motion_authorized = (state_ == SafetyStreamState::ACQUIRED
                                && since_rx <= rt::kSysSafetyStsTimeoutUs);
         s.sys_absent_fault = (state_ == SafetyStreamState::UNACQUIRED

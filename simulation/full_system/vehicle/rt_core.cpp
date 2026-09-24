@@ -183,9 +183,8 @@ void RtCore::drain_events() {
 }
 
 void RtCore::run_safety_checks(int64_t now_us) {
-    // Issue #10: authority acquisition / loss (real SafetyStreamSupervisor).
     const auto sst = authority_.update(now_us, last_sys_safety_sts_us_);
-    if (sst.estop_latch_required) latch_estop(kEstopReasonCanEstop);
+    // 0x011 stream loss withdraws motion authority without hard ESTOP latch
     no_sys_authority_ = !sst.motion_authorized;
 
     const bool startup_grace = now_us < int64_t(kStartupGracePeriodMs) * 1000;
