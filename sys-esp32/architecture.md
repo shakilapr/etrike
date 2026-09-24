@@ -49,7 +49,7 @@ All GPIOs are initialized in `init_board_gpio()` before tasks start:
 |---|---:|---|---|---|
 | `kEstopGpio` | 1 | Input | Internal Pull-up (NC to GND) | Red mushroom ESTOP button (0V/GND = Safe, HIGH/Open = Active ESTOP) |
 | `kBrakeLeverGpio` | 2 | Input | Internal Pull-up | Physical handlebar brake lever (Active LOW) |
-| `kStartBtnGpio` | 41 | Input | Internal Pull-up | Green momentary button (ESTOP → MANUAL exit) |
+| `kStartBtnGpio` | 41 | Input | Internal Pull-up (NC to GND) | Green momentary button, NC (0V/GND = Idle, HIGH/Open = Pressed; ESTOP → MANUAL exit on release) |
 | `kModeBtnGpio` | 11 | Input | Internal Pull-up | Mode toggle button (MANUAL ↔ AUTO; 3s hold exits ESTOP) |
 | `DEVELOPER_OVERRIDE_PIN` | 42 | Input | Internal Pull-up | Jumper to GND enables developer bench bypass mode |
 | `kSwitchLeftTurn` | 9 | Input | Internal Pull-up | Left turn signal toggle switch (MANUAL mode) |

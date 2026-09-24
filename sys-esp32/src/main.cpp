@@ -783,7 +783,8 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
         bool start_btn = false;
 #else
         bool mode_btn  = (gpio_get_level(static_cast<gpio_num_t>(sys::kModeBtnGpio)) == 0);
-        bool start_btn = (gpio_get_level(static_cast<gpio_num_t>(sys::kStartBtnGpio)) == 0);
+        // START button is NC (normally closed to GND, pulled up): 0 = released/idle, 1 = pressed/open
+        bool start_btn = (gpio_get_level(static_cast<gpio_num_t>(sys::kStartBtnGpio)) == 1);
 #endif
 
         bool changed = g_mode_mgr.tick(mode_btn, start_btn);

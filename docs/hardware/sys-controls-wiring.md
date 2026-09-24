@@ -42,7 +42,7 @@ Every input uses the ESP32-S3 internal pull-up to 3.3 V. All switches are dry co
 |:---:|---|---|:---:|---|
 | **GPIO 1** | **ESTOP** (`kEstopGpio`) | **NC Terminals** $\longleftrightarrow$ **Common GND** | **0 V (Closed)** | **Open / Cut** → Latches ESTOP |
 | **GPIO 2** | Brake Lever (`kBrakeLeverGpio`) | **NO & COM Terminals** $\longleftrightarrow$ **Common GND** | Open (3.3 V) | Closed to GND (0 V) → Active Brake |
-| **GPIO 41** | START Button (`kStartBtnGpio`) | **NO Push Button** $\longleftrightarrow$ **Common GND** | Open (3.3 V) | Pressed to GND (0 V) → Exits ESTOP |
+| **GPIO 41** | START Button (`kStartBtnGpio`) | **NC Push Button** $\longleftrightarrow$ **Common GND** | 0 V (Closed) | Pressed / Open (3.3 V) → Exits ESTOP (on release) |
 | **GPIO 11** | MODE Button (`kModeBtnGpio`) | **NO Push Button** $\longleftrightarrow$ **Common GND** | Open (3.3 V) | Pressed to GND (0 V) → Mode Toggle |
 | **GPIO 42** | Dev Bypass (`DEVELOPER_OVERRIDE`) | **SPST Switch / Jumper** $\longleftrightarrow$ **Common GND** | Open (3.3 V) | Closed to GND (0 V) → Bench Mode |
 | **GPIO 9** | Left Turn (`kSwitchLeftTurn`) | **Switch Contact** $\longleftrightarrow$ **Common GND** | Open (3.3 V) | Pressed to GND (0 V) → Left Flasher ON |

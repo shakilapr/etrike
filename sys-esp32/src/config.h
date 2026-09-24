@@ -22,7 +22,7 @@ constexpr int kCanRxGpio    =       4;
 // makes an open wire or pressed button read HIGH (ESTOP active). Fail-safe.
 constexpr int kEstopGpio      =  1;   // big red mushroom, NC, active-high-on-open, pull-up
 constexpr int kBrakeLeverGpio =  2;   // active-low, pull-up
-constexpr int kStartBtnGpio   = 41;   // green momentary — ESTOP exit to MANUAL
+constexpr int kStartBtnGpio   = 41;   // green momentary, NC (active-high-on-open, pull-up) — ESTOP exit to MANUAL
 constexpr int kModeBtnGpio    = 11;   // momentary, toggles MANUAL↔AUTO
 constexpr int kIgnitionGpio   =  8;   // reserved; production firmware does not drive it
 

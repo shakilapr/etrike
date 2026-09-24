@@ -107,7 +107,7 @@
 \midrule
 \textbf{GPIO 1} & ESTOP (\texttt{kEstopGpio}) & \textbf{NC Contacts} $\longleftrightarrow$ \textbf{Common GND} & \textbf{0\,V (Closed)} & \textbf{Open / Cut} $\rightarrow$ \textbf{ESTOP} \\
 \textbf{GPIO 2} & Brake (\texttt{kBrakeLeverGpio}) & \textbf{NO \& COM} $\longleftrightarrow$ \textbf{Common GND} & Open (3.3\,V) & Closed to GND $\rightarrow$ Active Brake \\
-\textbf{GPIO 41} & START (\texttt{kStartBtnGpio}) & \textbf{NO Button} $\longleftrightarrow$ \textbf{Common GND} & Open (3.3\,V) & Pressed to GND $\rightarrow$ Exits ESTOP \\
+\textbf{GPIO 41} & START (\texttt{kStartBtnGpio}) & \textbf{NC Button} $\longleftrightarrow$ \textbf{Common GND} & 0\,V (Closed) & Pressed / Open (3.3\,V) $\rightarrow$ Exits ESTOP \\
 \textbf{GPIO 11} & MODE (\texttt{kModeBtnGpio}) & \textbf{NO Button} $\longleftrightarrow$ \textbf{Common GND} & Open (3.3\,V) & Pressed to GND $\rightarrow$ Mode Toggle \\
 \textbf{GPIO 42} & Dev Bypass (\texttt{DEV\_OVERRIDE}) & \textbf{SPST / Jumper} $\longleftrightarrow$ \textbf{Common GND} & Open (3.3\,V) & Closed to GND $\rightarrow$ Bench Mode \\
 \textbf{GPIO 9} & Left Turn (\texttt{kSwitchLeftTurn}) & \textbf{Switch Pin} $\longleftrightarrow$ \textbf{Common GND} & Open (3.3\,V) & Pressed to GND $\rightarrow$ Flasher ON \\
