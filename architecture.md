@@ -321,7 +321,7 @@ SYS persists reset reason and boot count to NVS flash:
 | 0x300 | RX (high) | ~100 Hz | Host drive → kinematics → 0x204+0x169 |
 | 0x301 | RX (high) | demand | Host brake → max-select → 0x205 |
 | 0x303 | RX (high) | ~100 Hz | Direct steering angle override (0.1°) |
-| 0x304 | RX (high) | 10 Hz | Obstacle distance → speed limit & obstacle brake curve |
+| 0x400 | RX (high) | 10 Hz | Obstacle distance → speed limit & obstacle brake curve |
 | 0x7FC | RX (high) | 2 Hz | Host heartbeat. Timeout 1500ms → assisted stop (2000 kPa). |
 | 0x001 | RX+TX (both) | event | ESTOP. Forwarded bidirectionally. TXB2 priority on MCP2515. |
 | 0x011 | RX (low) | 5 Hz | SYS safety status (asymmetric 2-advancing-zero clear). |

@@ -128,7 +128,7 @@ RT allocates **8 concurrent FreeRTOS tasks** initialized in [`main.cpp`](src/mai
 | `0x220` | `RT_PID_RPT` | High | TX | 10 Hz | Shadow PID telemetry (setpoint, measured, correction). |
 | `0x300` | `HOST_DRIVE_CMD` | High | RX | 100 Hz | Target speed (mm/s) and yaw rate (mrad/s) from Jetson. |
 | `0x303` | `HOST_STEER_CMD` | High | RX | 100 Hz | Direct steering angle override (0.1°). Bypasses bicycle model. |
-| `0x304` | `HOST_OBSTACLE_DIST` | High | RX | 10 Hz | Closest obstacle distance (mm) from perception. |
+| `0x400` | `HOST_OBSTACLE_DIST` | High | RX | 10 Hz | Closest obstacle distance (mm) from perception. |
 | `0x310` | `STEER_DIAG` | High | TX | 10 Hz | Rescaled SES telemetry (angle, current, temperature, fault). |
 | `0x311` | `BRAKE_DIAG` | High | TX | 10 Hz | Rescaled SEB telemetry (pressure, current, temperature, fault). |
 | `0x501` | `RT_NODE_STATUS` | Both | TX | 50Hz (Low) / 10Hz (Hi) | Node readiness, blocker bitmask, rolling counter, CRC-8. |

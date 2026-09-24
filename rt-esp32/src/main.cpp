@@ -458,7 +458,7 @@ static uint8_t task_health_snapshot() {
                 continue;
             }
 
-            // Check for HOST_OBSTACLE_DIST (0x320)
+            // Check for HOST_OBSTACLE_DIST (0x400)
             if (fr.id == can::kIdHostObstacleDist) {
                 can::gen::HostObstacleDist od{};
                 if (can::decode_frame(fr, od) == can::gen::CodecStatus::Ok) {
@@ -1275,8 +1275,7 @@ static uint8_t task_health_snapshot() {
             g_calc_speed.reset();
 #endif
 
-            const bool is_active_local_trip = (sr.obstacle_triggered ||
-                                               sr.estop_reason == rt::kEstopReasonBusOff);
+            const bool is_active_local_trip = (sr.estop_reason == rt::kEstopReasonBusOff);
             const bool sys_clear_in_progress = g_sys_clear_in_progress.load(std::memory_order_relaxed);
             if (is_active_local_trip && !sys_clear_in_progress && can_send_estop()) {
                 can::Frame estop_frame;
