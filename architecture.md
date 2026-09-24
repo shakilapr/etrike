@@ -113,7 +113,7 @@ Three physical CAN buses, with one implemented gateway:
 
 **RT bridges** selected messages between high and low buses. A future low-to-powertrain bridge requires a second CAN controller on PWT or a different MCU.
 
-- **Actuators:** Steering (SES via 0x169), brake (SEB via 0x7B9). Mode-gated dual control: RT commands both in AUTO; SYS commands SEB in MANUAL/ESTOP.
+- **Actuators:** Steering (SES via 0x169), brake (SEB via 0x7B9). SYS is the sole master and producer of `0x7B9` commands to SEB. RT expresses brake intent via `0x205 RT_BRAKE_CMD`, which SYS arbitrates against driver lever inputs.
 - **Motor:** The planned MTR STM32 path is not hardware-complete. SYS direct motor I/O is compile-time disabled because its ADC map conflicts with body I/O.
 - **DC-DC converter:** PWT currently sends its direct powertrain command only; SYS-to-PWT command forwarding is not implemented.
 
@@ -129,29 +129,29 @@ Key architectural IDs:
 
 | Bus | ID | Name | Purpose |
 |-----|-----|------|---------|
-| High | `0x300` | HOST_DRIVE_CMD | Jetson ? RT: speed, yaw, gear |
-| High | `0x301` | HOST_BRAKE_REQ | Jetson ? RT: brake kPa |
-| High | `0x302` | HOST_LIGHT_CMD | Jetson ? RT (? SYS): lights |
-| High | `0x400` | HOST_OBSTACLE_DIST | Jetson ? RT: min obstacle mm |
-| High | `0x210` | RT_STATE_RPT | RT ? Jetson: mode, safety_state+estop_reason (packed byte 1), reversing, rx_overflow, task_health, steer_state (DLC=6) |
-| High | `0x220` | RT_PID_RPT | RT ? Jetson: shadow PID telemetry (DLC=6) |
-| High | `0x310` | STEER_DIAG | RT ? Jetson: steering telemetry (DLC=8) |
-| High | `0x311` | BRAKE_DIAG | RT ? Jetson: brake telemetry (DLC=8) |
-| High | `0x111` | HMI_MODE_REQ | HMI ? SYS, Host: mode request (bridged to low, 1 Hz) |
-| High | `0x112` | HMI_PWR_REQ | HMI ? SYS: power request (bridged to low, 1 Hz) |
-| Low | `0x001` | SAFETY_ESTOP | Any ? All: emergency stop (bridged) |
-| Low | `0x011` | SYS_SAFETY_STS | SYS ? RT (? Jetson): estop, hb, lights |
-| Low | `0x110` | SYS_MODE_CMD | SYS ? RT: mode (Manual/Auto only) |
-| Low | `0x204` | RT_DRIVE_CMD | RT ? MTR, SYS: speed + gear |
-| Low | `0x205` | RT_BRAKE_CMD | RT ? SYS: brake kPa |
-| Low | `0x169` | VCU_SES_REQ | RT ? SES: steering angle |
-| Low | `0x201` | SES_STATUS | SES ? RT: angle feedback (DLC=8, XOR checksum) |
-| Low | `0x202` | SES_ERR_INFO | SES ? RT: L3 fault bits ? ESTOP (DLC=8) |
-| Low | `0x203` | SES_VERSION | SES ? RT: SW/HW version, logged once (DLC=8) |
-| Low | `0x6FA` | SES_TEST | SES ? RT: motor current, ECU temp, voltage (DLC=8) |
-| Low | `0x6FB` | SEB_TEST | SEB ? SYS: motor current, ECU temp (DLC=8) |
-| Low | `0x741` | SEB_VERSION | SEB ? SYS: SW/HW version, logged once (DLC=8) |
-| Low | `0x7B9` | VCU_SEB_REQ | RT (AUTO) / SYS (MANUAL/ESTOP) ? SEB: brake (DLC=8, XOR checksum) |
+| High | `0x300` | HOST_DRIVE_CMD | Jetson → RT: speed, yaw, gear |
+| High | `0x301` | HOST_BRAKE_REQ | Jetson → RT: brake kPa |
+| High | `0x302` | HOST_LIGHT_CMD | Jetson → RT (→ SYS): lights |
+| High | `0x400` | HOST_OBSTACLE_DIST | Jetson → RT: min obstacle mm |
+| High | `0x210` | RT_STATE_RPT | RT → Jetson: mode, safety_state+estop_reason (packed byte 1), reversing, rx_overflow, task_health, steer_state (DLC=6) |
+| High | `0x220` | RT_PID_RPT | RT → Jetson: shadow PID telemetry (DLC=6) |
+| High | `0x310` | STEER_DIAG | RT → Jetson: steering telemetry (DLC=8) |
+| High | `0x311` | BRAKE_DIAG | RT → Jetson: brake telemetry (DLC=8) |
+| High | `0x111` | HMI_MODE_REQ | HMI → SYS, Host: mode request (bridged to low, 1 Hz) |
+| High | `0x112` | HMI_PWR_REQ | HMI → SYS: power request (bridged to low, 1 Hz) |
+| Low | `0x001` | SAFETY_ESTOP | Any → All: emergency stop (bridged) |
+| Low | `0x011` | SYS_SAFETY_STS | SYS → RT (→ Jetson): estop, hb, lights |
+| Low | `0x110` | SYS_MODE_CMD | SYS → RT: mode (Manual/Auto only) |
+| Low | `0x204` | RT_DRIVE_CMD | RT → MTR, SYS: speed + gear |
+| Low | `0x205` | RT_BRAKE_CMD | RT → SYS: brake kPa |
+| Low | `0x169` | VCU_SES_REQ | RT → SES: steering angle |
+| Low | `0x201` | SES_STATUS | SES → RT: angle feedback (DLC=8, XOR checksum) |
+| Low | `0x202` | SES_ERR_INFO | SES → RT: L3 fault bits → Controlled MRM (DLC=8) |
+| Low | `0x203` | SES_VERSION | SES → RT: SW/HW version, logged once (DLC=8) |
+| Low | `0x6FA` | SES_TEST | SES → RT: motor current, ECU temp, voltage (DLC=8) |
+| Low | `0x6FB` | SEB_TEST | SEB → SYS: motor current, ECU temp (DLC=8) |
+| Low | `0x741` | SEB_VERSION | SEB → SYS: SW/HW version, logged once (DLC=8) |
+| Low | `0x7B9` | VCU_SEB_REQ | SYS → SEB: brake command (sole producer, DLC=8, XOR checksum) |
 | Low | `0x721` | SEB_STATUS | SEB ? SYS: stroke feedback |
 | Low | `0x120` | SYS_THROTTLE_STS | MTR ? RT (? Host): actual throttle speed (DLC=2) |
 | Low | `0x206` | MTR_MOTOR_FBK | MTR ? SYS, RT: speed, gear, faults (DLC=4) |
@@ -180,9 +180,9 @@ MANUAL ?? AUTO       (mode button)
 
 | State | Behavior |
 |------|----------|
-| **MANUAL** | Rider steers. Brake lever ? SYS ? SEB. SES standalone. Vehicle motor actuation remains blocked pending MTR hardware completion. |
-| **AUTO** | Jetson 0x300 ? RT kinematics ? 0x204 (planned motor command) + 0x169 (steering). Lights from Jetson via 0x302. Brake via 0x7B9. |
-| **ESTOP** | Steering ramps to 0? at 20?/s and brake=max. Motor hardware kill behavior is a release blocker until MTR ESTOP hardware exists. Exit: START button or mode long-press (3s). |
+| **MANUAL** | Rider steers. Brake lever → SYS → SEB. SES standalone. Vehicle motor actuation remains blocked pending MTR hardware completion. |
+| **AUTO** | Jetson 0x300 → RT kinematics → 0x204 (planned motor command) + 0x169 (steering). Lights from Jetson via 0x302. Brake via 0x205 → SYS → 0x7B9 → SEB. |
+| **ESTOP** | Steering ramps to 0° at 20°/s (holds 1.5s then silent-stops) and brake=max (SYS). Exit: START button or mode long-press (3s). |
 
 ---
 
@@ -191,18 +191,18 @@ MANUAL ?? AUTO       (mode button)
 ### Manual Mode
 
 ```
-Throttle/gear motor path ? **blocked pending MTR hardware implementation**
-Brake lever ? SYS GPIO ? 0x7B9 ? SEB
-Steering wheel ? SES standalone (RT monitors 0x201)
+Throttle/gear motor path → **blocked pending MTR hardware implementation**
+Brake lever → SYS GPIO → 0x7B9 → SEB
+Steering wheel → SES standalone (RT monitors 0x201)
 ```
 
 ### Auto Mode
 
 ```
-Jetson 0x300 ? RT kinematics ? 0x204 {speed,gear} ? planned MTR ? Motor
-                              ? 0x169 {angle} ? SES
-Jetson 0x301 ? RT brake arbitration ? 0x205 ? SYS ? 0x7B9 ? SEB
-Jetson 0x302 ? RT forward ? 0x302 ? SYS ? lights
+Jetson 0x300 → RT kinematics → 0x204 {speed,gear} → MTR → Motor
+                              → 0x169 {angle} → SES
+Jetson 0x301 → RT brake arbitration → 0x205 → SYS → 0x7B9 → SEB
+Jetson 0x302 → RT forward → 0x302 → SYS → lights
 ```
 
 ---
@@ -330,9 +330,9 @@ SYS persists reset reason and boot count to NVS flash:
 | 0x302 | RX+FW (high→low) | change | Host lights → transparent forward to SYS |
 | 0x7FE | RX (low) | 10 Hz | SYS heartbeat. Timeout 200ms → motion inhibited (SYS_DEGRADED). |
 | 0x201 | RX (low) | 100 Hz | SES steering angle. Checksum-validated. |
-| 0x202 | RX (low) | 10 Hz | SES L3 faults → ESTOP |
+| 0x202 | RX (low) | 10 Hz | SES L3 faults → Controlled MRM (assist stop 2000 kPa, traction zeroed). |
 | 0x721 | RX (low) | 100 Hz | SEB status. Pressure stored only in Pressure mode. |
-| 0x7B9 | RX/TX (low) | 50 Hz | SEB brake command. Observed from SYS; RT emits ONLY in emergency fallback. |
+| 0x7B9 | RX (low) | 50 Hz | SEB brake command from SYS (observed for telemetry). RT never transmits 0x7B9. |
 | 0x204 | TX (low) | 100 Hz | Motor speed+gear. Gated: only in AUTO/ESTOP. |
 | 0x205 | TX (low) | 50 Hz | Brake kPa → SYS. Gated: only in AUTO/ESTOP. |
 | 0x169 | TX (low) | 50 Hz | Steering angle → SES. Dynamic slew rate. Gated: AUTO/ESTOP ramp. |
@@ -356,7 +356,7 @@ SYS persists reset reason and boot count to NVS flash:
 | 1 | Internal ESTOP | Steering in RAMP_TO_ZERO or HOLD_THEN_SILENT |
 | 2 | Fault | Steering FAULT (sync timeout, angle implausible) |
 
-SYS is the sole normal producer of 0x7B9; RT monitors the stream and only enters EMERGENCY_FALLBACK (0x7B9 takeover) if SYS's 0x7B9 stream completely vanishes for >250 ms.
+SYS is the sole master and producer of 0x7B9; RT expresses brake intent via 0x205 RT_BRAKE_CMD and never transmits 0x7B9.
 
 ### MCP2515 (High Bus)
 
@@ -412,12 +412,12 @@ Gateway TX queues: depth 8. Overflow counter logged. ESTOP skips queue via send-
 
 | Failure | Detection | Response |
 |---------|-----------|----------|
-| SYS HB timeout (200ms) | `g_last_sys_hb_us` frozen-counter check | RT brake takeover: 0x7B9 max stroke. Zero setpoints. |
+| SYS HB timeout (200ms) | `g_last_sys_hb_us` frozen-counter check | Zero drive setpoints (motion inhibited); steering remains active. Auto-recovers on link return. |
 | Host HB timeout (1500ms) | `g_last_host_hb_us` | Zero drive + assist stop brake (2000 kPa). Mode stays AUTO. |
-| Steering follow-error | |cmd?actual| > threshold for 300ms | ESTOP (0x001 both buses). |
-| CAN bus-off (low/high) | 10 Hz TEC poll + interrupt (high) | Auto-recover init(). 5 consecutive ? ESTOP or zero setpoints. |
-| Command stale (500ms) | `g_watchdog.is_stale()` | Zero 0x204 + steering ESTOP. |
-| SES angle implausible | >30? at boot sync | Refuse ACTIVE ? FAULT. |
+| Steering follow-error | \|cmd−actual\| > threshold for 300ms | Controlled MRM: zero drive setpoints + assist stop brake (2000 kPa); steering damping maintained without rollover lockup. |
+| CAN bus-off (low/high) | 10 Hz TEC poll + interrupt (high) | Auto-recover init(). 5 consecutive → ESTOP or zero setpoints. |
+| Command stale (500ms) | `g_watchdog.is_stale()` | Zero drive setpoints; steering remains active at standstill. |
+| SES angle implausible | >30° at boot sync | Refuse ACTIVE → FAULT. |
 | Task stalled >500ms | Per-task alive counters (control, dispatch, tx_low, tx_high) | Log ERROR. HW WDT (TPS3850) as ultimate backstop. |
 
 ### Task Watchdog
@@ -462,20 +462,20 @@ Four per-task alive counters (`g_alive_control`, `g_alive_dispatch`, `g_alive_tx
 
 ### 0x7B9 Brake Ownership & Priority
 
-SYS is the **sole normal producer** of the final SEB brake command `0x7B9`. RT expresses brake intent via `0x205 RT_BRAKE_CMD` (kPa); SYS arbitrates priority through `BrakeControl`:
+SYS is the **sole producer** of the final SEB brake command `0x7B9`. RT expresses brake intent via `0x205 RT_BRAKE_CMD` (kPa); SYS arbitrates priority through `BrakeControl`:
 1. **ESTOP:** Max stroke ($27\,\text{mm}$ raw 1140, Stroke mode).
 2. **Physical Brake Lever:** Hand lever switch overrides automated commands ($15\,\text{mm}$ raw 900, Stroke mode).
 3. **Automated Brake Request:** RT `0x205` pressure converted to raw units ($0.05\,\text{MPa/bit}$, Pressure mode). If `0x205` is stale in AUTO mode, falls back to max pressure ($20{,}000\,\text{kPa}$).
 4. **Released:** Release stroke ($0\,\text{mm}$ raw 600, Stroke mode).
 
-Dual-producer collision on `0x7B9` is eliminated by design: RT only transmits `0x7B9` in `EMERGENCY_FALLBACK` mode if SYS completely disappears from Low CAN.
+Dual-producer collision on `0x7B9` is eliminated by design: RT never transmits `0x7B9`, and SYS is the sole master and producer on Low CAN.
 
 ### FreeRTOS Task Architecture
 
 | Task | Priority | Stack | Cadence | Purpose |
 |---|---|---|---|---|
 | `task_can_rx` | 5 | 4608 B | Event | Receives TWAI frames from `rx_queue_` and forwards to `g_can_rx_queue` |
-| `task_safety` | 5 | 4608 B | 20 Hz | Polls ESTOP button & brake lever GPIOs, checks RT heartbeat timeout, evaluates EGAS command-path mismatch, checks MTR ESTOP ACK |
+| `task_safety` | 5 | 4608 B | 20 Hz | Polls ESTOP button & brake lever GPIOs, checks RT heartbeat timeout, supervises vehicle safety states |
 | `task_dispatch` | 4 | 3584 B | Event | Dequeues from `g_can_rx_queue`, decodes CAN messages, updates atomic state variables |
 | `task_mode` | 4 | 2560 B | 10 Hz | Debounces MODE and START buttons, handles long-press, emits `0x110 SYS_MODE_CMD` and `0x113 SYS_PWR_CMD` |
 | `task_gear` | 3 | 2048 B | 50 Hz | Compares `0x204` commanded gear vs `0x206` reported gear state |
@@ -694,18 +694,18 @@ Nine lock-free atomics: `g_mode`, `g_estop_active`, `g_cmd_speed_mmps`, `g_cmd_g
 
 ---
 
-## 15. Steering State Machine & 0x7B9 Suppression
+## 15. Steering State Machine & Brake Control Architecture
 
 ### Steering (6 States)
 
 RT steering (`steering_control.h`):
 
 ```
-BOOT_WAIT(500ms) ? LISTEN_SYNC ? ACTIVE
-                      ?(timeout)     ?(obstacle/ESTOP)
-                     FAULT       ESTOP_RAMP(20?/s)
-                      ?              ?(ramp done)
-                 (follow err)    ESTOP_HOLD(500ms)?SILENT
+BOOT_WAIT(500ms) → LISTEN_SYNC → ACTIVE
+                      ↓(timeout)     ↓(obstacle/ESTOP)
+                     FAULT       ESTOP_RAMP(20°/s)
+                      ↑              ↓(ramp done: hold 1.5s)
+                 (follow err)    ESTOP_HOLD(500ms)→SILENT
 ```
 
 | State | 0x169 TX | 0x204 Gate |
@@ -713,7 +713,7 @@ BOOT_WAIT(500ms) ? LISTEN_SYNC ? ACTIVE
 | BOOT_WAIT | No | Suppressed |
 | LISTEN_SYNC | No | Suppressed |
 | ACTIVE | 0x169 at the contract rate of 50 Hz | Allowed |
-| ESTOP_RAMP | Ramping to 0? | Allowed |
+| ESTOP_RAMP | Ramping to 0° | Allowed |
 | ESTOP_HOLD/SILENT | Hold/stop | Allowed |
 | FAULT | No | Suppressed |
 
@@ -721,16 +721,10 @@ BOOT_WAIT(500ms) ? LISTEN_SYNC ? ACTIVE
 `kSteerCmdRateHz` specify 20 ms/50 Hz. A later rate change is a reviewed timing
 contract change and must update all four plus timing tests and bench limits.
 
-### 0x7B9 Suppression (6 Conditions)
+### Brake Control Architecture
 
-SYS suppresses its own 0x7B9 in AUTO (RT sends directly via Option D). All 6 conditions required:
-```
-suppress = AUTO && rt_hb_ok && rt_safety==Normal
-        && seb_roll_ok && !lever && !estop && rt_sp_fresh
-```
-Any condition failing ? SYS resumes sending 0x7B9 immediately. The `rt_sp_fresh` (200ms) provides fast deadman before the 1000ms heartbeat timeout.
-
----
+SYS is the sole master and producer of `0x7B9 VCU_SEB_REQ` on Low CAN. RT never emits `0x7B9`.
+RT transmits brake pressure intent via `0x205 RT_BRAKE_CMD` (kPa). SYS `task_brake` converts `0x205` pressure to SEB commands while prioritizing hardware ESTOP and mechanical handlebar lever inputs.
 
 ---
 
@@ -741,17 +735,17 @@ Any condition failing ? SYS resumes sending 0x7B9 immediately. The `rt_sp_fresh`
 The control task (`t_control`, 100 Hz) drains the safety event queue each cycle:
 
 ```
-CAN RX ? process_frame() ? SafetyEvent enqueued on g_safety_evt_q (depth 16)
-                                  ?
+CAN RX → process_frame() → SafetyEvent enqueued on g_safety_evt_q (depth 16)
+                                  ↓
 t_control drains queue (xQueueReceive with 0 timeout, then xQueueOverwrite fallback)
-                                  ?
-    ESTOP event      ? m_estop_pending = true
-    MODE_CHANGE event ? m_current_mode updated; clears m_estop_pending ONLY if
+                                  ↓
+    ESTOP event       → m_estop_pending = true
+    MODE_CHANGE event → m_current_mode updated; clears m_estop_pending ONLY if
                         no ESTOP arrived in same drain cycle (race guard)
-    HB timeout       ? m_seb_takeover = true (auto-cleared on recovery)
-                                  ?
-    run_safety_checks() ? evaluates m_estop_pending, m_current_mode, m_seb_takeover
-                                  ?
+    SAFETY_CLEAR      → m_estop_pending = false, clear latches
+                                  ↓
+    run_safety_checks() → evaluates m_estop_pending, m_current_mode
+                                  ↓
     produces SafetyResult { zero_setpoints, brake_kpa, disable_steering, obstacle_triggered }
 ```
 
@@ -920,9 +914,7 @@ A single message is not sufficient to activate or maintain brake control; the sy
 1. **Continuous 50 Hz Transmission**: The `0x7B9` command must be sent at precisely 50 Hz (20ms intervals). If the SEB goes >20ms without a command, it enters an internal communication fault and acts accordingly as a safety mechanism.
 2. **Rolling Counters & Checksums**: Every `0x7B9` frame must include an incrementing 4-bit rolling counter (0-15) and a valid XOR checksum over bytes 0-6 ^ 0xFF.
 3. **Listen Before Speaking**: Before transmitting `0x7B9`, the controller waits in `LISTEN_SYNC` for a valid SEB feedback frame (`0x721`) to ensure the actuator is aligned and ready.
-4. **Arbitration and Deadman Monitoring**: 
-   - **RT Authority**: In AUTO mode, the RT controller transmits `0x7B9`. SYS suppresses its own transmission.
-   - **SYS Deadman**: The SYS controller continuously monitors the RT's heartbeat, RT's safety state, and the SEB's `0x721` rolling counter. If RT fails, or if the SEB stops acknowledging RT's commands (frozen rolling counter), SYS immediately breaks suppression and resumes transmitting its own `0x7B9` commands as a redundant backup.
+4. **Single-Producer Architecture**: SYS is the sole master and producer of `0x7B9` on Low CAN. RT communicates brake pressure intent through `0x205 RT_BRAKE_CMD` (kPa); SYS arbitrates priority through `BrakeControl` against ESTOP and physical rider lever inputs, eliminating all dual-sender arbitration conflicts.
 
 ---
 

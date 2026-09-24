@@ -96,9 +96,9 @@ Low-CAN wiring is shared, but only one deployment is attached at a time:
 
 The drive command **never originates at SYS**. SYS supplies *authority* (mode `0x110`, power
 `0x113`, persistent safety `0x011`) and the ESTOP broadcast `0x001`. RT is the actuator authority
-for MTR (via `0x204`) and for steering (via `0x169`) and brake (via `0x7B9` in AUTO). SYS *monitors*
-`0x204`/`0x205` for EGAS L2 and brake-watchdog checks but does not re-transmit them
-(`sys-esp32/src/main.cpp:223-475`).
+for MTR (via `0x204`) and for steering (via `0x169`). For braking, RT sends brake intent via `0x205 RT_BRAKE_CMD`,
+which SYS arbitrates against rider lever inputs and translates into `0x7B9` commands to SEB.
+SYS does not re-transmit drive commands (`sys-esp32/src/main.cpp:223-475`).
 
 ### 3.2 Bench / isolated (RM standalone) path ? RM ? MTR directly
 
@@ -145,12 +145,10 @@ unassigned (see ?8 "Open safety issues").
 
 ### 3.3 Steering and braking sub-paths
 
-- **Steering:** RT computes target angle ? `0x169 VCU_SES_REQ` ? SES/SES ? road wheel angle.
-- **Braking:** SYS is the **sole normal `0x7B9` producer**. RT sends brake *intent* via `0x205` (kPa);
-  SYS applies it (with a stale-`0x205` ? max-brake fallback) and always emits the final `0x7B9` in its
-  active brake state, including ESTOP/lever override. RT does **not** transmit `0x7B9` in normal
-  operation ? it is only an **emergency fallback writer** when SYS heartbeat *and* SYS `0x7B9` are both
-  lost (`brake_fallback.h`, issue #3).
+- **Steering:** RT computes target angle → `0x169 VCU_SES_REQ` → SES → road wheel angle.
+- **Braking:** SYS is the **sole producer** of `0x7B9`. RT sends brake *intent* via `0x205 RT_BRAKE_CMD` (kPa);
+  SYS applies it (with a stale-`0x205` → max-brake fallback) and always emits the final `0x7B9` in its
+  active brake state, including ESTOP/lever override. RT **never** transmits `0x7B9`.
 
 ---
 
@@ -225,7 +223,6 @@ unassigned (see ?8 "Open safety issues").
    ?? 0x204 RT_DRIVE_CMD {speed_out, gear_out}  -> MTR   (speed forced 0 unless AUTO + steer OK)
    ?? 0x205 RT_BRAKE_CMD {kPa}  -> SYS (intent; SYS emits the final 0x7B9)
    ?? 0x169 VCU_SES_REQ  {angle_raw=angle+30000, slew 125?525?/s} -> SES
-   ?? 0x7B9 VCU_SEB_REQ  (EMERGENCY fallback writer ONLY ? SYS HB + 0x7B9 both lost)
    ?? 0x210 RT_STATE_RPT {safety_state, estop_reason, ...}
    ?? 0x7FD RT_HEARTBEAT (2 Hz)
    ?? 0x001 SAFETY_ESTOP (on trigger, rate-limited)
@@ -235,12 +232,11 @@ unassigned (see ?8 "Open safety issues").
 - **Steering mapping:** internal signed 0.1? (+right); to actuator `target_angle_raw = angle + 30000`
   (`steering_control.h:234`); from actuator `angle = raw - 30000` (`can_dispatch.h:209`).
   Slew `rate = 125 + (kmh-2)*(400/23)` ?/s clamp `[125,525]`
-  (`steering_control.h:235-239`); ESTOP ramp-to-zero 20?/s.
-- **Watchdog (who RT watches):** `g_watchdog` fed **only by `0x300`**; stale >500 ms ? zero cmd +
-  steering ramp (`watchdog.h:8-12`). RT also monitors SYS heartbeat `0x7FE` (200 ms ? motion
-  prohibited; brake *fallback* only after SYS `0x7B9` also disappears, issue #3), Host heartbeat
-  `0x7FC` (1500 ms ? assist stop), `0x011` stream (700 ms ? ESTOP latch), and **MTR `0x206`** (issue
-  #8: >200 ms stale in AUTO ? MTR unavailable ? propulsion prohibited, confirmed 3-frame recovery).
+  (`steering_control.h:235-239`); ESTOP ramp-to-zero 20?/s (holds 1.5s then silent-stops).
+- **Watchdog (who RT watches):** `g_watchdog` fed **only by `0x300`**; stale >500 ms ? zero cmd (steering remains active at standstill). RT also monitors SYS heartbeat `0x7FE` (200 ms ? motion
+  prohibited; auto-clears on recovery), Host heartbeat
+  `0x7FC` (1500 ms ? assist stop), `0x011` stream (700 ms ? motion authority withdrawn), and **MTR `0x206`** (issue
+  #8: >200 ms stale in AUTO ? transient inhibit, confirmed 3-frame recovery).
 
 ### 4.3 SYS ? system safety authority
 
@@ -261,7 +257,7 @@ indicator/power/can_tx p2, can_rx p5, can_control p2, diag p1, hb p1). Entry `ap
  ?? 0x011 SYS_SAFETY_STS (sys estop latch + E2E CRC-8)           -> MTR / RT   [persistent ESTOP authority]
  ?? 0x600 SYS_DIAG_RPT, 0x7FE SYS_HEARTBEAT, lights/indicators
  ?? 0x7B9 VCU_SEB_REQ  (SOLE normal producer; 0x205 intent applied) -> SEB
- task_safety (20 Hz): hardware ESTOP btn, RT-HB loss, MTR ESTOP, SEB L3, EGAS L2, bus-off
+ task_safety (20 Hz): hardware ESTOP btn, RT-HB loss, MTR ESTOP, bus-off
         ?  force_estop()  +  broadcast 0x001  ???????????????? whole bus
  task_brake (50 Hz): consume RT 0x205 kPa (stale -> max), ESTOP/lever override -> final 0x7B9
 ```
@@ -270,8 +266,6 @@ indicator/power/can_tx p2, can_rx p5, can_control p2, diag p1, hb p1). Entry `ap
   `0x001`, set `0x110=MANUAL`, set `0x113=OFF`, drive `0x7B9` max stroke (~27 mm), cut 12 V relay
   (`main.cpp:858`). Traction inhibits (MTR-fbk loss, SEB-comms loss, brake following excursion, SEB
   L3) clamp `0x110`?MANUAL + `0x113`?OFF via `resolve_authority()` (`inhibit_state.h`).
-- **Command-path consistency (EGAS L2 role):** `|0x204.setpoint ? 0x206.applied| > 500 mm/s` for >500 ms in AUTO ? ESTOP
-  (`main.cpp:516-546`).
 
 ### 4.4 MTR ? motor actuator
 
@@ -479,24 +473,20 @@ architecture review. Severity: ?? critical / ?? high / ?? medium. Items marked *
 fixed in the code (fault-class semantics at the end of this section); items still open are hardware
 dependencies or protocol redesigns.
 
-1. **EGAS / command-path consistency relabeled (RESOLVED).** `0x206.motor_command_speed_mmps`
+1. **Artificial Command-Path Check Removed (RESOLVED).** `0x206.motor_command_speed_mmps`
    is the commanded setpoint echoed back (`mtr-stm32/src/motor_manager.h:315` = `target_speed_mmps_`),
-   **not** a measured speed. MTR has **no speed sensor**, so the SYS check `|0x204.setpoint ? 0x206.applied|`
-   is a **command-path / setpoint-echo consistency** check, not physical EGAS. Genuine physical EGAS L2
-   (rollaway / stall / runaway detection) requires wheel/motor encoders + RT publishing measured speed to SYS —
-   tracked as a future hardware/protocol item.
+   **not** a measured physical speed. The artificial CAN-level setpoint vs echo check (`|0x204.setpoint - 0x206.applied|`)
+   was removed from `sys-esp32/src/main.cpp`. Propulsion supervision relies on MTR's internal 150 ms command watchdog
+   and 500 ms deadman. Physical wheel-speed EGAS is optional and compiled out on encoder-less vehicles.
 2. ? **MTR dedicated `0x204` watchdog (RESOLVED).** `drive_expected_` is authority-only (AUTO + power ON
    + valid `0x110`/`0x113`/`0x011`); a missing/frozen `0x204` (>150 ms) trips a latched fail-safe
    (DAC 0, relays off, `0x206` flag `0x02`, `DiagId::MtrRtDriveCmdTimeout`) even if no `0x204` was ever
    seen while drive is expected. Confirmed recovery requires 3 valid `0x204` frames at cadence. This is
    independent of the generic any-frame 500 ms deadman.
-3. ? **Single normal `0x7B9` owner (RESOLVED, emergency fallback).** SYS is the sole normal producer;
-   RT's direct AUTO `0x7B9` and SYS's RT-health suppression are removed. RT becomes an *emergency
-   fallback writer* via a 3-state machine (`rt-esp32/src/brake_fallback.h`): SYS-heartbeat loss alone
-   only zeros propulsion (SYS_DEGRADED); RT writes `0x7B9` only when SYS `0x7B9` has also disappeared
-   from the Low bus for a guard interval (EMERGENCY_FALLBACK). Handback is latched + epoch-guarded.
-   The *long-term* target (distinct source IDs / SEB arbitration) remains documented as deferred until
-   SEB firmware is available.
+3. ? **Single `0x7B9` Owner (RESOLVED).** SYS is the sole master and producer of `0x7B9 VCU_SEB_REQ`.
+   RT emergency brake fallback takeover (`brake_fallback.h`) was completely removed from RT firmware.
+   RT strictly publishes `0x205 RT_BRAKE_CMD` with requested kPa pressure, and never transmits `0x7B9`,
+   eliminating all split-brain CAN arbitration hazards and race conditions.
 4. ? **`0x011`/`0x7FE` `estop_active` reflects the true system latch (RESOLVED).**
    `sys::ModeManager::estop_latched(mode, hw)` = `mode==Estop || hw_button`. Software ESTOPs (CAN `0x001`,
    SEB L3, EGAS, bus-off, MTR-reported-ESTOP) hold `estop_active = 1` across `0x011` and `0x7FE` until

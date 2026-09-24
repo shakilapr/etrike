@@ -62,8 +62,8 @@ codecs in `protocol/codecs/`.
 | `MTR_MOTOR_FBK` | `0x206` | 4 | MTR ? RT, SYS, Host | `fault_flags` byte3: bit0 `kMtrFaultEstopActive` (0x01), bit1 `kMtrFaultCmdTimeout` (0x02), bit4 ready | MTR ESTOP **ack** (redundant path if SYS missed the `0x001`), plus command-timeout flag (issues #2/#7). `motor_command_speed_mmps` is the *echoed* command (not a measurement). |
 | `RT_STATE_RPT` | `0x210` | ? | RT ? SYS/Host | `estop_reason` (0=normal, 1..10 reasons), `safety_state`, `steer_state`, task-health | Reports *why* RT stopped and whether it considers itself in an internal ESTOP. |
 | `RT_DRIVE_CMD` | `0x204` | 5 | RT (or RM) ? MTR | `motor_speed_mmps`, `gear` | The propulsion command. Zeroed by every stop flavour; MTR watchdogs it separately (issue #2). |
-| `VCU_SEB_REQ` | `0x7B9` | 8 | SYS ? SEB (sole normal producer) | stroke / pressure command, `rolling_counter`, XOR8 | Brake command. RT is **only** an emergency fallback writer (issue #3). |
-| `RT_BRAKE_CMD` | `0x205` | ? | RT ? SYS | `brake_pressure_kpa` | Brake *intent*; SYS converts to the final `0x7B9`. |
+| `VCU_SEB_REQ` | `0x7B9` | 8 | SYS → SEB (sole producer) | stroke / pressure command, `rolling_counter`, XOR8 | Primary brake command. SYS is the sole producer; RT never emits `0x7B9`. |
+| `RT_BRAKE_CMD` | `0x205` | ? | RT → SYS | `brake_pressure_kpa` | Brake *intent*; SYS converts to the final `0x7B9`. |
 | `SYS_DIAG_RPT` | `0x600` | 8 | SYS ? RT, Host | `mode`, `brake_fault`, `heartbeat_ok`, `estop_active` (mode-based) | Diagnostic view of SYS stop state. |
 
 `0x001` rate limiting ? `shared/shared_config.h:26-33`:
@@ -86,12 +86,11 @@ All of these latch `ModeManager` into `Mode::Estop`
 
 | # | Trigger | Source | main.cpp ref |
 |---|---------|--------|--------------|
-| 1 | Hardware ESTOP button (GPIO1, active-high NC) | `task_safety` reads GPIO ? `g_safety.set_estop()` ? `estop_triggered` | `:551-577` (trigger gate `:565-569`) |
+| 1 | Hardware ESTOP button (GPIO1, active-high NC) | `task_safety` reads GPIO → `g_safety.set_estop()` → `estop_triggered` | `:551-577` (trigger gate `:565-569`) |
 | 2 | CAN `0x001` received (rate-limited RX) | dispatch `kIdSafetyEstop` | `:332-353` (force at `:348`) |
 | 3 | RT heartbeat `0x7FD` lost (>1000 ms, after 3 s startup grace) | `task_safety` (`estop_triggered`) | `:565-577` (force at `:569`) |
-| 4 | MTR reports ESTOP (0x206 `fault_flags` bit0) ? redundant propagation | dispatch `kIdMtrMotorFbk` | `:301-319` (force at `:315`) |
-| 5 | Command-path consistency (EGAS L2 role): `|0x204 setpoint ? 0x206 applied| > 500 mm/s` > 500 ms (AUTO) | `task_safety` | `:585-615` (force at `:601`) |
-| 6 | CAN bus-off persistent (? 5 counts) | `task_can_control` | `:1073-1083` (force at `:1078`) |
+| 4 | MTR reports ESTOP (0x206 `fault_flags` bit0) → redundant propagation | dispatch `kIdMtrMotorFbk` | `:301-319` (force at `:315`) |
+| 5 | CAN bus-off persistent (≥ 5 counts) | `task_can_control` | `:1073-1083` (force at `:1078`) |
 
 On each entry SYS **broadcasts `0x001`** (`send_estop_frame`, rate-limited via
 `can_send_estop()`), records `g_last_estop_trigger_tick`, and latches the mode.
@@ -232,26 +231,10 @@ grace, `0x206` stale > 200 ms ? MTR unavailable ? `zero_setpoints` even at
 standstill; max brake only if a non-zero drive was recently commanded; confirmed
 3-frame recovery; disabled by `g_bypass_mtr_absent`.
 
-### 4.5 Emergency brake fallback (issue #3)
+### 4.5 Braking Single-Producer Architecture
 
-RT is **not** a normal `0x7B9` producer. `SebBrakeFallback`
-(`src/brake_fallback.h`) only makes RT the emergency `0x7B9` writer when SYS
-heartbeat is lost **and** SYS `0x7B9` has actually disappeared from the Low bus
-for a guard interval:
-
-```
-NORMAL
-  | SYS 0x7FE lost (motion already zeroed)  + fallback armed (startup acquisition)
-  v
-SYS_DEGRADED   (RT does NOT write 0x7B9; SYS brake task may still be alive)
-  | SYS 0x7B9 absent > kSebFallbackGuardMs
-  v
-EMERGENCY_FALLBACK  -> RT asserts 0x001 (rate-limited) + transmits max-brake 0x7B9
-  | SYS 0x7FE healthy again
-  v  (handback is latched + epoch-guarded: stop RT 0x7B9, open epoch,
-     count kSebHandbackVerifyFrames fresh POST-epoch SYS 0x7B9 frames)
-NORMAL   // vehicle still ESTOP-latched until SYS 0x011 two-frame clear
-```
+SYS is the **sole master and producer** of `0x7B9 VCU_SEB_REQ` on Low CAN. RT never emits `0x7B9`.
+RT transmits brake pressure intent via `0x205 RT_BRAKE_CMD` (kPa). SYS `task_brake` converts `0x205` pressure to SEB commands while prioritizing hardware ESTOP and mechanical handlebar lever inputs. Dual-producer conflicts and race conditions are eliminated by design.
 
 ---
 

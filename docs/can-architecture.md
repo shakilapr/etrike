@@ -165,18 +165,18 @@ The vehicle operates under strict deterministic timing boundaries. Violations tr
 | :--- | :--- | :--- | :--- | :--- |
 | `kStartupGracePeriodMs` | **3000 ms** | RT & SYS Boot | All Heartbeats | Grace window post power-on. Suppresses missing heartbeat ESTOPs during peripheral boot. |
 | `kHeartbeatTimeoutMsRt` | **200 ms** | SYS Monitor | `0x7FD` (`RT_HEARTBEAT`) | 2 missed 100ms RT heartbeats. SYS forces ESTOP and broadcasts `0x001` (`SAFETY_ESTOP`). |
-| `kHeartbeatTimeoutMsSys` | **200 ms** | RT Monitor | `0x7FE` (`SYS_HEARTBEAT`) | 2 missed 100ms SYS heartbeats. RT triggers SEB brake takeover (`0x7B9` `VCU_SEB_REQ` 2000 kPa). |
+| `kHeartbeatTimeoutMsSys` | **200 ms** | RT Monitor | `0x7FE` (`SYS_HEARTBEAT`) | 2 missed 100ms SYS heartbeats. RT zeroes drive setpoints (motion inhibited); steering remains active. |
 | `kHeartbeatTimeoutMsHost`| **1500 ms** | RT Monitor | `0x7FC` (`HOST_HEARTBEAT`)| Host liveness loss. RT initiates assisted stop with 2000 kPa (`kAssistStopKpa`) brake setpoint. |
-| `kHostCmdStaleTimeoutMs`| **500 ms** | RT Watchdog | `0x300` (`HOST_DRIVE_CMD`)| RT watchdog for Host drive setpoint. Zeroes `0x204` (`RT_DRIVE_CMD`) and triggers steering ESTOP. |
-| `kSetpointStaleMs` | **50 ms** | SYS Brake Task | `0x204` (`RT_DRIVE_CMD`) | 5 missed 10ms RT drive setpoint frames. Fast-path deadman revokes RT brake control and takes over `0x7B9`. |
+| `kHostCmdStaleTimeoutMs`| **500 ms** | RT Watchdog | `0x300` (`HOST_DRIVE_CMD`)| RT watchdog for Host drive setpoint. Zeroes `0x204` (`RT_DRIVE_CMD`); steering remains active at standstill. |
+| `kSetpointStaleMs` | **50 ms** | SYS Task Drive | `0x204` (`RT_DRIVE_CMD`) | 5 missed 10ms RT drive setpoint frames. Zeroes setpoint speed and selects Neutral. |
 | `kBrakeSetpointStaleMs` | **100 ms** | SYS Brake Task | `0x205` (`RT_BRAKE_CMD`) | 5 missed 20ms RT brake setpoint frames. Overwrites stale RT input with `kMaxBrakeKpa` (5000 kPa). |
-| `kSteerFollowingErrMs` | **300 ms** | RT Control Task| `0x201` (`SES_STATUS`) | Steering angle following-error persistence limit before aborting AUTO mode and latching ESTOP. |
+| `kSteerFollowingErrMs` | **300 ms** | RT Control Task| `0x201` (`SES_STATUS`) | Steering following-error limit → Controlled MRM (assist stop 2000 kPa, zero traction) without rollover lockup. |
 | `kBrakeFollowingErrMs` | **100 ms** | SYS Brake Task | `0x721` (`SEB_STATUS`) | SEB stroke following-error persistence limit before logging actuator fault warning. |
 | `kEgasFaultDurationMs` | *Retired* | Host Autonomy | N/A | *Retired*: Command-path consistency check removed; speed/runaway supervision delegated to Host. |
-| `kMtrFbkStaleMs` | **200 ms** | SYS Safety Task| `0x206` (`MTR_MOTOR_FBK`) | Motor feedback staleness limit. |
+| `kMtrFbkStaleMs` | **200 ms** | SYS Safety Task| `0x206` (`MTR_MOTOR_FBK`) | Motor feedback staleness limit → transient, recoverable traction inhibit (auto-clears on 3 frames). |
 | `kSebStatusTimeoutMs` | **100 ms** | SYS Brake Task | `0x721` (`SEB_STATUS`) | SEB status frame loss warning limit. |
 | `kSebRollingTimeoutMs` | **100 ms** | SYS Brake Task | `0x721` (`SEB_STATUS`) | Maximum window for SEB `0x721` rolling counter advancement. |
-| `kSebHandoffGraceMs` | **500 ms** | SYS Brake Task | `0x7B9` (`VCU_SEB_REQ`) | Handoff window during MANUAL $\rightarrow$ AUTO transition for RT to claim `0x7B9` sole ownership. |
+| `kSebHandoffGraceMs` | *Retired* | SYS Brake Task | `0x7B9` (`VCU_SEB_REQ`) | *Retired*: SYS is the sole producer of `0x7B9`; RT never transmits `0x7B9`. |
 | `kMtrEstopAckTimeoutMs` | *Retired* | SYS Safety Task| `0x206` (`MTR_MOTOR_FBK`) | *Retired*: MTR ESTOP ACK timeout removed; 0x001 broadcast directly enforces hardware ESTOP. |
 | `kDebounceMs` | **500 ms** | SYS Mode Manager| Physical Switch | Physical button debounce lock-out window. |
 | `kEstopLongPressMs` | **3000 ms** | SYS Mode Manager| MODE Button | Required hold duration on MODE button in ESTOP state to recover to MANUAL mode. |
@@ -221,9 +221,9 @@ The vehicle operates under strict deterministic timing boundaries. Violations tr
 - **Timeout Limit**: `kSebRollingTimeoutMs = 100ms`
 
 #### Verification Logic
-- In AUTO mode, RT sends `0x7B9` (`VCU_SEB_REQ`) directly to SEB.
+- SYS sends `0x7B9` (`VCU_SEB_REQ`) directly to SEB at 50 Hz (sole producer).
 - SYS monitors `rolling_counter` in `0x721` (`SEB_STATUS`) to confirm SEB is actively receiving and executing commands.
-- **Fallback Action**: If RT's `0x7B9` transmission fails or experiences CAN bus errors, SEB stops incrementing its rolling counter. SYS detects the stalled counter and **resumes broadcasting `0x7B9` from SYS** to maintain physical brake authority.
+- **Fault Action**: If SEB stops incrementing its rolling counter, SYS detects the stalled counter and asserts `kInhibitSebCommsLoss` (B-class recoverable inhibit). RT expresses brake pressure intent via `0x205 RT_BRAKE_CMD` and never writes `0x7B9`.
 
 ---
 
@@ -339,28 +339,20 @@ The vehicle operates under strict deterministic timing boundaries. Violations tr
 
 ### 1. SEB Brake Command Arbitration (Option D)
 
-> **SUPERSEDED by issue #3 (single normal `0x7B9` owner).** The dual-sender
-> model below — RT transmitting `0x7B9` in AUTO while SYS suppresses itself —
-> is **no longer the implemented architecture**. In current firmware:
-> - **SYS is the SOLE normal `0x7B9` producer** (`sys-esp32 task_brake`). It
->   consumes RT's `0x205 RT_BRAKE_CMD` kPa intent (with a stale-`0x205` → max
->   brake fallback) and emits the final `0x7B9`, including ESTOP / lever /
->   released priorities (the 4-tier hierarchy below still applies, inside
->   `BrakeControl`).
-> - **RT does NOT transmit `0x7B9` in normal operation.** It is only an
->   *emergency fallback writer* (`rt-esp32/src/brake_fallback.h`): RT becomes
->   the `0x7B9` writer only when SYS heartbeat is lost **and** SYS `0x7B9` has
->   actually disappeared from the Low bus for a guard interval.
-> - The old `suppress_seb` / `kSebHandoffGraceMs` / dual-sender circular-deadlock
->   machinery in SYS and RT was **removed**.
-> The remainder of this section is retained as the historical design rationale
-> and for the (deferred) option-3 distinct-source-ID target.
+> **SUPERSEDED: Single-Producer `0x7B9` Architecture.** The dual-sender / emergency takeover
+> model was **completely eliminated**:
+> - **SYS is the SOLE `0x7B9` producer** (`sys-esp32 task_brake`). It
+>   consumes RT's `0x205 RT_BRAKE_CMD` kPa intent (with stale-`0x205` → max
+>   brake fallback) and emits the final `0x7B9`, arbitrating ESTOP / lever /
+>   released priorities inside `BrakeControl`.
+> - **RT NEVER transmits `0x7B9`.** `brake_fallback.h` was removed. RT strictly publishes
+>   pressure requests via `0x205 RT_BRAKE_CMD`, eliminating all split-brain CAN arbitration hazards.
+> - The old `suppress_seb` / `kSebHandoffGraceMs` / dual-sender circular-deadlock machinery was **removed**.
 
 #### Architecture Overview
-To eliminate single points of failure (SPOF) while achieving 1-hop minimal latency:
-- **In AUTO Mode**: SYS is the sole `0x7B9` producer, applying RT's `0x205` intent. (Historical: RT transmitted `0x7B9` directly and SYS suppressed — superseded, see banner above.)
+- **In AUTO Mode**: SYS is the sole `0x7B9` producer, translating RT's `0x205` pressure intent into SEB commands.
 - **In MANUAL / ESTOP Mode**: SYS assumes direct ownership of `0x7B9` (`VCU_SEB_REQ`), translating physical lever inputs or ESTOP brake curves into SEB commands.
-- **Rider Lever Override**: If the rider pulls the physical brake lever in AUTO mode, SYS immediately overrides RT, takes over `0x7B9` (`VCU_SEB_REQ`), and commands maximum rider braking pressure.
+- **Rider Lever Override**: If the rider pulls the physical brake lever in AUTO mode, SYS immediately overrides RT's automated request and commands maximum rider braking pressure.
 
 #### Strict 4-Tier SEB Priority Hierarchy
 

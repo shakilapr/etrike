@@ -107,12 +107,15 @@ In Autonomous Mode, the vehicle operates under full electronic authority:
    │
    ├─► Low CAN 0x169 VCU_SES_REQ  ──► [SES Steer Actuator] (Turns front fork)
    ├─► Low CAN 0x204 RT_DRIVE_CMD ──► [MTR STM32] (Sets MCP4725 DAC + Relays)
-   └─► Low CAN 0x7B9 VCU_SEB_REQ  ──► [SEB Brake Actuator] (Clamps brake disks)
+   ├─► Low CAN 0x169 VCU_SES_REQ  ──► [SES Steering Actuator] (Turns front fork)
+   ├─► Low CAN 0x204 RT_DRIVE_CMD ──► [MTR STM32 Motor Master] (Drives rear wheels)
+   └─► Low CAN 0x205 RT_BRAKE_CMD ──► [SYS ESP32] (Brake pressure intent in kPa)
 
 [SYS ESP32]
    ├─► Monitors physical safety interlocks & PCR3 contactor
-   ├─► In AUTO mode, suppresses its own 0x7B9 transmission to avoid bus collision with RT
-   └─► If RT crashes or heartbeat (0x7FD) is lost: SYS takes over brake authority and trips contactor
+   ├─► Arbitrates 0x205 RT_BRAKE_CMD and rider lever inputs
+   ├─► Low CAN 0x7B9 VCU_SEB_REQ  ──► [SEB Brake Actuator] (Sole producer of 0x7B9)
+   └─► If RT crashes or heartbeat (0x7FD) is lost: SYS drops contactor and commands emergency braking
 ```
 
 1. **Host Generation**: Jetson calculates path curvature $\kappa$ and target velocity $v$. It broadcasts `0x300` on High CAN.
@@ -124,7 +127,7 @@ In Autonomous Mode, the vehicle operates under full electronic authority:
 5. **Actuator Dispatch**:
    - RT transmits `0x169` (`VCU_SES_REQ`) at 50 Hz to SES.
    - RT transmits `0x204` (`RT_DRIVE_CMD`) at 50 Hz to MTR.
-   - RT transmits `0x7B9` (`VCU_SEB_REQ`) at 50 Hz to SEB.
+   - RT transmits `0x205` (`RT_BRAKE_CMD`) at 50 Hz to SYS; SYS transmits `0x7B9` (`VCU_SEB_REQ`) at 50 Hz to SEB.
    - SYS supervises contactor state and safety integrity; upon any fatal error or RT timeout, SYS drops 72V traction power.
 
 ---
@@ -224,7 +227,7 @@ The MTR STM32 node accommodates both operational topologies seamlessly:
 | **770**| `0x302` | `HOST_LIGHT_CMD` | Jetson | SYS | High $\rightarrow$ Low | 10 Hz | 1 | Turn signals, headlights, hazard light flags |
 | **1024**| `0x400`| `RT_OBSTACLE_DIST`| RT | Jetson | High | 20 Hz | 4 | Ultrasonic distance sensors (mm, front left/right) |
 | **1825**| `0x721`| `SEB_STATUS` | SEB | SYS, RT | Low | 10 Hz | 8 | Brake cylinder pressure, error status, limit switch |
-| **1977**| `0x7B9`| `VCU_SEB_REQ` | SYS / RT / RM | SEB | Low | 50 Hz | 8 | Target displacement (mm, 0.05mm/LSB), rolling counter, XOR8 checksum |
+| **1977**| `0x7B9`| `VCU_SEB_REQ` | SYS / RM | SEB | Low | 50 Hz | 8 | Target displacement (mm, 0.05mm/LSB), rolling counter, XOR8 checksum |
 | **2044**| `0x7FC`| `HOST_HEARTBEAT` | Jetson | RT | High | 10 Hz | 2 | Host liveness counter |
 | **2045**| `0x7FD`| `RT_HEARTBEAT` | RT | SYS, Jetson| Both | 10 Hz | 2 | RT gateway and kinematics liveness counter |
 | **2046**| `0x7FE`| `SYS_HEARTBEAT` | SYS | RT, MTR | Low | 10 Hz | 2 | Master safety authority liveness counter |
