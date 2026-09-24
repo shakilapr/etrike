@@ -1018,7 +1018,7 @@ Built-in TWAI, GPIO 4/5, 500 kbit/s, SN65HVD230.
 | `0x302` | HOST_LIGHT_CMD (fwd) | `u8` bitfield | RT | → `g_light_state` |
 | `0x6FB` | SEB_Test | `{i16 mtr_curr, u16 ecu_temp, u16 pow_volt}` | SEB | Monitor motor current / ECU temp trends for degradation early warning |
 | `0x721` | SEB_STATUS | `{u8 status, u16 stroke, u16 angle, u8 press, …}` (8 bytes) | SEB | Sync boot stroke, brake feedback, error level |
-| `0x731` | SEB_ErrInfo | 23 fault flags (8 bytes) | SEB | Log faults; escalate any L3 flag to ESTOP via `0x001` |
+| `0x731` | SEB_ErrInfo | 23 fault flags (8 bytes) | SEB | Log faults; escalate any L3 flag to latched brake fault (cut traction, clamp MANUAL) |
 | `0x741` | SEB_Version | `{u8 sw_ver, u8 hw_ver}` | SEB | Log on boot for compatibility check |
 | `0x7FD` | RT_HEARTBEAT | `u8 alive_ctr` | RT | Feed RT alive counter; timeout >1000ms → ESTOP. Faster detection: `0x204` staleness at 200ms → zero speed. |
 
@@ -1550,8 +1550,8 @@ SYS is the safety controller and body control module. It monitors ESTOP, heartbe
 | GPIO11 MODE button (active-low, debounced) | Toggle MANUAL ↔ AUTO on falling edge. Ignored in ESTOP. | `0x110` SYS_MODE_CMD — DLC=1, `{u8 mode (0=M, 1=A, 2=ESTOP)}` → RT + MTR | Mode control |
 | GPIO41 START button (active-low, debounced) | ESTOP → MANUAL on falling edge. No effect in AUTO/MANUAL. Long-press (3s) secondary ESTOP exit (gap #11). | `0x110` SYS_MODE_CMD — DLC=1, `{u8 mode}` → RT + MTR | ESTOP exit |
 | `0x302` HOST_LIGHT_CMD — DLC=1, `{u8 lights bitfield}` (fwd from RT) | Lights bitfield → GPIO relay outputs. AUTO: from CAN. MANUAL: handlebar switches (GPIO 9/6/7). ESTOP: all OFF except brake. | GPIO 18 (L turn), 19 (R turn), 21 (brake), 22 (head) | Signal lights |
-| `0x721` SEB_STATUS — DLC=8, `{u8 status, u16 stroke, u16 angle, u8 press, …}` | Brake SM: boot sync stroke, check `SEB_Alignment_Status==1`, following error >3 mm for >100 ms → fault log. `SEB_Error_Status≥3` (L3 fault) → ESTOP. | `0x7B9` VCU_SEB_REQ — DLC=8, `{u8 ctrl[2], u16 stroke, u16 press, u8 sec, u8 cksum}` (50 Hz, rolling counter + checksum) | Brake actuator |
-| `0x731` SEB_ErrInfo — DLC=8, `{23 fault flags (16× L3)}` | L3 fault → ESTOP via `0x001` | — (consumed locally) | Brake health |
+| `0x721` SEB_STATUS — DLC=8, `{u8 status, u16 stroke, u16 angle, u8 press, …}` | Brake SM: boot sync stroke, check `SEB_Alignment_Status==1`, following error >3 mm for >100 ms → inhibit traction; persistent >500 ms → latched brake fault. `SEB_Error_Status≥3` (L3 fault) → latched brake fault (`kLatchedSebL3`: cut traction power, MANUAL mode, keep steering active). | `0x7B9` VCU_SEB_REQ — DLC=8, `{u8 ctrl[2], u16 stroke, u16 press, u8 sec, u8 cksum}` (50 Hz, rolling counter + checksum) | Brake actuator |
+| `0x731` SEB_ErrInfo — DLC=8, `{23 fault flags (16× L3)}` | L3 fault → latched brake fault (`kLatchedSebL3`: cut traction power, clamp MANUAL, keep steering active) | — (consumed locally) | Brake health |
 | `0x741` SEB_Version — DLC=8, `{u8 sw_ver, u8 hw_ver}` | Log on boot for compatibility check | — (consumed locally) | Brake health |
 | `0x6FB` SEB_Test — DLC=8, `{i16 mtr_curr, u16 ecu_temp, u16 pow_volt}` | Monitor motor current / ECU temp trends for degradation early warning | — (consumed locally) | Brake health |
 | — | DC-DC ON in all modes (MANUAL, AUTO, ESTOP). Sent on state change. | `0x012` SYS_DCDC_CMD — DLC=1, `{u8 enable}` → DC-DC converter | DC-DC 72V→12V |

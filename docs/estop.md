@@ -26,8 +26,9 @@ distinct stop *semantics* that controllers distinguish (see
 `docs/working-architecture.md` ?8 "Fault-class semantics"):
 
 | Class | Meaning | Clears how | Examples |
-|-------|---------|------------|----------|
-| **Latched ESTOP** | vehicle must be explicitly re-armed | SYS reset path (START / MODE long-press) then the two-frame `0x011` clear + MTR REARM | hardware ESTOP, CAN `0x001`, SEB L3 (`0x721`/`0x731`), EGAS L2, bus-off, MTR-reported ESTOP, RT internal fault |
+|---|---|---|---|
+| **Latched ESTOP** | vehicle must be explicitly re-armed | SYS reset path (START / MODE long-press) then the two-frame `0x011` clear + MTR REARM | hardware ESTOP, CAN `0x001`, RT heartbeat loss, EGAS L2, bus-off, MTR-reported ESTOP, RT internal fault (SES L3) |
+| **Latched Brake Fault** (Traction Inhibit) | traction cut, mode clamped to MANUAL; steering & 12V preserved | SYS reset path (START button) once fault is healthy | SEB L3 (`0x721`/`0x731`), persistent brake following-error (`kLatchedSebL3`, `kLatchedBrakeFollowing`) |
 | **Fail-safe disable** (not latched) | auto-clears on next valid frame / confirmed recovery | N consecutive valid frames at cadence | MTR 500 ms any-frame deadman, MTR `0x204` drive-command watchdog (issue #2), RT `0x300` host-cmd stale |
 | **B-class traction inhibit** (recoverable with confirmation) | clears after N healthy observations | confirmed recovery, own bit | SYS `kInhibitMtrFbkLoss` (issue #7), `kInhibitSebCommsLoss`, transient brake following-error (issue #5); RT MTR-health (issue #8) |
 
@@ -87,17 +88,21 @@ All of these latch `ModeManager` into `Mode::Estop`
 |---|---------|--------|--------------|
 | 1 | Hardware ESTOP button (GPIO1, active-high NC) | `task_safety` reads GPIO ? `g_safety.set_estop()` ? `estop_triggered` | `:551-577` (trigger gate `:565-569`) |
 | 2 | CAN `0x001` received (rate-limited RX) | dispatch `kIdSafetyEstop` | `:332-353` (force at `:348`) |
-| 3 | SEB `0x731` ErrInfo ? any of 16 L3 bits | dispatch `kIdSebErrInfo` | `:486-513` (force at `:507`) |
-| 4 | SEB `0x721` `error_status==3` (L3) ? latched `kLatchedSebL3` (issue #5) | dispatch `kIdSebStatus` | `:355-380` (force at `:373`) |
-| 5 | Persistent brake following-error ? `kLatchedBrakeFollowing` (issue #5) | dispatch following-error monitor | `:410-456` (force at `:449`) |
-| 6 | RT heartbeat `0x7FD` lost (>1000 ms, after 3 s startup grace) | `task_safety` (`estop_triggered`) | `:565-577` (force at `:569`) |
-| 7 | MTR reports ESTOP (0x206 `fault_flags` bit0) ? redundant propagation | dispatch `kIdMtrMotorFbk` | `:301-319` (force at `:315`) |
-| 8 | MTR ESTOP-ACK timeout (ESTOP sent, no ack bit in 100 ms) | `task_safety` | `:618-631` (force at `:624`) |
-| 9 | Command-path consistency (EGAS L2 role): `|0x204 setpoint ? 0x206 applied| > 500 mm/s` > 500 ms (AUTO) | `task_safety` | `:585-615` (force at `:601`) |
-| 10 | CAN bus-off persistent (? 5 counts) | `task_can_control` | `:1073-1083` (force at `:1078`) |
+| 3 | RT heartbeat `0x7FD` lost (>1000 ms, after 3 s startup grace) | `task_safety` (`estop_triggered`) | `:565-577` (force at `:569`) |
+| 4 | MTR reports ESTOP (0x206 `fault_flags` bit0) ? redundant propagation | dispatch `kIdMtrMotorFbk` | `:301-319` (force at `:315`) |
+| 5 | MTR ESTOP-ACK timeout (ESTOP sent, no ack bit in 100 ms) | `task_safety` | `:618-631` (force at `:624`) |
+| 6 | Command-path consistency (EGAS L2 role): `|0x204 setpoint ? 0x206 applied| > 500 mm/s` > 500 ms (AUTO) | `task_safety` | `:585-615` (force at `:601`) |
+| 7 | CAN bus-off persistent (? 5 counts) | `task_can_control` | `:1073-1083` (force at `:1078`) |
 
 On each entry SYS **broadcasts `0x001`** (`send_estop_frame`, rate-limited via
 `can_send_estop()`), records `g_last_estop_trigger_tick`, and latches the mode.
+
+### 3.1.1 Decoupled Safety Latched Brake Faults (`g_latched_fault_reasons`)
+
+Rather than triggering a global hard ESTOP (`force_estop()` / `0x001`), SEB Level 3 faults (`0x721` status, `0x731` ErrInfo) and persistent brake following-errors set bits in `g_latched_fault_reasons` (`kLatchedSebL3`, `kLatchedBrakeFollowing`):
+- `task_mode` evaluates `sys::resolve_authority()`, which clamps `0x110` mode to `MANUAL` and drops `0x113` power to `OFF`, cutting motor propulsion and reporting `brake_fault = 1` in `0x600`.
+- Crucially, steer-by-wire (SES) and 12V auxiliary power remain powered and fully operational, enabling the vehicle/driver to execute a controlled stop or minimum-risk manoeuvre without losing steering authority.
+- The latch is cleared via the physical `START` button falling edge, but only after the underlying fault cause has recovered (`latched_causes_currently_clearable() == true`).
 
 ### 3.2 Publish ? the system latch on `0x011` and `0x7FE`
 
@@ -354,11 +359,14 @@ operator presses ESTOP (SYS GPIO1)
   -> MTR relays/DAC off; RT zeros 0x204 + steering ramp + max brake 0x7B9 via SYS
 ```
 
-### Assert ? software (e.g. SEB L3 via `0x731`)
+### Assert ? software brake fault (SEB L3 via `0x721`/`0x731` or persistent following-error)
 ```
-SEB L3  -> SYS dispatch force_estop() + 0x001 broadcast (main.cpp:507-513)
-  same downstream effects as above;
-  + kLatchedSebL3 bit set so a reset is refused until SEB is healthy
+SEB L3 / persistent following-error -> SYS dispatch sets latched safety fault (kLatchedSebL3 / kLatchedBrakeFollowing)
+  -> SYS resolves authority: clamps 0x110=MANUAL, drops 0x113=OFF
+  -> positive motor torque prohibited, brake fault reported in 0x600/0x500
+  -> steer-by-wire (SES) and 12V auxiliary power remain ACTIVE
+  -> does NOT call force_estop() and does NOT broadcast 0x001
+  -> reset refused until SEB is healthy, then cleared by physical START button
 ```
 
 ### Clear / re-arm ? full chain
@@ -416,15 +424,15 @@ Clearing SYS ESTOP also clears each latched fault whose cause is now healthy
 |-------|---------------------|
 | Hardware ESTOP button | Release the button (NC: press = ESTOP). Then **START** button, or **MODE** hold **3 s**. |
 | CAN `0x001` from a peer | Remove the source (RT/MTR/RM still ESTOP-ing? clear them first). Then **START** / MODE 3 s. |
-| SEB L3 (`0x721`/`0x731`) | Repair SEB so `0x721 error_status < 3`; reset is **refused while L3 is active** (`main.cpp:729-733`). Then START / MODE 3 s. |
-| Persistent brake following-error | Restore SEB stroke tracking (fresh `0x721` in Stroke mode). Reset refused while cause active. Then START / MODE 3 s. |
+| SEB L3 (`0x721`/`0x731`) | Repair SEB so `0x721 error_status < 3` and `0x731` L3 bits clear; reset is **refused while L3 is active** (`main.cpp`). Then press **START** button (clears latch, safely leaving vehicle in MANUAL). |
+| Persistent brake following-error | Restore SEB stroke tracking (fresh `0x721` in Stroke mode). Reset refused while cause active. Then press **START** button. |
 | RT heartbeat `0x7FD` lost | RT must be powered/healthy again. Then START / MODE 3 s. |
 | MTR ESTOP-ack timeout | MTR must ACK `0x206` bit0. Then START / MODE 3 s. |
 | EGAS L2 / bus-off | Clear the speed mismatch / restore the bus. Then START / MODE 3 s. |
 
 After START/long-press, `task_mode` clears `kLatchedSebL3` /
-`kLatchedBrakeFollowing` only if healthy, and `0x011`/`0x7FE` begin publishing
-`estop_active == 0`.
+`kLatchedBrakeFollowing` only if healthy. If recovering from an ESTOP mode latch,
+`0x011`/`0x7FE` begin publishing `estop_active == 0`.
 
 **RT** ? `rt-esp32`. RT clears its latch automatically once SYS publishes two
 consecutive fresh `0x011` `estop_active == 0` frames whose counters advance

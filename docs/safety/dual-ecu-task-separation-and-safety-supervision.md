@@ -135,8 +135,8 @@ Braking requires continuous availability and definitive ownership. The architect
   * **Arbitration**: SYS arbitrates between physical handlebar lever (highest priority), RT autonomous brake request (`0x205`), and ESTOP full stroke (27.0 mm).
   * **Stroke Excursion Supervision**: Compares commanded cylinder stroke against actual cylinder stroke reported in `0x721`.
   * **Transient Inhibit (`kInhibitBrakeFollowing`)**: Stroke error $> 3.0\,\text{mm}$ persisting $> 100\,\text{ms}$ sets transient inhibit; drops 72V traction power and prevents AUTO drive. Recovers after 3 clean frames.
-  * **Latched Safety Fault (`kLatchedBrakeFollowing`)**: Stroke error persisting $\ge 500\,\text{ms}$ escalates to a latched safety fault, commanding full ESTOP.
-  * **SEB Critical Diagnostic (`kLatchedSebL3`)**: If `0x721` reports Level 3 hardware error, SYS immediately latches ESTOP.
+  * **Latched Safety Fault (`kLatchedBrakeFollowing`)**: Stroke error persisting $\ge 500\,\text{ms}$ escalates to a latched safety fault, cutting traction power and clamping mode to MANUAL while preserving steering (SES) control.
+  * **SEB Critical Diagnostic (`kLatchedSebL3`)**: If `0x721` or `0x731` reports Level 3 hardware error, SYS immediately latches a brake safety fault, cutting 72V traction power and clamping mode to MANUAL while keeping steer-by-wire (SES) alive for controlled stopping.
 * **RT Level (Emergency Fallback Writer)**:
   * RT normally emits brake intent via `0x205 RT_BRAKE_CMD` (50 Hz) and **never** writes `0x7B9`.
   * RT continuously monitors Low CAN specifically for the presence of SYS's `0x7B9` stream (independent of heartbeat).
@@ -181,9 +181,10 @@ SYS implements a **Two-Mask Fault Architecture** to prevent transient warnings f
                    └──────────────┬──────────────┘ └──────────────┬──────────────┘
                                   │                               │
                                   ▼                               ▼
-                        Clamps Mode to MANUAL             Forces Vehicle ESTOP
-                        Drops 0x113 72V Power             Emits CAN 0x001 Frame
-                        Auto-recovers via Hysteresis      Requires Authenticated Reset
+                         Clamps Mode to MANUAL             Clamps Mode to MANUAL
+                         Drops 0x113 72V Power             Drops 0x113 72V Power
+                         Auto-recovers via Hysteresis      Preserves Steering (SES)
+                                                           Requires Physical Reset
 ```
 
 ### 4.1 Transient Inhibit Reasons (`InhibitReason`)
@@ -198,12 +199,12 @@ Transient inhibits indicate recoverable communication blips or operating limits.
 
 ### 4.2 Latched Safety Faults (`LatchedFaultReason`)
 
-Latched faults represent confirmed hardware failures or safety contract violations. Once set, they force vehicle ESTOP and cannot self-clear:
+Latched faults represent confirmed hardware failures or safety contract violations. Once set, they require an authenticated reset:
 
 | Bit Mask | Identifier | Trigger Condition | System Action | Clear Condition |
 | :--- | :--- | :--- | :--- | :--- |
-| `1u << 0` | `kLatchedBrakeFollowing` | SEB stroke error persists $\ge 500\,\text{ms}$ | Latched ESTOP, max brake | Physical START btn / `0x114` reset |
-| `1u << 1` | `kLatchedSebL3` | SEB reports Level 3 fatal error | Latched ESTOP, max brake | Physical START btn / `0x114` reset |
+| `1u << 0` | `kLatchedBrakeFollowing` | SEB stroke error persists $\ge 500\,\text{ms}$ | Latched traction cut, steering preserved | Physical START btn / `0x114` reset |
+| `1u << 1` | `kLatchedSebL3` | SEB reports Level 3 fatal error | Latched traction cut, steering preserved | Physical START btn / `0x114` reset |
 | `1u << 2` | `kLatchedMtrEstopAckFailed` | MTR fails to ACK ESTOP in 3 retries | Latched ESTOP, contactors cut | Physical START btn / `0x114` reset |
 
 ---

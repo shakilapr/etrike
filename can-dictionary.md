@@ -467,7 +467,7 @@ Byte layout (big-endian): Byte 0=mode, 1=brake, 2=hb_ok/rx_overflow, 3=estop, 4-
 |------|---|---|---|---|---|---|---|---|
 | Content | Align[0]+CtrlEn[1]+Mode[2:3]+AutoBrk[4]+Error[6:7] | Stroke [15:8] | Stroke [7:0] | Pressure [7:0] | Angle [15:8] | Angle [7:0] | RollCntEn[0]+CksEn[1]+RollCnt[4:7] | CheckSum |
 
-**SYS usage**: Boot sync ? read `SEB_Stroke_Value` as initial command target. Active ? confirm `SEB_Alignment_Status == 1`. `SEB_Error_Status > 0` ? log and report via `0x011`. Subscribe to `0x731 SEB_ErrInfo` for detailed fault flags ? escalate L3 faults to ESTOP.
+**SYS usage**: Boot sync ? read `SEB_Stroke_Value` as initial command target. Active ? confirm `SEB_Alignment_Status == 1`. `SEB_Error_Status > 0` ? log and report via `0x011` / `0x600`. Subscribe to `0x731 SEB_ErrInfo` for detailed fault flags ? escalate L3 faults to latched brake fault (cut traction power, clamp mode to MANUAL, preserve steering).
 
 ---
 
@@ -519,7 +519,7 @@ Detailed fault flags. Each bit is an independent fault indicator. 1 = fault acti
 |------|---|---|---|---|---|---|---|---|
 | Content | faults [7:0] | faults [15:8] | faults [23:16] | faults [31:24] | rsvd | rsvd | rsvd | rsvd |
 
-> **Safety note:** 14 of 23 documented faults are L3 (severe, request shutdown). SYS must subscribe to this message and escalate any L3 fault to ESTOP via `0x001`. The summary `SEB_Error_Status` in `0x721` only provides a 2-bit aggregate level; this message reveals *which* sensor or subsystem failed and at what severity.
+> **Safety note:** 14 of 23 documented faults are L3 (severe, request shutdown). SYS subscribes to this message and latches a critical brake fault (`kLatchedSebL3`), cutting 72V traction power and clamping mode to MANUAL while preserving steering (SES) and 12V auxiliary power for controlled stopping. The summary `SEB_Error_Status` in `0x721` only provides a 2-bit aggregate level; this message reveals *which* sensor or subsystem failed and at what severity.
 
 ---
 

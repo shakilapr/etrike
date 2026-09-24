@@ -454,7 +454,7 @@ Four per-task alive counters (`g_alive_control`, `g_alive_dispatch`, `g_alive_tx
 | `SYS_DIAG_RPT` | `0x600` | TX | 1 Hz | Diagnostic report: mode, brake engagement, brake/traction fault, heartbeat OK, heap, TEC/REC, rx overflow. |
 | `SEB_TEST` | `0x6FB` | RX | 100 Hz | SEB telemetry: motor current, ECU temperature (warns >80°C). |
 | `SEB_STATUS` | `0x721` | RX | 100 Hz | SEB stroke feedback, alignment bit, error status, rolling counter. Monitored for staleness (100ms) and following error. |
-| `SEB_ERR_INFO` | `0x731` | RX | 10 Hz | SEB 16 L3 fault bits → triggers ESTOP. |
+| `SEB_ERR_INFO` | `0x731` | RX | 10 Hz | SEB 16 L3 fault bits → triggers latched brake fault (`kLatchedSebL3`: cuts traction, clamps mode to MANUAL, keeps steering active). |
 | `SEB_VERSION` | `0x741` | RX | 1 Hz | SEB firmware version. Logged once on boot. |
 | `VCU_SEB_REQ` | `0x7B9` | TX | 50 Hz | Primary brake command to Smart Electronic Brake actuator. SYS is the sole normal producer. |
 | `RT_HEARTBEAT` | `0x7FD` | RX | 2 Hz | RT heartbeat. Supervised by `SafetyMonitor` with rolling alive counter; 200ms timeout (after 3s startup grace). |
@@ -496,7 +496,7 @@ Eight per-task alive counters (`g_alive_safety`, `g_alive_brake`, `g_alive_dispa
 
 SYS enforces a two-mask fault architecture ([`inhibit_state.h`](file:///e:/work/etrike/sys-esp32/src/inhibit_state.h)):
 - **`InhibitReason` (Transient / Recoverable):** `kInhibitMtrFbkLoss`, `kInhibitSebCommsLoss`, `kInhibitBrakeFollowing`. Clamps `0x110` mode to MANUAL and drops `0x113` power to OFF. Clears automatically after $N$ consecutive healthy observations.
-- **`LatchedFaultReason` (Safety Latched):** `kLatchedBrakeFollowing`, `kLatchedSebL3`. Triggers full ESTOP. Cleared exclusively through an authenticated reset transaction (`START` button, 3s `MODE` long-press, or `0x114` remote reset) once underlying causes are proven clear.
+- **`LatchedFaultReason` (Safety Latched):** `kLatchedBrakeFollowing`, `kLatchedSebL3`, `kLatchedMtrEstopAckFailed`. Latches a safety condition: for brake faults (`kLatchedBrakeFollowing`, `kLatchedSebL3`), clamps `0x110` mode to MANUAL, drops `0x113` power to OFF, and cuts positive motor propulsion while keeping steer-by-wire (SES) and 12V auxiliary power fully operational; for MTR ACK failure, escalates to full ESTOP. Cleared exclusively through an authenticated reset transaction (physical `START` button falling edge, 3s `MODE` long-press, or `0x114` remote reset) once underlying causes are proven healthy.
 
 ---
 

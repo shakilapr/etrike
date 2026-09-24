@@ -116,9 +116,10 @@ SYS separates transient/recoverable degradation from permanent safety-latched fa
 
 2. **Latched Safety Faults (`LatchedFaultReason`):**
    - `kLatchedBrakeFollowing`: Brake excursion persisting $\ge 500\,\text{ms}$.
-   - `kLatchedSebL3`: `0x721` reports error status $\ge 3$.
-   - **Action:** Forces ESTOP; broadcasts `0x001 SAFETY_ESTOP`.
-   - **Recovery:** Requires an explicit validated reset transaction (`START` button or `0x114` remote reset) while `latched_causes_currently_clearable()` returns true.
+   - `kLatchedSebL3`: `0x721` reports error status $\ge 3$ or `0x731` reports Level 3 error bits.
+   - `kLatchedMtrEstopAckFailed`: MTR failed to acknowledge ESTOP within retry deadline.
+   - **Action:** For brake faults (`kLatchedBrakeFollowing`, `kLatchedSebL3`), clamps `0x110` mode to MANUAL and drops `0x113` power to OFF, cutting positive propulsion while keeping steer-by-wire (SES) operational and 12V auxiliary power intact (does not force ESTOP or broadcast `0x001`). For MTR ACK failure, escalates to full ESTOP.
+   - **Recovery:** Requires an explicit validated reset transaction (`START` button falling edge or `0x114` remote reset) while `latched_causes_currently_clearable()` returns true.
 
 ### 4.2 MTR ESTOP Acknowledgment State Machine (`mtr_estop_ack.h`)
 When ESTOP is asserted, SYS supervises `mtr-stm32` to ensure it acknowledges and de-energizes:

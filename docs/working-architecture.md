@@ -310,8 +310,8 @@ with `HAL_Delay(1)` at `main.cpp:144`. CAN RX ISR ? 32-deep ring ? drained each 
 - **SES / SES (steering):** receives `0x169`; reports `0x201 SbwStatus` (angle = raw?30000),
   `0x202 SbwErrInfo` (L3 ? RT ESTOP), `0x6FA SbwTest` (current/temp/V), `0x203 version`.
 - **SEB (brake):** receives `0x7B9` (stroke raw=(mm+30)*20 or pressure raw=(kPa+25)/50); reports
-  `0x721 SebStatus` (error_status L3 ? RT/SYS ESTOP), `0x6FB SebTest`, `0x731 SebErrInfo` (16 L3
-  bits ? SYS ESTOP), `0x741 version`.
+  `0x721 SebStatus` (error_status L3 → RT traction inhibit / SYS latched brake fault), `0x6FB SebTest`, `0x731 SebErrInfo` (16 L3
+  bits → SYS latched brake fault), `0x741 version`.
 
 ---
 
@@ -395,12 +395,12 @@ undervoltage, hardware safety-line. Those must arrive as `0x001`/`0x011` from up
 | 2 | RT heartbeat loss | `0x7FD` | >1000 ms (3 s grace) | `force_estop()` + `0x001` |
 | 3 | MTR ESTOP-active flag | `0x206.fault_flags` bit `0x01` | set & mode?ESTOP | `force_estop()` + `0x001` |
 | 4 | CAN `0x001` from any node | `0x001` | receipt | `force_estop()` (frame itself is the broadcast) |
-| 5 | SEB L3 fault | `0x731` (16 L3 bits) | any set | `force_estop()` + `0x001` |
+| 5 | SEB L3 fault | `0x731` (16 L3 bits) | any set | **Latched** `kLatchedSebL3` (inhibit traction: `0x113` OFF, `0x110` MANUAL, zero torque; steering kept alive, no `0x001`) |
 | 6 | Command-path mismatch (setpoint echo) | `0x204` vs `0x206` | `>500 mm/s` for >500 ms (AUTO) | `force_estop()` + `0x001` |
 | 7 | MTR ESTOP-ACK timeout | `0x206` | ESTOP sent but MTR hasn't ACKed in 100 ms | retrigger `force_estop()` + `0x001` |
 | 8 | MTR feedback staleness | `0x206` | absent > 200 ms | zero speed+neutral (drive disabled, **not** full ESTOP) |
-| 9 | SEB `error_status` L3 | `0x721` byte0 b6-7 | `es>=3` | **Latched** `kLatchedSebL3` + `force_estop()` + `0x001` (issue #5, aligned with `0x731`) |
-| 10 | Brake following-error | `0x721` vs cmd | transient >3 mm ? `kInhibitBrakeFollowing`; persistent >`kBrakeFollowingLatchedMs` ? **latched** `kLatchedBrakeFollowing` + `force_estop()` |
+| 9 | SEB `error_status` L3 | `0x721` byte0 b6-7 | `es>=3` | **Latched** `kLatchedSebL3` (inhibit traction: `0x113` OFF, `0x110` MANUAL, zero torque; steering kept alive, no `0x001`) |
+| 10 | Brake following-error | `0x721` vs cmd | transient >3 mm ? `kInhibitBrakeFollowing`; persistent >`kBrakeFollowingLatchedMs` ? **latched** `kLatchedBrakeFollowing` (inhibit traction, preserve steering, no `0x001`) |
 | 11 | CAN bus-off persistent | TWAI `BusOff` | ?5 consecutive | `force_estop()` + `0x001` |
 | 12 | SEB status/test loss | `0x721`/`0x6FB` | >100 ms | warn only |
 
@@ -415,7 +415,7 @@ undervoltage, hardware safety-line. Those must arrive as `0x001`/`0x011` from up
 | 1 | CAN `0x001` | any node | receipt | ESTOP event, latch, forward cross-bus |
 | 2 | Persistent ESTOP authority | `0x011.estop_active` | asserted | **Latched** ESTOP (asymmetric 2-frame clear) |
 | 3 | SES L3 fault | `0x202 SbwErrInfo` | angle/torque L3 | Internal ESTOP (`kEstopReasonInternal`) |
-| 4 | SEB L3 fault | `0x721 SebStatus` | `error_status==3` | Internal ESTOP |
+| 4 | SEB L3 fault | `0x721 SebStatus` | `error_status==3` | Inhibit propulsion (zero host speed setpoint; steering SES remains active, no internal ESTOP) |
 | 5 | `0x011` stream loss | `0x011` absent > 700 ms | freshness | Fail-safe ESTOP latch |
 | 6 | Host drive stale (watchdog) | `0x300` absent > 500 ms | `g_watchdog` | zero cmd + steering ramp (disable, not latched) |
 | 7 | SYS heartbeat loss | `0x7FE` | > 200 ms | SEB brake takeover (assist stop) |
@@ -503,12 +503,14 @@ dependencies or protocol redesigns.
    SEB L3, EGAS, bus-off, MTR-reported-ESTOP) hold `estop_active = 1` across `0x011` and `0x7FE` until
    SYS is explicitly reset out of ESTOP (START / MODE long-press). MTR/RT can no longer two-frame-clear
    into a false all-clear while SYS is still latched.
-5. ? **Brake-fault classification (RESOLVED).** SEB `0x721` L3 ? `kLatchedSebL3` + `force_estop()`
-   (aligned with the `0x731` L3 path). Brake following-error: transient excursion ? `kInhibitBrakeFollowing`
-   (recoverable, hysteresis); persistent past `kBrakeFollowingLatchedMs` ? `kLatchedBrakeFollowing` +
-   `force_estop()`. SEB status/comms loss ? `kInhibitSebCommsLoss` (B-class, gated by `g_bypass_seb_sync`).
-   Latched faults are cleared only by the explicit reset path and only when the underlying cause is
-   healthy. Ready bulb / `0x600` diag reflect the aggregate (`sys::traction_fault_present()`).
+5. ? **Brake-fault classification (RESOLVED).** SEB `0x721` L3 & `0x731` L3 ? `kLatchedSebL3`.
+   Brake following-error: transient excursion ? `kInhibitBrakeFollowing` (recoverable, hysteresis);
+   persistent past `kBrakeFollowingLatchedMs` ? `kLatchedBrakeFollowing`. SEB brake faults are decoupled
+   from global hard ESTOP (`0x001`) — they latch traction inhibition (`0x113` power OFF, `0x110` mode MANUAL,
+   positive motor torque cut) while keeping steer-by-wire (SES) active and operational for controlled deceleration.
+   SEB status/comms loss ? `kInhibitSebCommsLoss` (B-class, gated by `g_bypass_seb_sync`). Latched brake faults
+   are cleared only by the explicit reset path (START button) and only when the underlying cause is healthy.
+   Ready bulb / `0x600` diag reflect the aggregate (`sys::traction_fault_present()`).
 6. ?? **No independent hardware watchdog (IWDG/WWDG) on MTR or SYS (still open).**
    (`mtr-stm32/Core/Inc/stm32g4xx_hal_conf.h:49,68` ? commented out). Hardware requirement; a firmware
    hang can leave DAC/relay outputs energized.
@@ -531,8 +533,10 @@ dependencies or protocol redesigns.
 13. ?? **Timeout policies are inconsistent (still open).** 100 ms SEB ? 5000 ms HMI.
 
 **Fault-class semantics (as implemented):**
-- **Latched ESTOP ? explicit reset required:** ESTOP entries, `0x721`/`0x731` SEB L3, confirmed
-  persistent brake following-error.
+- **Latched ESTOP ? explicit reset required:** Hardware ESTOP button, RT heartbeat loss, MTR ESTOP-active,
+  CAN `0x001`, command-path mismatch, persistent bus-off.
+- **Latched Brake Fault (Traction Inhibit) ? explicit reset required:** `0x721`/`0x731` SEB L3, confirmed
+  persistent brake following-error (clamps MANUAL, `0x113` OFF, cuts propulsion, preserves steering).
 - **Recoverable with hysteresis:** transient brake following-error.
 - **B-class auto-recover with confirmed recovery (N consecutive valid frames at cadence):** MTR `0x204`
   watchdog, MTR-feedback loss (SYS `kInhibitMtrFbkLoss`, RT MTR-health), SEB comms loss
