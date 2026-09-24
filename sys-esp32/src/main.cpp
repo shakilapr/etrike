@@ -664,36 +664,6 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
             }
         }
 
-        // Command-path / setpoint-echo consistency check (issue #1). 0x206
-        // reports the APPLIED speed COMMAND, not physical speed (no encoder).
-        // This detects RT-vs-MTR command-path disagreement only — it is NOT a
-        // physical EGAS L2 check and cannot see DAC/relay/motor faults. Only in
-        // AUTO mode. Mismatch > threshold for > duration → ESTOP.
-        if (!g_bypass_mtr_absent) {
-            static bool  egas_fault_active = false;
-            static TickType_t egas_fault_start = 0;
-            if (g_mode_mgr.mode() == can::Mode::Auto) {
-                int32_t cmd     = g_setpoint_speed_mmps.load(std::memory_order_relaxed);
-                int16_t applied = g_motor_command_speed_mmps.load(std::memory_order_relaxed);
-                int32_t diff    = (cmd > applied) ? (cmd - applied) : (applied - cmd);
-                if (diff > sys::kEgasSpeedThresholdMmps) {
-                    if (!egas_fault_active) {
-                        egas_fault_active = true;
-                        egas_fault_start = xTaskGetTickCount();
-                    } else if ((xTaskGetTickCount() - egas_fault_start)
-                                >= pdMS_TO_TICKS(sys::kEgasFaultDurationMs)) {
-                        enter_estop("Cmd-path mismatch");
-                        ESP_LOGW(TAG, "Cmd-path mismatch: |0x204 %.0f - applied %.0f| > %d mm/s — ESTOP",
-                                 (double)cmd, (double)applied, sys::kEgasSpeedThresholdMmps);
-                    }
-                } else {
-                    egas_fault_active = false;
-                }
-            } else {
-                egas_fault_active = false;
-            }
-        }
-
         // F4: 0x206 staleness check (Gap #15)
         // Warn if no MTR feedback for >200ms (MTR comms lost).
         // Startup grace: skip if never received (g_last_mtr_fbk_tick == 0).

@@ -5,7 +5,7 @@ See [`architecture.md`](../architecture.md) for full system design and
 for the end-to-end ECU/host pipeline and both operating topologies.
 
 > **Note on role:** SYS is the safety and mode authority, body controller, and
-> EGAS L2 monitor. Direct motor I/O (throttle ADC/DAC/gear) is retired on SYS;
+> primary supervisor. Direct motor I/O (throttle ADC/DAC/gear) is retired on SYS;
 > the motor actuator is `mtr-stm32` (currently hardware-incomplete).
 
 ## Pipeline context
@@ -36,10 +36,8 @@ SYS ── 0x7FE SYS_HEARTBEAT  ─► RT/MTR
 ### What SYS depends on from the other nodes
 - **Physical inputs:** wired ESTOP button, mode button, start button, brake lever
   (SYS is the only node with these).
-- **RT:** `0x7FD` heartbeat, `0x204`/`0x205` setpoints (EGAS L2 compare vs MTR
-  `0x206`), `0x210` safety state, `0x7FE` consumed by RT.
-- **MTR:** `0x206 MTR_MOTOR_FBK` — SYS reads `ESTOP_ACTIVE` bit for redundant ESTOP
-  confirmation and speed-mismatch monitoring.
+- **RT:** `0x7FD` heartbeat, `0x204`/`0x205` setpoints (staleness watchdog), `0x210` safety state, `0x7FE` consumed by RT.
+- **MTR:** `0x206 MTR_MOTOR_FBK` — SYS reads `ESTOP_ACTIVE` bit for redundant ESTOP confirmation and state monitoring.
 - **RM:** on the test bench RM *emulates* SYS and emits the authoritative
   `0x110 SYS_MODE_CMD` / `0x113 SYS_PWR_CMD` frames; it never emits the Host
   `0x111`/`0x112` request frames. When Host/RT/SYS are offline, RM bypasses SYS

@@ -966,13 +966,10 @@ From `native-test/test/test_dual_heartbeat.cpp`:
 | `kDebounceMs` | 500 | Button debounce period |
 | `kBrakeMaxStroke` | 27.0 | ESTOP brake stroke (mm) |
 | `kBrakeManualStroke` | 15.0 | Manual lever brake stroke (mm) |
-| `kEgasSpeedThresholdMmps` | 500 | EGAS L2 speed mismatch threshold |
-| `kEgasFaultDurationMs` | 500 | EGAS L2 fault persistence |
 | `kBrakeFollowingErrRaw` | 60 | Brake following error = 3mm |
 | `kBrakeFollowingErrMs` | 100 | Brake error persistence |
 | `kSebStatusTimeoutMs` | 100 | SEB status staleness timeout |
 | `kEstopLongPressMs` | 3000 | MODE button long-press for ESTOP exit |
-| `kMtrEstopAckTimeoutMs` | 100 | MTR ESTOP ACK timeout |
 | `kMtrFbkStaleMs` | 200 | MTR feedback staleness timeout |
 | `kEstopRateLimitWindowMs` | 500 | ESTOP rate limit window |
 | `kEstopRateLimitMax` | 2 | Max ESTOP frames per window |

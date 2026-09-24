@@ -161,12 +161,12 @@ The vehicle operates under strict deterministic timing boundaries. Violations tr
 | `kBrakeSetpointStaleMs` | **100 ms** | SYS Brake Task | `0x205` (`RT_BRAKE_CMD`) | 5 missed 20ms RT brake setpoint frames. Overwrites stale RT input with `kMaxBrakeKpa` (5000 kPa). |
 | `kSteerFollowingErrMs` | **300 ms** | RT Control Task| `0x201` (`SES_STATUS`) | Steering angle following-error persistence limit before aborting AUTO mode and latching ESTOP. |
 | `kBrakeFollowingErrMs` | **100 ms** | SYS Brake Task | `0x721` (`SEB_STATUS`) | SEB stroke following-error persistence limit before logging actuator fault warning. |
-| `kEgasFaultDurationMs` | **500 ms** | SYS Safety Task| `0x204` vs `0x206` | EGAS Level 2 speed mismatch persistence (`0x204` vs `0x206`) before forcing global ESTOP. |
+| `kEgasFaultDurationMs` | *Retired* | Host Autonomy | N/A | *Retired*: Command-path consistency check removed; speed/runaway supervision delegated to Host. |
 | `kMtrFbkStaleMs` | **200 ms** | SYS Safety Task| `0x206` (`MTR_MOTOR_FBK`) | Motor feedback staleness limit. |
 | `kSebStatusTimeoutMs` | **100 ms** | SYS Brake Task | `0x721` (`SEB_STATUS`) | SEB status frame loss warning limit. |
 | `kSebRollingTimeoutMs` | **100 ms** | SYS Brake Task | `0x721` (`SEB_STATUS`) | Maximum window for SEB `0x721` rolling counter advancement. |
 | `kSebHandoffGraceMs` | **500 ms** | SYS Brake Task | `0x7B9` (`VCU_SEB_REQ`) | Handoff window during MANUAL $\rightarrow$ AUTO transition for RT to claim `0x7B9` sole ownership. |
-| `kMtrEstopAckTimeoutMs` | **100 ms** | SYS Safety Task| `0x206` (`MTR_MOTOR_FBK`) | MTR ESTOP acknowledgment deadline in `0x206` post `0x001` broadcast. |
+| `kMtrEstopAckTimeoutMs` | *Retired* | SYS Safety Task| `0x206` (`MTR_MOTOR_FBK`) | *Retired*: MTR ESTOP ACK timeout removed; 0x001 broadcast directly enforces hardware ESTOP. |
 | `kDebounceMs` | **500 ms** | SYS Mode Manager| Physical Switch | Physical button debounce lock-out window. |
 | `kEstopLongPressMs` | **3000 ms** | SYS Mode Manager| MODE Button | Required hold duration on MODE button in ESTOP state to recover to MANUAL mode. |
 | `kEstopRateLimitWindowMs`| **500 ms**| RT & SYS Safety| `0x001` (`SAFETY_ESTOP`) | Rolling window for rate-limiting ESTOP broadcasts (max 2 frames per 500ms). |

@@ -101,9 +101,9 @@ Propulsion relies on three coordinated streams: `0x204 RT_DRIVE_CMD` (RT to MTR)
   * **Recovery**: Confirmed after 3 consecutive fresh `0x206` frames.
 
 #### Additional MTR Safety Checks:
-* **SYS Command-Path EGAS L2 Monitoring**:
-  * Compares RT setpoint (`0x204`) with MTR applied command (`0x206`).
-  * If $|\text{cmd} - \text{applied}| > 500\,\text{mm/s}$ persisting $> 500\,\text{ms}$, SYS trips full ESTOP (`enter_estop("Cmd-path mismatch")`).
+* **Host Speed & Runaway Authority**:
+  * Autonomy stack on the Host (Jetson) tracks physical vehicle odometry, IMU, and perception to detect speed deviations and runaways.
+  * Artificial low-level command-path comparisons (`0x204` vs `0x206` echo) are eliminated from SYS to prevent nuisance ESTOP lockouts caused by control lag.
 * **MTR Autonomous Failsafe & Supervision**:
   * Upon entering ESTOP, SYS broadcasts `0x001 SAFETY_ESTOP`, asserts `estop_active = 1` across `0x011`, and revokes power authority (`0x113 = OFF`).
   * MTR autonomously clamps throttle DAC to 0.0V and opens direction relays immediately upon receiving `0x001` or `0x011`. If CAN comms are severed, MTR's internal 150 ms `0x204` watchdog and 500 ms CAN deadman ensure immediate zero-torque de-energization.

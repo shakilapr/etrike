@@ -64,9 +64,6 @@ constexpr int   kBrakeBootWaitMs   =  500;
 constexpr float kBrakeManualStroke = 15.0f;    // mm, lever pressed
 constexpr float kBrakeMaxStroke    = 27.0f;    // mm, ESTOP
 
-// ── EGAS L2 motor monitoring (architecture §6.1) ─────────────────────
-constexpr int kEgasSpeedThresholdMmps = 500;   // abs(cmd - actual) > 500 mm/s
-constexpr int kEgasFaultDurationMs    = 500;   // persist 500ms → ESTOP
 
 // ── Physical wheel-speed EGAS (issue #3, OPTIONAL) ──────────────────
 // The current vehicle has NO wheel encoder: physical EGAS is disabled and SYS

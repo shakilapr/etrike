@@ -37,7 +37,7 @@
 2. **High-Voltage Power Interlock:** SYS broadcasts `0x113 SYS_PWR_CMD` (10 Hz). `mtr-stm32` interlocks its 72V contactor relays to this stream.
 3. **Sole Normal Brake Producer:** SYS is the sole regular writer of `0x7B9 VCU_SEB_REQ` (50 Hz). `rt-esp32` only produces `0x7B9` if SYS experiences a catastrophic bus-loss (`EMERGENCY_FALLBACK`).
 4. **No Direct Motor Actuation:** Direct throttle DAC, gear relays, and ADC readings are retired on SYS; motor propulsion is executed by `mtr-stm32` based on RT `0x204` drive commands.
-5. **Command-Path EGAS L2:** SYS monitors RT setpoints (`0x204`) against MTR applied echo (`0x206`). A mismatch $> 500\,\text{mm/s}$ persisting $> 500\,\text{ms}$ trips ESTOP.
+5. **Host Speed & Runaway Authority:** Speed, wheel odometry, and runaway tracking are supervised by the Host autonomy computer (using LiDAR, IMU, cameras, and odometry). Artificial command-path comparisons (0x204 vs 0x206 echo) are retired on SYS to prevent nuisance ESTOP lockouts.
 
 ---
 
@@ -86,7 +86,7 @@ Priority 1: [task_hb (10 Hz)]    [task_diag (1 Hz)]
 | Task Name | Priority | Stack | Cadence | Functions & Execution Flow |
 |---|---:|---:|---:|---|
 | `task_can_rx` | 5 | 4608 B | Event | Blocks on `g_can.receive()` from TWAI driver; yields 5 ms on congestion and forwards frame to `g_can_rx_queue`. |
-| `task_safety` | 5 | 4608 B | 20 Hz | Polls ESTOP button and brake lever GPIOs; checks RT heartbeat timeout (`0x7FD`); compares EGAS command-path consistency (`0x204` vs `0x206`); checks MTR ESTOP ACK state machine. |
+| `task_safety` | 5 | 4608 B | 20 Hz | Polls ESTOP button and brake lever GPIOs; checks RT heartbeat timeout (`0x7FD`); enforces `0x204` setpoint staleness; checks MTR feedback (`0x206`) staleness. |
 | `task_dispatch` | 4 | 3584 B | Event | Dequeues from `g_can_rx_queue`; parses incoming CAN frames (`0x204`, `0x205`, `0x111`, `0x112`, `0x114`, `0x206`, `0x302`, `0x001`, `0x721`, `0x6FB`, `0x731`, `0x741`, `0x210`, `0x122`, `0x7FD`); unpacks payload into shared atomic state. |
 | `task_mode` | 4 | 2560 B | 10 Hz | Debounces START/MODE buttons; handles 3-second long-press reset; evaluates optional wheel EGAS; calculates `resolve_authority()`; broadcasts `0x110 SYS_MODE_CMD` and `0x113 SYS_PWR_CMD`. |
 | `task_brake` | 3 | 3584 B | 50 Hz | Runs `BrakeControl` state machine; arbitrates priority (ESTOP > Lever > Pressure); encodes and transmits `0x7B9 VCU_SEB_REQ`; monitors `0x721` staleness. |
