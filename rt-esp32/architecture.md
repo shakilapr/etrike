@@ -120,7 +120,7 @@ RT allocates **8 concurrent FreeRTOS tasks** initialized in [`main.cpp`](src/mai
 | `0x121` | `RT_MOTION_RPT` | High | TX | 100 Hz | Coherent motion report: speed, gear, yaw rate, validity flags. |
 | `0x169` | `VCU_SES_REQ` | Low | TX | 50 Hz | Steer-by-wire target angle (0.1°), dynamic slew rate, counter. |
 | `0x201` | `SES_STATUS` | Low | RX | 100 Hz | Measured steering angle, center alignment status, error status. |
-| `0x202` | `SES_ERR_INFO` | Low | RX | 10 Hz | SES Level 3 fault bits. Active L3 trips immediate ESTOP. |
+| `0x202` | `SES_ERR_INFO` | Low | RX | 10 Hz | SES Level 3 fault bits. Active L3 triggers MRM (zero propulsion, gentle deceleration) without locking brakes or disabling steering. |
 | `0x204` | `RT_DRIVE_CMD` | Low | TX | 100 Hz | Commanded speed (mm/s) and gear to `mtr-stm32`. Forced {0, N} in MANUAL. |
 | `0x205` | `RT_BRAKE_CMD` | Low | TX | 50 Hz | Arbitrated brake pressure (kPa) to `sys-esp32`. Suppressed in MANUAL. |
 | `0x206` | `MTR_MOTOR_FBK` | Low | RX | 50 Hz | Echoed motor command speed and gear state. Supervised in AUTO. |

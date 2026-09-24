@@ -932,11 +932,12 @@ static uint8_t task_health_snapshot() {
                                                 (static_cast<uint16_t>(error.raw[2]) << 8);
                     const uint16_t active_l3 = fault_bits & kSesL3Mask;
                     if (active_l3 != 0) {
-                        ESP_LOGW(TAG, "SES_ErrInfo L3 fault: 0x%04X", active_l3);
+                        ESP_LOGW(TAG, "SES_ErrInfo L3 fault: 0x%04X -> MRM assisted stop", active_l3);
                         rt::diag().raise(etrike::diagnostics::DiagId::RtSesL3Fault, active_l3);
+                        rt::g_ses_l3_fault_active.store(true, std::memory_order_relaxed);
                         g_estop_reason.store(rt::kEstopReasonInternal);
-                        rt::SafetyEvent evt{rt::SafetyEvent::ESTOP, rt::kEstopReasonInternal};
-                        enqueue_safety_event(evt, pdMS_TO_TICKS(10));
+                    } else {
+                        rt::g_ses_l3_fault_active.store(false, std::memory_order_relaxed);
                     }
                 }
                 continue;
@@ -1310,9 +1311,7 @@ static uint8_t task_health_snapshot() {
 #endif
 
             const bool is_active_local_trip = (sr.obstacle_triggered ||
-                                               sr.estop_reason == rt::kEstopReasonFollowingError ||
                                                sr.estop_reason == rt::kEstopReasonBusOff ||
-                                               sr.estop_reason == rt::kEstopReasonInternal ||
                                                m_seb_takeover);
             const bool sys_clear_in_progress = g_sys_clear_in_progress.load(std::memory_order_relaxed);
             if (is_active_local_trip && !sys_clear_in_progress && can_send_estop()) {

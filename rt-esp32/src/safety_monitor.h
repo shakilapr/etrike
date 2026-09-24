@@ -111,6 +111,7 @@ struct MtrHealthSupervisor {
 // Global MTR-health supervisor (defined in main.cpp; declared here so the
 // free-inline run_safety_checks() below shares one instance across TUs).
 extern MtrHealthSupervisor g_mtr_health;
+inline std::atomic<bool> g_ses_l3_fault_active{false};
 
 }  // namespace rt
 
@@ -251,8 +252,8 @@ inline rt::SafetyResult run_safety_checks(int64_t now, bool startup_grace,
                     ESP_LOGW("rt", "Steer follow err >%.1f? for >%dms ? ESTOP",
                              static_cast<double>(threshold_deg), rt::kSteerFollowingErrMs);
                     r.zero_setpoints = true;
-                    r.brake_kpa = shared::kMaxBrakeKpa;
-                    r.disable_steering = true;
+                    r.brake_kpa = shared::kAssistStopKpa;
+                    r.disable_steering = false;
                     r.estop_reason = rt::kEstopReasonFollowingError;
                     rt::diag().raise(etrike::diagnostics::DiagId::RtSteerFollowingError,
                                      static_cast<std::uint16_t>(err_0_1deg));
@@ -263,6 +264,16 @@ inline rt::SafetyResult run_safety_checks(int64_t now, bool startup_grace,
         }
     } else {
         steer_follow_err_ticks = 0;  // Reset on state transitions (e.g., ESTOP ? recovery)
+    }
+
+    // 5b. SES Level 3 Hardware Fault (0x202 SES_ERR_INFO)
+    // Anti-rollover MRM: Inhibit propulsion and apply gentle deceleration
+    // without triggering global hard ESTOP lockup (5000 kPa) or killing steering.
+    if (rt::g_ses_l3_fault_active.load(std::memory_order_relaxed)) {
+        r.zero_setpoints = true;
+        r.brake_kpa = shared::kAssistStopKpa;
+        r.disable_steering = false;
+        r.estop_reason = rt::kEstopReasonInternal;
     }
 
     // 6. Obstacle-triggered ESTOP detection (arch ?7.6, gap #9)

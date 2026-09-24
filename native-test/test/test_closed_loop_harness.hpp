@@ -658,9 +658,7 @@ public:
         // nor when SYS clear is in progress, nor for soft disables (MTR fbk loss, host timeout).
         const bool is_active_local_trip = (rt_obstacle_active ||
                                            sr.obstacle_triggered ||
-                                           sr.estop_reason == rt::kEstopReasonFollowingError ||
                                            sr.estop_reason == rt::kEstopReasonBusOff ||
-                                           sr.estop_reason == rt::kEstopReasonInternal ||
                                            rt_seb_takeover);
 
         if (is_active_local_trip && !rt_sys_clear_in_progress) {

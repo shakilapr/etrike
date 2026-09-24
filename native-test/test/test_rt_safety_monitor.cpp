@@ -223,8 +223,8 @@ int main() {
         }
 
         CHECK(r.zero_setpoints);
-        CHECK(r.brake_kpa == shared::kMaxBrakeKpa);
-        CHECK(r.disable_steering);
+        CHECK(r.brake_kpa == shared::kAssistStopKpa);
+        CHECK(!r.disable_steering);
     }
 
     {
