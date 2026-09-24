@@ -1367,30 +1367,17 @@ static uint8_t task_health_snapshot() {
         // 6. Tick-Divided 10 Hz Staleness Check (Every 10 ticks)
         if (tick_counter % 10 == 0) {
             if (g_watchdog.is_stale(now)) {
-                if (!g_bench_solo_mode) {
-                    // Production: advertise loss, zero the command, request a
-                    // steering ESTOP.
-                    static int64_t last_stale_log_us = 0;
-                    rt::diag().raise(etrike::diagnostics::DiagId::RtHostDriveCmdStale,
-                                     static_cast<std::uint16_t>((now - g_watchdog.last_feed()) / 1000));
-                    if (now - last_stale_log_us > 2'000'000) {
-                        last_stale_log_us = now;
-                        ESP_LOGW(TAG, "Command stale (no host drive)");
-                    }
-                    g_ready_mask.fetch_and(static_cast<uint8_t>(~rt::READY_BIT_HOST),
-                                           std::memory_order_release);
-                    rt::HostDriveSnapshot zero{};
-                    if (g_host_cmd_mailbox) xQueueOverwrite(g_host_cmd_mailbox, &zero);
-                    g_steering_estop_request.store(true);
-                } else {
-                    // Bench solo: fail-safe zero the command without latching an
-                    // ESTOP or stopping steering. A resumed 0x300 stream re-arms
-                    // READY_BIT_HOST on the next frame.
-                    g_ready_mask.fetch_and(static_cast<uint8_t>(~rt::READY_BIT_HOST),
-                                           std::memory_order_release);
-                    rt::HostDriveSnapshot zero{};
-                    if (g_host_cmd_mailbox) xQueueOverwrite(g_host_cmd_mailbox, &zero);
+                static int64_t last_stale_log_us = 0;
+                rt::diag().raise(etrike::diagnostics::DiagId::RtHostDriveCmdStale,
+                                 static_cast<std::uint16_t>((now - g_watchdog.last_feed()) / 1000));
+                if (now - last_stale_log_us > 2'000'000) {
+                    last_stale_log_us = now;
+                    ESP_LOGW(TAG, "Command stale (no host drive) — setpoint zeroed");
                 }
+                g_ready_mask.fetch_and(static_cast<uint8_t>(~rt::READY_BIT_HOST),
+                                       std::memory_order_release);
+                rt::HostDriveSnapshot zero{};
+                if (g_host_cmd_mailbox) xQueueOverwrite(g_host_cmd_mailbox, &zero);
             }
         }
 
