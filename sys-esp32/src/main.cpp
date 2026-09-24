@@ -403,8 +403,12 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
             // Gap #15: Check if MTR has triggered local ESTOP (ESTOP_ACTIVE bit).
             // MTR sets this bit when its ESTOP GPIO or CAN 0x001 is detected.
             // If SYS missed the ESTOP frame, this provides a redundant path.
+            // Guarded with rx_estop_suppressed() so that during an operator reset out of ESTOP,
+            // the lingering acknowledgment from MTR does not immediately re-trip SYS into ESTOP.
+            const uint32_t now_tick = static_cast<uint32_t>(xTaskGetTickCount());
             if ((fbk.fault_flags & shared::kMtrFaultEstopActive)
-                && g_mode_mgr.mode() != can::Mode::Estop) {
+                && g_mode_mgr.mode() != can::Mode::Estop
+                && !sys::rx_estop_suppressed(now_tick)) {
                 ESP_LOGW(TAG, "MTR reports ESTOP_ACTIVE in 0x206 fault_flags — propagating");
                 enter_estop("MTR ESTOP_ACTIVE propagated");
             }

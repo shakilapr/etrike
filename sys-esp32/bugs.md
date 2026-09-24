@@ -13,6 +13,7 @@ This document identifies latent software defects, architectural bottlenecks, and
 | [SYS-BUG-03](#sys-bug-03-fragmented-and-inconsistent-estop-dispatch) | **P3 (Medium)** | Architecture | 11 copy-pasted ESTOP trigger blocks with inconsistent MTR ACK supervision |
 | [SYS-BUG-04](#sys-bug-04-flash-wear-on-every-boot-cycle-via-nvs-commit) | **P4 (Low-Med)** | Hardware Endurance | Unnecessary NVS flash commit on every boot for local-only counter |
 | [SYS-OPT-05](#sys-opt-05-micro-task-proliferation-power-indicator-gear) | **P5 (Low)** | Optimization | 3 micro-tasks waste 7 KB stack RAM and scheduler context switches |
+| [SYS-BUG-06](#sys-bug-06-mtr-0x206-estop-propagation-livelock-during-operator-reset) | **P2 (Med-High)** | Safety / Latch Reset | Missing reset-grace check in 0x206 ESTOP propagation causes immediate re-latch upon operator reset |
 
 ---
 
@@ -265,3 +266,35 @@ This consumes **7168 bytes of RAM** and causes constant context-switching overhe
 ### 3. Cross-Firmware Impact Analysis
 * **`rt-esp32`**: **Zero Impact**. `0x7FE SYS_HEARTBEAT` reports `task_safety_ok`, `task_brake_ok`, `task_dispatch_ok`, `task_can_tx_ok`. None of the eliminated tasks are monitored in the wire contract.
 * **All Firmwares**: Zero wire or behavioral changes. Reclaims 7 KB RAM.
+
+---
+
+## SYS-BUG-06: MTR 0x206 ESTOP Propagation Livelock During Operator Reset
+
+### 1. Problem Statement
+In [`sys-esp32/src/main.cpp:406-410`](file:///e:/work/etrike/sys-esp32/src/main.cpp#L406-L410), SYS checks whether MTR reports `kMtrFaultEstopActive` in `0x206 MTR_MOTOR_FBK` and calls `enter_estop("MTR ESTOP_ACTIVE propagated")` if `mode != Mode::Estop`.
+While this provides redundant ESTOP detection if SYS drops an incoming CAN `0x001` frame, it lacked the reset-grace check (`rx_estop_suppressed()`).
+
+When an operator resets ESTOP via the START button or MODE button 3-second hold:
+1. SYS transitions from `Mode::Estop` to `Mode::Manual` and begins broadcasting `0x011 SYS_SAFETY_STS` with `estop_active = 0` (5 Hz / 200 ms).
+2. `mtr-stm32` requires two consecutive valid zero frames before clearing its internal `estop_active_` latch and dropping `kMtrFaultEstopActive`.
+3. Meanwhile, MTR transmits `0x206` at 50 Hz (every 20 ms). A lingering frame with `kMtrFaultEstopActive == 1` reaches SYS within 20 ms of the reset.
+4. Without the `rx_estop_suppressed()` filter, SYS immediately re-triggered into ESTOP, resulting in an unrecoverable reset livelock.
+
+### 2. Solution
+Guard the `0x206` ESTOP propagation check with `!sys::rx_estop_suppressed(now_tick)`, identical to the guard on CAN `0x001` ([`main.cpp:443`](file:///e:/work/etrike/sys-esp32/src/main.cpp#L443)) and the testbench model ([`testbench/src/nodes/sys_node.cpp:200`](file:///e:/work/etrike/testbench/src/nodes/sys_node.cpp#L200)):
+```cpp
+const uint32_t now_tick = static_cast<uint32_t>(xTaskGetTickCount());
+if ((fbk.fault_flags & shared::kMtrFaultEstopActive)
+    && g_mode_mgr.mode() != can::Mode::Estop
+    && !sys::rx_estop_suppressed(now_tick)) {
+    ESP_LOGW(TAG, "MTR reports ESTOP_ACTIVE in 0x206 fault_flags — propagating");
+    enter_estop("MTR ESTOP_ACTIVE propagated");
+}
+```
+
+### 3. Cross-Firmware Impact Analysis
+* **`mtr-stm32`**: Ensures clean transition through the two-frame asymmetric clear sequence without being re-tripped by its own lingering acknowledgment.
+* **`sys-esp32`**: Preserves defense-in-depth propagation for dropped `0x001` frames during active run modes while eliminating false re-latches during the 500 ms operator reset window (`kEstopResetGraceMs`).
+* **Wire Protocol**: **Zero change**.
+
