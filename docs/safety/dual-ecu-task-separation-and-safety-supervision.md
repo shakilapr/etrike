@@ -104,10 +104,9 @@ Propulsion relies on three coordinated streams: `0x204 RT_DRIVE_CMD` (RT to MTR)
 * **SYS Command-Path EGAS L2 Monitoring**:
   * Compares RT setpoint (`0x204`) with MTR applied command (`0x206`).
   * If $|\text{cmd} - \text{applied}| > 500\,\text{mm/s}$ persisting $> 500\,\text{ms}$, SYS trips full ESTOP (`enter_estop("Cmd-path mismatch")`).
-* **SYS MTR ESTOP Acknowledgment State Machine**:
-  * Upon entering ESTOP, SYS checks `0x206` fault flags for `ESTOP_ACTIVE`.
-  * If unacknowledged within 100 ms, SYS retries the ESTOP command up to 3 times.
-  * If exhausted, SYS escalates to latched safety fault `kLatchedMtrEstopAckFailed` (preventing drive re-engagement).
+* **MTR Autonomous Failsafe & Supervision**:
+  * Upon entering ESTOP, SYS broadcasts `0x001 SAFETY_ESTOP`, asserts `estop_active = 1` across `0x011`, and revokes power authority (`0x113 = OFF`).
+  * MTR autonomously clamps throttle DAC to 0.0V and opens direction relays immediately upon receiving `0x001` or `0x011`. If CAN comms are severed, MTR's internal 150 ms `0x204` watchdog and 500 ms CAN deadman ensure immediate zero-torque de-energization.
 
 ---
 
@@ -205,7 +204,6 @@ Latched faults represent confirmed hardware failures or safety contract violatio
 | :--- | :--- | :--- | :--- | :--- |
 | `1u << 0` | `kLatchedBrakeFollowing` | SEB stroke error persists $\ge 500\,\text{ms}$ | Latched traction cut, steering preserved | Physical START btn / `0x114` reset |
 | `1u << 1` | `kLatchedSebL3` | SEB reports Level 3 fatal error | Latched traction cut, steering preserved | Physical START btn / `0x114` reset |
-| `1u << 2` | `kLatchedMtrEstopAckFailed` | MTR fails to ACK ESTOP in 3 retries | Latched ESTOP, contactors cut | Physical START btn / `0x114` reset |
 
 ---
 

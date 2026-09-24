@@ -189,24 +189,15 @@ static std::atomic<uint16_t> g_cmd_stroke_raw{600};             // 600 = 0mm
 // ── SEB version first-receipt guard (0x741) ─────────────────────────
 static std::atomic<bool>     g_seb_version_logged{false};
 
-// ── ESTOP trigger timestamp & MTR ACK state machine (Gap #15 / BUG-03) 
-#include "mtr_estop_ack.h"
+// ── ESTOP trigger timestamp ─────────────────────────────────────────
 static std::atomic<uint32_t> g_last_estop_trigger_tick{0};
-static sys::MtrEstopAckWatchdog g_mtr_ack_watchdog;
 
-static inline void trigger_estop_ack_watchdog(uint32_t now) {
-    g_last_estop_trigger_tick.store(now, std::memory_order_relaxed);
-    g_mtr_ack_watchdog.trigger(now, g_motor_fault_flags.load(std::memory_order_relaxed));
-}
-
-// Authoritative ESTOP entry helper. Arms MtrEstopAckWatchdog strictly on the
-// 0 -> 1 transition into ESTOP so that subsequent CAN 0x001 bursts or redundant
-// triggers do not push the deadline back and starve the watchdog timer.
+// Authoritative ESTOP entry helper.
 static void enter_estop(const char* reason) {
     const bool was_estop = (g_mode_mgr.mode() == can::Mode::Estop);
     if (!was_estop) {
         g_mode_mgr.force_estop();
-        trigger_estop_ack_watchdog(static_cast<uint32_t>(xTaskGetTickCount()));
+        g_last_estop_trigger_tick.store(static_cast<uint32_t>(xTaskGetTickCount()), std::memory_order_relaxed);
         ESP_LOGE(TAG, "ESTOP entered [edge]: %s", reason);
     }
     // Broadcast 0x001 on CAN (rate-limited by can_send_estop)
@@ -351,12 +342,7 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
                 /*physical_estop=*/g_safety.estop_active(),
                 /*hb_ok=*/g_safety.heartbeat_ok(),
                 /*measured_speed_mmps=*/g_wheel_measured_mmps.load(std::memory_order_relaxed),
-                // Bench/sim without an MTR (SYSTEM_RUN_MODE=1): the ACK watchdog
-                // tick is skipped under g_bypass_mtr_absent, so the ACK can never
-                // be confirmed. Without this OR, a CAN/ESTOP latch could never be
-                // cleared on the bench. The physical ESTOP block is unaffected.
-                /*mtr_ack_confirmed=*/(g_bypass_mtr_absent
-                                        || g_mtr_ack_watchdog.has_acknowledged()),
+                /*mtr_ack_confirmed=*/true,
                 /*token=*/static_cast<uint16_t>(req.reset_token)
             );
 
@@ -396,7 +382,6 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
             if (can::gen::decode_mtr_motor_fbk(fr.view(), fbk) != can::gen::CodecStatus::Ok) break;
             g_motor_command_speed_mmps.store(fbk.motor_command_speed_mmps, std::memory_order_relaxed);
             g_motor_fault_flags.store(fbk.fault_flags, std::memory_order_relaxed);
-            g_mtr_ack_watchdog.on_feedback_received(fbk.fault_flags);
             g_mtr_gear_state.store(fbk.gear_state, std::memory_order_relaxed);  // C6b
             g_last_mtr_fbk_tick.store(xTaskGetTickCount(), std::memory_order_relaxed);
 
@@ -706,25 +691,6 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
                 }
             } else {
                 egas_fault_active = false;
-            }
-        }
-        // F3: MTR ESTOP ACK check (Gap #15 / BUG-03)
-        // After ESTOP triggered, verify MTR sets ESTOP_ACTIVE bit in 0x206 fault_flags with bounded retries.
-        if (!g_bypass_mtr_absent) {
-            uint8_t flags = g_motor_fault_flags.load(std::memory_order_relaxed);
-            auto action = g_mtr_ack_watchdog.check_tick(xTaskGetTickCount(), flags);
-            if (action == sys::MtrEstopAckWatchdog::Action::Confirmed) {
-                ESP_LOGI(TAG, "MTR ESTOP ACK confirmed by motor controller");
-            } else if (action == sys::MtrEstopAckWatchdog::Action::Retry) {
-                ESP_LOGW(TAG, "MTR ESTOP ACK timeout — retriggering ESTOP (retries left: %u)",
-                         g_mtr_ack_watchdog.retries_left());
-                g_mode_mgr.force_estop();
-                if (can_send_estop()) {
-                    send_estop_frame("ESTOP");
-                }
-            } else if (action == sys::MtrEstopAckWatchdog::Action::ExhaustedFault) {
-                ESP_LOGE(TAG, "MTR ESTOP ACK failed after retries — latched safety fault");
-                sys::set_latched_fault(sys::kLatchedMtrEstopAckFailed);
             }
         }
 

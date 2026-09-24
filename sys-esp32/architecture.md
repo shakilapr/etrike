@@ -117,18 +117,10 @@ SYS separates transient/recoverable degradation from permanent safety-latched fa
 2. **Latched Safety Faults (`LatchedFaultReason`):**
    - `kLatchedBrakeFollowing`: Brake excursion persisting $\ge 500\,\text{ms}$.
    - `kLatchedSebL3`: `0x721` reports error status $\ge 3$ or `0x731` reports Level 3 error bits.
-   - `kLatchedMtrEstopAckFailed`: MTR failed to acknowledge ESTOP within retry deadline.
-   - **Action:** For brake faults (`kLatchedBrakeFollowing`, `kLatchedSebL3`), clamps `0x110` mode to MANUAL and drops `0x113` power to OFF, cutting positive propulsion while keeping steer-by-wire (SES) operational and 12V auxiliary power intact (does not force ESTOP or broadcast `0x001`). For MTR ACK failure, escalates to full ESTOP.
+   - **Action:** Clamps `0x110` mode to MANUAL and drops `0x113` power to OFF, cutting positive propulsion while keeping steer-by-wire (SES) operational and 12V auxiliary power intact (does not force ESTOP or broadcast `0x001`).
    - **Recovery:** Requires an explicit validated reset transaction (`START` button falling edge or `0x114` remote reset) while `latched_causes_currently_clearable()` returns true.
 
-### 4.2 MTR ESTOP Acknowledgment State Machine (`mtr_estop_ack.h`)
-When ESTOP is asserted, SYS supervises `mtr-stm32` to ensure it acknowledges and de-energizes:
-- **Edge-Triggered Arming:** Armed strictly on the $0 \to 1$ transition into ESTOP via `enter_estop()`; subsequent `0x001` bursts do not postpone the deadline.
-- Monitors `ESTOP_ACTIVE` bit in `0x206` fault flags and latches `has_acknowledged() = true`.
-- If not acknowledged within $100\,\text{ms}$, retries ESTOP broadcast up to 3 times (`kMtrEstopAckMaxRetries = 3`).
-- If retries exhaust, escalates to `kLatchedMtrEstopAckFailed` in `g_latched_fault_reasons` requiring explicit operator reset (no auto-clear).
-
-### 4.3 Authenticated Remote ESTOP Reset (BUG-10)
+### 4.2 Authenticated Remote ESTOP Reset (BUG-10)
 Host can clear an ESTOP over CAN via `0x114 HOST_ESTOP_RESET_REQ`:
 - Validates token `0x5253` ('RS') and rolling counter freshness.
 - Evaluates blockers via `get_estop_reset_blockers()`:

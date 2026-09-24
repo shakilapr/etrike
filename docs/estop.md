@@ -90,9 +90,8 @@ All of these latch `ModeManager` into `Mode::Estop`
 | 2 | CAN `0x001` received (rate-limited RX) | dispatch `kIdSafetyEstop` | `:332-353` (force at `:348`) |
 | 3 | RT heartbeat `0x7FD` lost (>1000 ms, after 3 s startup grace) | `task_safety` (`estop_triggered`) | `:565-577` (force at `:569`) |
 | 4 | MTR reports ESTOP (0x206 `fault_flags` bit0) ? redundant propagation | dispatch `kIdMtrMotorFbk` | `:301-319` (force at `:315`) |
-| 5 | MTR ESTOP-ACK timeout (ESTOP sent, no ack bit in 100 ms) | `task_safety` | `:618-631` (force at `:624`) |
-| 6 | Command-path consistency (EGAS L2 role): `|0x204 setpoint ? 0x206 applied| > 500 mm/s` > 500 ms (AUTO) | `task_safety` | `:585-615` (force at `:601`) |
-| 7 | CAN bus-off persistent (? 5 counts) | `task_can_control` | `:1073-1083` (force at `:1078`) |
+| 5 | Command-path consistency (EGAS L2 role): `|0x204 setpoint ? 0x206 applied| > 500 mm/s` > 500 ms (AUTO) | `task_safety` | `:585-615` (force at `:601`) |
+| 6 | CAN bus-off persistent (? 5 counts) | `task_can_control` | `:1073-1083` (force at `:1078`) |
 
 On each entry SYS **broadcasts `0x001`** (`send_estop_frame`, rate-limited via
 `can_send_estop()`), records `g_last_estop_trigger_tick`, and latches the mode.
@@ -427,7 +426,6 @@ Clearing SYS ESTOP also clears each latched fault whose cause is now healthy
 | SEB L3 (`0x721`/`0x731`) | Repair SEB so `0x721 error_status < 3` and `0x731` L3 bits clear; reset is **refused while L3 is active** (`main.cpp`). Then press **START** button (clears latch, safely leaving vehicle in MANUAL). |
 | Persistent brake following-error | Restore SEB stroke tracking (fresh `0x721` in Stroke mode). Reset refused while cause active. Then press **START** button. |
 | RT heartbeat `0x7FD` lost | RT must be powered/healthy again. Then START / MODE 3 s. |
-| MTR ESTOP-ack timeout | MTR must ACK `0x206` bit0. Then START / MODE 3 s. |
 | EGAS L2 / bus-off | Clear the speed mismatch / restore the bus. Then START / MODE 3 s. |
 
 After START/long-press, `task_mode` clears `kLatchedSebL3` /

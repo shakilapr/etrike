@@ -397,12 +397,11 @@ undervoltage, hardware safety-line. Those must arrive as `0x001`/`0x011` from up
 | 4 | CAN `0x001` from any node | `0x001` | receipt | `force_estop()` (frame itself is the broadcast) |
 | 5 | SEB L3 fault | `0x731` (16 L3 bits) | any set | **Latched** `kLatchedSebL3` (inhibit traction: `0x113` OFF, `0x110` MANUAL, zero torque; steering kept alive, no `0x001`) |
 | 6 | Command-path mismatch (setpoint echo) | `0x204` vs `0x206` | `>500 mm/s` for >500 ms (AUTO) | `force_estop()` + `0x001` |
-| 7 | MTR ESTOP-ACK timeout | `0x206` | ESTOP sent but MTR hasn't ACKed in 100 ms | retrigger `force_estop()` + `0x001` |
-| 8 | MTR feedback staleness | `0x206` | absent > 200 ms | zero speed+neutral (drive disabled, **not** full ESTOP) |
-| 9 | SEB `error_status` L3 | `0x721` byte0 b6-7 | `es>=3` | **Latched** `kLatchedSebL3` (inhibit traction: `0x113` OFF, `0x110` MANUAL, zero torque; steering kept alive, no `0x001`) |
-| 10 | Brake following-error | `0x721` vs cmd | transient >3 mm ? `kInhibitBrakeFollowing`; persistent >`kBrakeFollowingLatchedMs` ? **latched** `kLatchedBrakeFollowing` (inhibit traction, preserve steering, no `0x001`) |
-| 11 | CAN bus-off persistent | TWAI `BusOff` | ?5 consecutive | `force_estop()` + `0x001` |
-| 12 | SEB status/test loss | `0x721`/`0x6FB` | >100 ms | warn only |
+| 7 | MTR feedback staleness | `0x206` | absent > 200 ms | zero speed+neutral (drive disabled, **not** full ESTOP) |
+| 8 | SEB `error_status` L3 | `0x721` byte0 b6-7 | `es>=3` | **Latched** `kLatchedSebL3` (inhibit traction: `0x113` OFF, `0x110` MANUAL, zero torque; steering kept alive, no `0x001`) |
+| 9 | Brake following-error | `0x721` vs cmd | transient >3 mm ? `kInhibitBrakeFollowing`; persistent >`kBrakeFollowingLatchedMs` ? **latched** `kLatchedBrakeFollowing` (inhibit traction, preserve steering, no `0x001`) |
+| 10 | CAN bus-off persistent | TWAI `BusOff` | ?5 consecutive | `force_estop()` + `0x001` |
+| 11 | SEB status/test loss | `0x721`/`0x6FB` | >100 ms | warn only |
 
 *Monitored but not a disable:* gear mismatch in AUTO (logged, 500 ms debounce); RT internal-ESTOP
 (`0x210`) ? SYS *resumes* brake, not SYS ESTOP; task-deadline miss (logged only); CAN error-passive

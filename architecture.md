@@ -496,7 +496,7 @@ Eight per-task alive counters (`g_alive_safety`, `g_alive_brake`, `g_alive_dispa
 
 SYS enforces a two-mask fault architecture ([`inhibit_state.h`](file:///e:/work/etrike/sys-esp32/src/inhibit_state.h)):
 - **`InhibitReason` (Transient / Recoverable):** `kInhibitMtrFbkLoss`, `kInhibitSebCommsLoss`, `kInhibitBrakeFollowing`. Clamps `0x110` mode to MANUAL and drops `0x113` power to OFF. Clears automatically after $N$ consecutive healthy observations.
-- **`LatchedFaultReason` (Safety Latched):** `kLatchedBrakeFollowing`, `kLatchedSebL3`, `kLatchedMtrEstopAckFailed`. Latches a safety condition: for brake faults (`kLatchedBrakeFollowing`, `kLatchedSebL3`), clamps `0x110` mode to MANUAL, drops `0x113` power to OFF, and cuts positive motor propulsion while keeping steer-by-wire (SES) and 12V auxiliary power fully operational; for MTR ACK failure, escalates to full ESTOP. Cleared exclusively through an authenticated reset transaction (physical `START` button falling edge, 3s `MODE` long-press, or `0x114` remote reset) once underlying causes are proven healthy.
+- **`LatchedFaultReason` (Safety Latched):** `kLatchedBrakeFollowing`, `kLatchedSebL3`. Latches a safety condition: clamps `0x110` mode to MANUAL, drops `0x113` power to OFF, and cuts positive motor propulsion while keeping steer-by-wire (SES) and 12V auxiliary power fully operational. Cleared exclusively through an authenticated reset transaction (physical `START` button falling edge, 3s `MODE` long-press, or `0x114` remote reset) once underlying causes are proven healthy.
 
 ---
 

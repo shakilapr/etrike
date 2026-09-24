@@ -47,7 +47,6 @@ enum InhibitReason : uint32_t {
 enum LatchedFaultReason : uint32_t {
     kLatchedBrakeFollowing    = 1u << 0,  // confirmed persistent following error
     kLatchedSebL3             = 1u << 1,  // SEB error_status == 3
-    kLatchedMtrEstopAckFailed = 1u << 2,  // MTR failed to acknowledge ESTOP
 };
 
 // Remote ESTOP reset blocker mask bits (BUG-10)
@@ -104,8 +103,7 @@ inline bool latched_causes_currently_clearable() {
 inline void clear_latched_fault_reasons() {
     g_latched_fault_reasons.fetch_and(
         ~(static_cast<uint32_t>(kLatchedSebL3) |
-          static_cast<uint32_t>(kLatchedBrakeFollowing) |
-          static_cast<uint32_t>(kLatchedMtrEstopAckFailed)),
+          static_cast<uint32_t>(kLatchedBrakeFollowing)),
         std::memory_order_relaxed);
 }
 
