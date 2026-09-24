@@ -267,33 +267,19 @@ int main() {
         }
         CHECK(!rt::g_mtr_health.mtr_unavailable);
 
-        // MTR feedback goes stale past the AUTO-entry acquisition grace.
-        // Drive command was NOT recently non-zero (at standstill): propulsion
-        // must still be prohibited (actuator-health is decoupled from command),
-        // but without max brake.
+        // MTR feedback goes stale: 0x206 is setpoint-echo telemetry, so RT does
+        // not inhibit propulsion or zero setpoints.
         for (int i = 0; i < 40; ++i) {
             now += 100'000;   // keep advancing, do NOT refresh MTR feedback
             r = run_safety_checks(now, false, UINT32_MAX,
                                   estop_pending, uint8_t(can::Mode::Auto), seb_takeover);
         }
-        CHECK(rt::g_mtr_health.mtr_unavailable);
-        CHECK(r.zero_setpoints);
-        CHECK(r.brake_kpa == 0);   // no recent non-zero command -> prohibition, not max brake
-
-        // Confirmed recovery: kMtrFbkRecoverFrames consecutive fresh 0x206 frames.
-        bool recovered = false;
-        for (int i = 0; i < rt::kMtrFbkRecoverFrames; ++i) {
-            now += 100'000;
-            g_last_mtr_feedback_us.store(now);
-            r = run_safety_checks(now, false, UINT32_MAX,
-                                  estop_pending, uint8_t(can::Mode::Auto), seb_takeover);
-            if (!rt::g_mtr_health.mtr_unavailable) recovered = true;
-        }
-        CHECK(recovered);
+        CHECK(!rt::g_mtr_health.mtr_unavailable);
         CHECK(!r.zero_setpoints);
+        CHECK(r.brake_kpa == 0);
     }
 
-    // ?? Issue #8: brake escalation when motion had recently been commanded ??
+    // 0x206 silence does not trigger brake escalation when motion was commanded
     {
         reset_state();
         g_bypass_mtr_absent = false;
@@ -310,16 +296,15 @@ int main() {
             r = run_safety_checks(now, false, UINT32_MAX,
                                   estop_pending, uint8_t(can::Mode::Auto), seb_takeover);
         }
-        // Now MTR feedback stops; the last non-zero command was ~100 ms ago (still
-        // inside the 500 ms motion window) -> brake escalation to max.
+        // Even if 0x206 stops, RT does not slam 5000 kPa mechanical emergency brake.
         for (int i = 0; i < 3; ++i) {
-            now += 100'000;   // 100..300 ms since the last non-zero command
+            now += 100'000;
             r = run_safety_checks(now, false, UINT32_MAX,
                                   estop_pending, uint8_t(can::Mode::Auto), seb_takeover);
         }
-        CHECK(rt::g_mtr_health.mtr_unavailable);
-        CHECK(r.zero_setpoints);
-        CHECK(r.brake_kpa == shared::kMaxBrakeKpa);   // motion window still active
+        CHECK(!rt::g_mtr_health.mtr_unavailable);
+        CHECK(!r.zero_setpoints);
+        CHECK(r.brake_kpa == 0);
     }
 
     std::printf("\n=== %d pass, %d fail ===\n", pass, fail);

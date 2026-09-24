@@ -322,6 +322,14 @@ bool CanEncoder::encode_power_request(bool start, struct can_frame & frame)
          to_socket_frame(encoded, frame);
 }
 
+bool CanEncoder::encode_obstacle_dist(uint32_t distance_mm, struct can_frame & frame)
+{
+  messages::HostObstacleDist message{distance_mm};
+  protocol::Frame encoded;
+  return messages::encode(message, encoded) == protocol::CodecStatus::Ok &&
+         to_socket_frame(encoded, frame);
+}
+
 // =====================================================================
 //  CanDecoder
 // =====================================================================

@@ -114,6 +114,7 @@ public:
   bool encode_estop(struct can_frame & frame);
   bool encode_mode_request(bool autonomous, struct can_frame & frame);
   bool encode_power_request(bool start, struct can_frame & frame);
+  bool encode_obstacle_dist(uint32_t distance_mm, struct can_frame & frame);
 
 private:
   const VehicleParams & params_;

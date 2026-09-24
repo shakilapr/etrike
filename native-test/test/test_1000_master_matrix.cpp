@@ -152,19 +152,16 @@ void test_t1_051_to_090_mtr_fbk_escalation(void) {
                 TEST_ASSERT_FALSE(rt::g_mtr_health.mtr_unavailable);
                 TEST_ASSERT_FALSE(g_harness.mtr_mgr.is_estop_active());
             } else {
-                // Past timeout (200ms timeout exceeded):
-                // RT MTR health supervisor trips and sets zero_setpoints!
-                TEST_ASSERT_TRUE(rt::g_mtr_health.mtr_unavailable);
+                // 0x206 is setpoint-echo telemetry; RT does not mark MTR unavailable.
+                TEST_ASSERT_FALSE(rt::g_mtr_health.mtr_unavailable);
 
-                // Architecture Contract: MTR feedback loss is a B-class transient inhibit
-                // (kInhibitMtrFbkLoss), NOT an immediate 0x001 broadcast.
+                // Architecture Contract: MTR feedback loss is NOT an immediate 0x001 broadcast.
                 TEST_ASSERT_FALSE(g_harness.mtr_mgr.is_estop_active());
 
                 // Restore 0x206 frames
                 g_harness.low_bus.clear_faults();
                 for (int i = 0; i < 10; ++i) g_harness.tick(20000);
 
-                // Confirmed 3-frame recovery returns MTR health to available
                 TEST_ASSERT_FALSE(rt::g_mtr_health.mtr_unavailable);
                 TEST_ASSERT_FALSE(g_harness.mtr_mgr.is_estop_active());
             }

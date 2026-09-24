@@ -69,6 +69,7 @@ std::atomic<bool>     g_sys_clear_in_progress{false};
 // ?? Shared state (atomics for sensor / latest-value data) ???????????
 std::atomic<int32_t>  g_brake_request_kpa{0};
 std::atomic<uint32_t> g_obstacle_mm{UINT32_MAX};
+std::atomic<int64_t>  g_last_obstacle_us{-1};
 std::atomic<int32_t>  g_ses_angle_0_1deg{INT16_MIN};
 std::atomic<uint8_t>  g_ses_angle_status{0};
 std::atomic<int32_t>  g_brake_kpa_to_send{0};
@@ -463,6 +464,7 @@ static uint8_t task_health_snapshot() {
                 can::gen::HostObstacleDist od{};
                 if (can::decode_frame(fr, od) == can::gen::CodecStatus::Ok) {
                     g_obstacle_mm.store(od.distance_mm);
+                    g_last_obstacle_us.store(now_us);
                     host_snap.obstacle_distance_mm = od.distance_mm;
                     if (g_host_cmd_mailbox) xQueueOverwrite(g_host_cmd_mailbox, &host_snap);
                 }
@@ -584,7 +586,8 @@ static uint8_t task_health_snapshot() {
                 send_can_high(b_fr);
             }
 
-            // 0x220 RT_PID_RPT
+            // 0x220 RT_PID_RPT — Disabled: no physical motor encoders installed yet
+            /*
 #if ETRIKE_RT_PID_MODE > 0
             int16_t setpoint = static_cast<int16_t>(std::clamp(
                 g_last_speed_setpoint_mmps.load(), int32_t(-32768), int32_t(32767)));
@@ -596,6 +599,7 @@ static uint8_t task_health_snapshot() {
                 send_can_high(pid_fr);
             }
 #endif
+            */
         }
 
         // 5. 1 Hz Telemetry: 0x620 RT_DIAG_RPT
@@ -894,12 +898,6 @@ static uint8_t task_health_snapshot() {
                 can::custom::seb::Status value{};
                 if (can::custom::seb::decode_status(fr.view(), value) == can::gen::CodecStatus::Ok) {
                     uint8_t seb_err = value.error_status;
-                    if (seb_err == 3) {
-                        rt::diag().raise(etrike::diagnostics::DiagId::RtSesL3Fault,
-                                         static_cast<std::uint16_t>(seb_err));
-                        rt::HostDriveSnapshot zero{};
-                        if (g_host_cmd_mailbox) xQueueOverwrite(g_host_cmd_mailbox, &zero);
-                    }
                     uint16_t pres = (value.control_mode == 1 ? value.pressure_value_raw : 0);
                     g_seb_pressure_raw.store(pres);
                     g_seb_error_status.store(seb_err);
@@ -1217,8 +1215,20 @@ static uint8_t task_health_snapshot() {
         rt::apply_fresh_direct_steering(direct_steer,
             g_last_direct_steer_us.load(), now, sp);
 
-        uint32_t obs = g_obstacle_mm.load();
-        sp.motor_speed_mmps = rt::PhysicsModel::obstacle_limit(sp.motor_speed_mmps, obs);
+        int64_t last_obs_us = g_last_obstacle_us.load(std::memory_order_relaxed);
+        uint32_t obs = UINT32_MAX;
+        if (last_obs_us > 0 && (now - last_obs_us) <= int64_t(shared::kObstacleStaleTimeoutMs) * 1000) {
+            obs = g_obstacle_mm.load(std::memory_order_relaxed);
+        }
+
+        // Apply obstacle speed limiting and braking only for forward motion setpoints.
+        // In reverse (sp.motor_speed_mmps < 0) or standstill, front obstacles do not inhibit
+        // reversing or lock brakes, allowing the vehicle to reverse away from front hazards.
+        int32_t obs_kpa = 0;
+        if (sp.motor_speed_mmps > 0) {
+            sp.motor_speed_mmps = rt::PhysicsModel::obstacle_limit(sp.motor_speed_mmps, obs);
+            obs_kpa = rt::PhysicsModel::obstacle_to_kpa(obs);
+        }
 
 #if ETRIKE_RT_SPEED_FEEDBACK_SOURCE == 3
         g_calc_speed.update(sp.motor_speed_mmps, 0.01f);
@@ -1237,7 +1247,6 @@ static uint8_t task_health_snapshot() {
             sp.steer_angle_mdeg = std::clamp(sp.steer_angle_mdeg, -limit_mdeg, limit_mdeg);
         }
 
-        int32_t obs_kpa = rt::PhysicsModel::obstacle_to_kpa(obs);
         int32_t bk = rt::brake_arbitrate(obs_kpa, g_brake_request_kpa.load());
 
         if (auto* drv = rt::can_low_driver()) {
@@ -1304,6 +1313,9 @@ static uint8_t task_health_snapshot() {
         measured_speed_mmps = g_calc_speed.get();
 #endif
 
+        // Speed PID controller — Disabled: physical motor encoders not fitted yet.
+        // Operating in open-loop feedforward speed setpoint mode.
+        /*
 #if ETRIKE_RT_PID_MODE > 0
         {
             int16_t pid_out = 0;
@@ -1320,6 +1332,7 @@ static uint8_t task_health_snapshot() {
 #endif
         }
 #endif
+        */
 
         if (m_current_mode == uint8_t(can::Mode::Auto)) {
             g_steering.set_target(sp.steer_angle_mdeg, g_mtr_motor_command_speed_mmps.load());

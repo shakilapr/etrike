@@ -251,10 +251,11 @@ private:
         out.alignment_enable = false;
         out.control_enable = 1;
         out.target_angle_raw = m_active_angle + kSbwAngleOffset;  // 0.1° → CAN raw (steer-by-wire offset)
-        // Dynamic slew rate: 125°/s at low speed, 400°/s at high speed
+        // Anti-rollover dynamic slew rate: 400°/s at low speed (responsive maneuvering),
+        // decaying to 125°/s at high speed (prevent high-jerk rollover).
         float speed_kmh = std::abs(m_speed_mmps) * 3.6f / 1000.0f;
-        float rate_deg_s = kSteerRateMinDegS
-            + (speed_kmh - 2.0f) * (kSteerRateRangeDegS / kAngleClampSpeedRange);
+        float rate_deg_s = kSteerRateMaxDegS
+            - (speed_kmh - 2.0f) * (kSteerRateRangeDegS / kAngleClampSpeedRange);
         out.target_speed_raw = static_cast<uint16_t>(std::clamp(rate_deg_s, kSteerRateMinDegS, kSteerRateMaxDegS));
         out.rolling_counter = m_roll;
         m_roll = (m_roll + 1) & kRollCounterMask;

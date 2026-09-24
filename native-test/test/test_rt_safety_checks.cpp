@@ -113,6 +113,17 @@ int main() {
         CHECK_EQ(r.estop_reason, rt::kEstopReasonObstacle);
     }
 
+    // #7b Obstacle ahead while reversing -> does not trigger obstacle ESTOP
+    {
+        bool estop = false; uint8_t mode = uint8_t(can::Mode::Auto); bool seb = false;
+        g_mtr_motor_command_speed_mmps.store(-500);  // Reversing away
+        auto r = run_safety_checks(now, false,
+                                       shared::kObstacleStopMM - 10, estop, mode, seb);
+        CHECK(!r.disable_steering);
+        CHECK(!r.obstacle_triggered);
+        CHECK(r.estop_reason != rt::kEstopReasonObstacle);
+    }
+
     // #6 Steering following-error ESTOP (full steering path enabled)
     {
         g_bypass_eps_sync = false;   // enable the steering-follow check

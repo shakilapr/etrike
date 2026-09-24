@@ -13,6 +13,7 @@ constexpr float kWheelbaseMM = 1500.0f;
 // Obstacle
 constexpr unsigned kObstacleStopMM = 300;
 constexpr unsigned kObstacleClearMM = 3000;
+constexpr int kObstacleStaleTimeoutMs = 500;
 
 // Speed limits
 constexpr int kMaxSpeedFwdMmps = 3000;

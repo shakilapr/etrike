@@ -28,10 +28,11 @@ void SteeringControl::build_command(SteeringCommand& out) {
     out.rolling_counter = m_roll;
     m_roll = (m_roll + 1) & 0x0Fu;
 
-    // Dynamic slew rate: 125°/s at low speed, 525°/s at high speed.
+    // Anti-rollover dynamic slew rate: fast at low speed (responsive maneuvering),
+    // decaying at high speed (prevent high-jerk rollover).
     float speed_kmh = std::abs(static_cast<float>(m_speed_mmps)) * 3.6f / 1000.0f;
-    float rate_deg_s = kSteerRateMinDegS
-        + (speed_kmh - 2.0f) * (kSteerRateRangeDegS / kAngleClampSpeedRange);
+    float rate_deg_s = kSteerRateMaxDegS
+        - (speed_kmh - 2.0f) * (kSteerRateRangeDegS / kAngleClampSpeedRange);
     out.speed_raw = static_cast<std::uint16_t>(
         std::clamp(rate_deg_s, kSteerRateMinDegS, kSteerRateMaxDegS));
     out.vehicle_speed_raw = static_cast<std::uint8_t>(std::clamp(speed_kmh, 0.0f, 255.0f));

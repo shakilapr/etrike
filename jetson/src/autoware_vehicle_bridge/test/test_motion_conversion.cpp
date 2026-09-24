@@ -44,5 +44,14 @@ int main()
   assert(generated::decode(motion_frame.view(), decoded) == etrike::protocol::CodecStatus::Ok);
   assert(decoded.speed_mmps == 1200 && decoded.yaw_rate_mrad_s == -85);
   assert(decoded.gear == 1 && decoded.rolling_counter == 9);
+
+  generated::HostObstacleDist obstacle{1500};
+  etrike::protocol::Frame obstacle_frame;
+  assert(generated::encode(obstacle, obstacle_frame) == etrike::protocol::CodecStatus::Ok);
+  assert(obstacle_frame.id == 0x400);
+  assert(obstacle_frame.dlc == 4);
+  generated::HostObstacleDist decoded_obstacle{};
+  assert(generated::decode(obstacle_frame.view(), decoded_obstacle) == etrike::protocol::CodecStatus::Ok);
+  assert(decoded_obstacle.distance_mm == 1500);
   return 0;
 }

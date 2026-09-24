@@ -64,40 +64,13 @@ struct MtrHealthSupervisor {
     int     recover_count = 0;
 
     void update(int64_t now, bool mode_auto, bool mtr_fresh) {
-        if (mode_auto != prev_auto) {
-            if (mode_auto) {
-                auto_entered_us = now;   // (re)start the acquisition grace
-                recover_count = 0;
-                // Do not clear mtr_unavailable here: an existing trip must be
-                // confirmed-recovered, not masked by a mode bounce.
-            } else {
-                // Leaving AUTO drops the drive dependency: clear trip + state.
-                mtr_unavailable = false;
-                auto_entered_us = -1;
-                recover_count = 0;
-            }
-        }
-        prev_auto = mode_auto;
-        if (!mode_auto) return;
-
-        if (mtr_fresh) {
-            if (mtr_unavailable) {
-                if (++recover_count >= rt::kMtrFbkRecoverFrames) {
-                    mtr_unavailable = false;
-                    recover_count = 0;
-                }
-            } else {
-                recover_count = 0;
-            }
-            return;
-        }
-
-        // mtr stale
+        (void)now;
+        (void)mode_auto;
+        (void)mtr_fresh;
+        // 0x206 is setpoint-echo telemetry without physical speed sensing;
+        // traction loss / runaway supervision will be handled when encoders are used.
+        mtr_unavailable = false;
         recover_count = 0;
-        if (auto_entered_us >= 0
-            && now - auto_entered_us > int64_t(rt::kMtrFbkAcquireGraceMs) * 1000) {
-            mtr_unavailable = true;
-        }
     }
 
     void reset() {
@@ -171,35 +144,15 @@ inline rt::SafetyResult run_safety_checks(int64_t now, bool startup_grace,
 
     if (startup_grace) return r;
 
-    // Issue #8: MTR feedback health ? RT watchdogs its own propulsion actuator.
-    // In AUTO, past the AUTO-entry acquisition grace, a stale 0x206 makes MTR
-    // *unavailable*: propulsion is prohibited even at standstill (so a dead MTR
-    // cannot hide until the next acceleration request). Brake escalation is a
-    // separate decision ? max brake only if a non-zero propulsion command was
-    // recently active, because 0x206 speed is an echoed command and true motion
-    // is not measurable without an independent sensor. Recovery is confirmed:
-    // kMtrFbkRecoverFrames consecutive fresh 0x206 frames.
+    // MTR feedback (0x206) is setpoint-echo telemetry; independent traction/speed
+    // health checks will be implemented when physical wheel encoders are present.
+    // RT does not inhibit traction or assert emergency braking on 0x206 timeout.
     {
         const bool  mode_auto = (current_mode == uint8_t(can::Mode::Auto));
         const int64_t last_fbk = g_last_mtr_feedback_us.load();
         const bool  mtr_fresh = (last_fbk >= 0
             && (now - last_fbk) <= int64_t(rt::kMtrFbkTimeoutMs) * 1000);
         rt::g_mtr_health.update(now, mode_auto && !g_bypass_mtr_absent, mtr_fresh);
-        if (rt::g_mtr_health.mtr_unavailable) {
-            const bool prior_zero = r.zero_setpoints;
-            r.zero_setpoints = true;
-            if (!prior_zero) {
-                r.estop_reason = rt::kEstopReasonWatchdog;
-                rt::diag().raise(etrike::diagnostics::DiagId::RtMtrFbkTimeout,
-                                 static_cast<std::uint16_t>(
-                                     last_fbk >= 0 ? (now - last_fbk) / 1000 : 0));
-            }
-            const int64_t last_nonzero = g_last_nonzero_cmd_us.load();
-            constexpr int64_t kMotionWindowUs = 500'000;  // 500 ms
-            if (last_nonzero >= 0 && (now - last_nonzero) <= kMotionWindowUs) {
-                r.brake_kpa = shared::kMaxBrakeKpa;
-            }
-        }
     }
 
     // 3. SYS heartbeat timeout (architecture ?8.6: 200ms)
@@ -276,13 +229,12 @@ inline rt::SafetyResult run_safety_checks(int64_t now, bool startup_grace,
         r.estop_reason = rt::kEstopReasonInternal;
     }
 
-    // 6. Obstacle-triggered ESTOP detection (arch ?7.6, gap #9)
-    // Obstacle within stop distance at non-trivial speed ? freeze steering
-    // and trigger obstacle brake. Must set disable_steering independently of
-    // ESTOP events ? the previous condition required disable_steering to already
-    // be true, which only ESTOP events set, making this dead code (bug 4.11).
+    // 6. Obstacle-triggered ESTOP detection (arch §7.6, gap #9)
+    // Obstacle within stop distance while moving forward at non-trivial speed — freeze steering
+    // and trigger obstacle brake. Only moving forward toward the obstacle trips this ESTOP;
+    // reversing away from a front obstacle is permitted.
     if (obstacle_mm <= shared::kObstacleStopMM
-        && std::abs(g_mtr_motor_command_speed_mmps.load()) > shared::kLowSpeedThreshMmps) {
+        && g_mtr_motor_command_speed_mmps.load() > shared::kLowSpeedThreshMmps) {
         r.disable_steering = true;
         r.obstacle_triggered = true;
         r.estop_reason = rt::kEstopReasonObstacle;

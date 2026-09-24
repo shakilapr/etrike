@@ -1012,7 +1012,9 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
     TickType_t period = pdMS_TO_TICKS(200);  // 5 Hz
     TickType_t last   = xTaskGetTickCount();
     while (1) {
-        [[maybe_unused]] bool on = (g_mode_mgr.mode() != can::Mode::Estop);
+        // Keep 12V accessory relay energized even during ESTOP so that indicator
+        // bulbs (kBulbEstop, mode indicators, warning lights) remain visible.
+        [[maybe_unused]] bool on = true;
 #ifndef TESTING
         gpio_set_level(static_cast<gpio_num_t>(sys::kPower12vRelay), on ? 1 : 0);
 #endif

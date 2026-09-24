@@ -106,7 +106,7 @@ SafetyResult SafetySupervisor::evaluate(TimeUs now_us, bool startup_grace,
 
     // 4. Obstacle-triggered ESTOP.
     if (obstacle_mm <= shared::kObstacleStopMM
-        && std::abs(motor_fb.motor_command_speed_mmps) > shared::kLowSpeedThreshMmps) {
+        && motor_fb.motor_command_speed_mmps > shared::kLowSpeedThreshMmps) {
         r.disable_steering = true;
         r.obstacle_triggered = true;
         r.estop_reason = kEstopReasonObstacle;

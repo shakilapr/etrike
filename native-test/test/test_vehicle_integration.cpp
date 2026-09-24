@@ -468,7 +468,7 @@ int main() {
         CHECK(!sr0.zero_setpoints);       // healthy AUTO: no failsafe
 
         // MTR feedback stops (0x206 silence) while SYS + Host heartbeats and
-        // SYS authority stay fresh -> the *dedicated* MTR-health trip fires.
+        // SYS authority stay fresh -> RT does not trip (0x206 is setpoint-echo telemetry).
         bool tripped = false;
         for (int i = 0; i < 40 && !tripped; ++i) {   // up to 400 ms
             v.send_sys_heartbeat();
@@ -479,19 +479,7 @@ int main() {
             if (sr.zero_setpoints && sr.estop_reason == rt::kEstopReasonWatchdog)
                 tripped = true;
         }
-        CHECK(tripped);
-
-        // Confirmed recovery: kMtrFbkRecoverFrames consecutive fresh 0x206
-        // frames at the 10 ms control cadence release the trip.
-        bool recovered = false;
-        for (int i = 0; i < 10 && !recovered; ++i) {
-            v.send_host_drive(2000, 0);    // fresh 0x206 again
-            v.sys_publish_tick();
-            v.advance(10);
-            auto sr = v.rt_control_pass();
-            if (!sr.zero_setpoints) recovered = true;
-        }
-        CHECK(recovered);
+        CHECK(!tripped);
     }
 
     // ?? S7: SYS heartbeat (0x7FE) loss -> RT fail-safe -> recovery ??
