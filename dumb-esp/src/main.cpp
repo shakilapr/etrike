@@ -241,7 +241,7 @@ static void emit_seb(uint16_t stroke_raw) {
     fr.data[5] = 0u;
     fr.data[6] = static_cast<uint8_t>(0x03u | (static_cast<uint8_t>(g_roll_seb & 0x0Fu) << 4));
     g_roll_seb = (g_roll_seb + 1u) & 0x0Fu;
-    fr.data[7] = calc_sum8(fr.data.data(), 7);
+    fr.data[7] = calc_sum8(fr.data.data(), 7) ^ 0xFFu; // sum(B0..B6) ^ 0xFF
     can_send(fr);
 }
 
@@ -284,7 +284,7 @@ static void emit_seb_status(uint16_t stroke_raw) {
     be_write_i16(&fr.data[4], 0);
     fr.data[6] = static_cast<uint8_t>(0x03u | (static_cast<uint8_t>(g_roll_seb_sts & 0x0Fu) << 4));
     g_roll_seb_sts = (g_roll_seb_sts + 1u) & 0x0Fu;
-    fr.data[7] = calc_sum8(fr.data.data(), 7);
+    fr.data[7] = calc_sum8(fr.data.data(), 7) ^ 0xFFu; // sum(B0..B6) ^ 0xFF
     can_send(fr);
 }
 
@@ -468,13 +468,15 @@ static void emit_rt_motion(int16_t speed_mmps, int32_t yaw_mrad_s, uint8_t gear)
                 dumb::kMaxSteerRaw);
         }
 
-        // ── Brake stroke mapping (0..270 raw = 0.0..27.0 mm) ──
+        // ── Brake stroke mapping: raw = (mm + 30.0) / 0.05; released=600, full=1140 ──
         const float stroke_mm = std::clamp(
             (static_cast<float>(brake_kpa) / static_cast<float>(shared::kMaxBrakeKpa))
                 * dumb::kMaxBrakeStrokeMm,
             0.0f, dumb::kMaxBrakeStrokeMm);
         const uint16_t seb_stroke_raw = static_cast<uint16_t>(
-            std::clamp(std::round(stroke_mm / dumb::kBrakeStrokeScaleF), 0.0f, static_cast<float>(dumb::kMaxBrakeStrokeRaw)));
+            std::clamp(std::round((stroke_mm + dumb::kBrakeStrokeBias) / dumb::kBrakeStrokeScaleF),
+                       static_cast<float>(dumb::kBrakeStrokeZeroRaw),
+                       static_cast<float>(dumb::kMaxBrakeStrokeRaw)));
 
         // ── 100 Hz (every 10 ms) — motor drive command ───────────────────
         emit_rt_drive(motor_speed_mmps, gear_in);

@@ -130,9 +130,10 @@ private:
             seb_cmd.control_mode     = can::custom::seb::ControlMode::Stroke;
             seb_cmd.auto_brake       = false;
 
-            // Stroke Resolution: 0.1 mm/count, 0 mm = 0 raw (0..270 raw for 0..27.0 mm)
+            // Stroke encoding: raw = (mm + 30.0) / 0.05; released (0 mm) = 600, full (27 mm) = 1140
             float commanded_stroke = snap.brake_stroke_mm;
-            uint16_t stroke_raw = static_cast<uint16_t>(std::clamp(std::round(commanded_stroke * 10.0f), 0.0f, 270.0f));
+            uint16_t stroke_raw = static_cast<uint16_t>(
+                std::clamp(std::round((commanded_stroke + 30.0f) * 20.0f), 500.0f, 1140.0f));
             seb_cmd.stroke_request_raw   = stroke_raw;
             seb_cmd.pressure_request_raw = 0;
             seb_cmd.rolling_counter      = roll_seb_;
@@ -140,8 +141,8 @@ private:
 
             can::Frame seb_fr;
             if (can::custom::seb::encode_command(seb_cmd, seb_fr) == can::gen::CodecStatus::Ok) {
-                // Actuator family requires 8-bit additive sum over bytes 0..6
-                seb_fr.data[7] = calc_sum8(seb_fr.data.data(), 7);
+                // Checksum: additive sum of bytes 0..6, then XOR with 0xFF
+                seb_fr.data[7] = static_cast<uint8_t>(calc_sum8(seb_fr.data.data(), 7) ^ 0xFFu);
                 send(seb_fr);
             }
         }

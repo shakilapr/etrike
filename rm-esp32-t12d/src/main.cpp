@@ -45,6 +45,7 @@ static std::atomic<bool>     g_ses_seen{false};
 // Actuator Feedback State (0x721 SEB_STATUS / 0x731 SEB_ErrInfo)
 static std::atomic<float>    g_seb_fbk_stroke{0.0f};
 static std::atomic<float>    g_seb_fbk_pressure{0.0f};
+static std::atomic<float>    g_seb_fbk_angle{0.0f};
 static std::atomic<uint8_t>  g_seb_mode{0};
 static std::atomic<bool>     g_seb_aligned{false};
 static std::atomic<bool>     g_seb_enabled{false};
@@ -89,11 +90,14 @@ static bool send_can_frame(can::Frame& fr) {
                 uint8_t mode = (rx_fr.data[0] >> 2) & 0x03;
                 uint8_t err  = (rx_fr.data[0] >> 6) & 0x03;
                 uint16_t raw_stroke = (static_cast<uint16_t>(rx_fr.data[1]) << 8) | rx_fr.data[2];
-                float stroke_mm = static_cast<float>(raw_stroke) * 0.1f; // 0.1 mm/count
+                float stroke_mm = (static_cast<float>(raw_stroke) * 0.05f) - 30.0f; // scale=0.05 mm/count, offset=-30 mm
                 float pressure_mpa = static_cast<float>(rx_fr.data[3]) * 0.05f; // 0.05 MPa/count
+                float angle_deg = static_cast<float>(static_cast<int16_t>(
+                    (static_cast<uint16_t>(rx_fr.data[4]) << 8) | rx_fr.data[5])) * 0.5f; // 0.5 deg/count
 
                 g_seb_fbk_stroke.store(stroke_mm, std::memory_order_relaxed);
                 g_seb_fbk_pressure.store(pressure_mpa, std::memory_order_relaxed);
+                g_seb_fbk_angle.store(angle_deg, std::memory_order_relaxed);
                 g_seb_mode.store(mode, std::memory_order_relaxed);
                 g_seb_aligned.store(aligned, std::memory_order_relaxed);
                 g_seb_enabled.store(enabled, std::memory_order_relaxed);

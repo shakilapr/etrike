@@ -22,11 +22,14 @@ constexpr int     kSbwAngleOffset  = 30000;
 constexpr int16_t kMinSteerRaw     = 29550; // −45°
 constexpr int16_t kMaxSteerRaw     = 30450; // +45°
 
-// Brake stroke conversion (0.1 mm/count, 0.0 mm = 0 raw, 27.0 mm = 270 raw)
-constexpr float    kMaxBrakeStrokeMm  = 27.0f;    // full actuator stroke
-constexpr float    kBrakeStrokeScaleF =  0.1f;    // raw = mm / 0.1
-constexpr uint16_t kMaxBrakeStrokeRaw = 270;      // 27.0 mm max mechanical stroke
-constexpr uint16_t kBrakeStrokeZeroRaw = 0;       // 0.0 mm released position
+// Brake stroke conversion (scale=0.05 mm/count, offset=-30 mm)
+// raw = (mm + 30.0) / 0.05 = (mm + 30.0) * 20
+// Released (0.0 mm) = raw 600 (0x0258); Full (27.0 mm) = raw 1140 (0x0474)
+constexpr float    kMaxBrakeStrokeMm   = 27.0f;   // full actuator stroke
+constexpr float    kBrakeStrokeScaleF  =  0.05f;  // mm per raw count
+constexpr float    kBrakeStrokeBias    = 30.0f;   // offset in mm (raw 0 = -30.0 mm)
+constexpr uint16_t kMaxBrakeStrokeRaw  = 1140;    // 27.0 mm full stroke
+constexpr uint16_t kBrakeStrokeZeroRaw = 600;     // 0.0 mm released position
 
 } // namespace dumb
 

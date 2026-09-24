@@ -27,6 +27,14 @@ struct Command {
     std::uint8_t rolling_counter{0};
 };
 
+// Checksum: additive sum of bytes 0..N-1, then XOR with 0xFF
+// This differs from xor8_ff_v1 (which XORs bytes, then flips).
+inline constexpr std::uint8_t sum8_xor_ff(const std::uint8_t* data, std::size_t size) noexcept {
+    std::uint8_t s = 0;
+    for (std::size_t i = 0; i < size; ++i) s = static_cast<std::uint8_t>(s + data[i]);
+    return static_cast<std::uint8_t>(s ^ 0xFFu);
+}
+
 inline CodecStatus encode_command(const Command& value, Frame& out) noexcept {
     const auto mode = static_cast<std::uint8_t>(value.control_mode);
     if (mode > 1) return CodecStatus::InvalidEnum;
@@ -42,14 +50,15 @@ inline CodecStatus encode_command(const Command& value, Frame& out) noexcept {
     frame.data[3] = value.pressure_request_raw;
     // Bytes 4 and 5 are reserved (0).
     frame.data[6] = static_cast<std::uint8_t>(0x03u | (value.rolling_counter << 4u));
-    frame.data[7] = profiles::xor8_ff_v1(frame.data.data(), 7);
+    frame.data[7] = sum8_xor_ff(frame.data.data(), 7);
     out = frame;
     return CodecStatus::Ok;
 }
 
 inline CodecStatus decode_command(FrameView frame, Command& out) noexcept {
-    CodecStatus status = detail::validate_xor_frame(frame, kCommandId);
+    CodecStatus status = detail::validate_frame(frame, kCommandId, false, kDlc);
     if (status != CodecStatus::Ok) return status;
+    if (sum8_xor_ff(frame.data(), 7) != frame[7]) return CodecStatus::ChecksumMismatch;
     if ((frame[6] & 0x03u) != 0x03u) return CodecStatus::ConstantMismatch;
 
     Command value{};
@@ -81,8 +90,9 @@ struct Status {
 };
 
 inline CodecStatus decode_status(FrameView frame, Status& out) noexcept {
-    const CodecStatus status = detail::validate_xor_frame(frame, kStatusId);
+    const CodecStatus status = detail::validate_frame(frame, kStatusId, false, kDlc);
     if (status != CodecStatus::Ok) return status;
+    if (sum8_xor_ff(frame.data(), 7) != frame[7]) return CodecStatus::ChecksumMismatch;
     Status value{};
     value.status_byte = frame[0];
     value.alignment_status = (frame[0] & 0x01u) != 0;
@@ -117,7 +127,7 @@ inline CodecStatus encode_status(const Status& value, Frame& out) noexcept {
     frame.data[6] = static_cast<std::uint8_t>((value.rolling_counter_enabled ? 0x01u : 0u) |
                                               (value.checksum_enabled ? 0x02u : 0u) |
                                               ((value.rolling_counter & 0x0Fu) << 4u));
-    frame.data[7] = profiles::xor8_ff_v1(frame.data.data(), 7);
+    frame.data[7] = sum8_xor_ff(frame.data.data(), 7);
     out = frame;
     return CodecStatus::Ok;
 }
