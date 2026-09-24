@@ -644,22 +644,21 @@ public:
                                       sys_mode.mode() == can::Mode::Auto ? 1 : 0,
                                       takeover_dummy);
 
-        // Fallback machine update
+        // Fallback machine update (unit state tracked for telemetry/tests; RT never takes over 0x7B9)
         rt::SebFallbackInput fbi{};
         fbi.now_us = now_us;
         fbi.sys_hb_fresh = (now_us - g_last_sys_hb_us.load()) <= 200000;
         fbi.sys_0x7B9_observed = (now_us - g_last_0x7B9_rx_us.load()) <= 100000;
         fbi.startup_grace_active = false;
-        auto fbo = rt_brake_fallback.update(fbi);
-        rt_seb_takeover = fbo.emergency_tx_0x7B9;
+        (void)rt_brake_fallback.update(fbi);
+        rt_seb_takeover = false;
 
         // Broadcast 0x001 ONLY when RT actively originates an unhandled local emergency trip.
         // Never broadcast 0x001 when reacting to external CAN ESTOP (CanEstop / Mode==Estop),
         // nor when SYS clear is in progress, nor for soft disables (MTR fbk loss, host timeout).
         const bool is_active_local_trip = (rt_obstacle_active ||
                                            sr.obstacle_triggered ||
-                                           sr.estop_reason == rt::kEstopReasonBusOff ||
-                                           rt_seb_takeover);
+                                           sr.estop_reason == rt::kEstopReasonBusOff);
 
         if (is_active_local_trip && !rt_sys_clear_in_progress) {
             if ((now_us - last_rt_0x001_sent_us) >= 250000) {
@@ -674,15 +673,7 @@ public:
             }
         }
 
-        // RT emergency 0x7B9 transmission
-        if (rt_seb_takeover) {
-            count_0x7b9_rt_tx++;
-            can::Frame fb_cmd{};
-            auto seb_cmd = rt::make_seb_takeover_req();
-            seb_cmd.rolling_counter = sys_mode_ctr++;
-            etrike::protocol::codecs::seb::encode_command(seb_cmd, fb_cmd);
-            low_bus.send(to_proto(fb_cmd));
-        }
+        // Single-producer model: RT never transmits 0x7B9 (SYS is sole producer of 0x7B9)
 
         // 20 Hz: RT Heartbeat 0x7FD
         if (now_us - last_rt_hb_us >= 50000) {

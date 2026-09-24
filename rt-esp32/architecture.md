@@ -39,7 +39,7 @@
    - `0x204 RT_DRIVE_CMD` (100 Hz) to `mtr-stm32` (motor speed in mm/s and gear).
    - `0x169 VCU_SES_REQ` (50 Hz) to SES SES (steer angle in 0.1° units with dynamic slew rate).
    - `0x205 RT_BRAKE_CMD` (50 Hz) to `sys-esp32` (arbitrated brake pressure in kPa).
-3. **Emergency Fallback SEB Writer:** SYS is the sole regular writer of the final `0x7B9 VCU_SEB_REQ` brake command. RT transmits `0x7B9` **only** if SYS's `0x7B9` stream completely disappears from the Low bus (`EMERGENCY_FALLBACK` state in [`brake_fallback.h`](src/brake_fallback.h)).
+3. **Single SEB Brake Producer Architecture:** SYS is the sole producer of the final `0x7B9 VCU_SEB_REQ` brake command to SEB on Low CAN. RT never transmits `0x7B9`. In `AUTO`, RT expresses brake pressure intent over `0x205 RT_BRAKE_CMD` (arbitrated by SYS against rider mechanical brake inputs and converted to `0x7B9`).
 4. **Transparent High ↔ Low Gateway:** Forwards select commands between Host and SYS (e.g. `0x111 HMI_MODE_REQ`, `0x112 HMI_PWR_REQ`, `0x114 HOST_ESTOP_RESET_REQ`, `0x302 HOST_LIGHT_CMD`).
 5. **No Drive Authority at Boot:** RT powers on with `g_no_sys_authority = true`. Motion is prohibited until SYS has established a fresh, valid stream of `0x011 SYS_SAFETY_STS` and `0x110 SYS_MODE_CMD`.
 
@@ -135,7 +135,7 @@ RT allocates **8 concurrent FreeRTOS tasks** initialized in [`main.cpp`](src/mai
 | `0x620` | `RT_DIAG_RPT` | High | TX | 1 Hz | MCP2515 SPI transaction health, error flags, supervision state. |
 | `0x621` | `RT_DIAG_EVENT_RPT` | High | TX | Event | Phase B diagnostic event reporter (latched fault replay). |
 | `0x721` | `SEB_STATUS` | Low | RX | 100 Hz | Hydraulic brake pressure, stroke, error status. |
-| `0x7B9` | `VCU_SEB_REQ` | Low | TX/RX | 50 Hz | SEB brake command. Normally observed from SYS; emitted ONLY in emergency fallback. |
+| `0x7B9` | `VCU_SEB_REQ` | Low | RX | 50 Hz | SEB brake command from SYS. RT does not produce this message (SYS is the sole producer). |
 | `0x7FC` | `HOST_HEARTBEAT` | High | RX | 2 Hz | Jetson alive counter. Timeout (1500 ms) triggers assisted stop. |
 | `0x7FD` | `RT_HEARTBEAT` | Both | TX | 2 Hz | Independent alive counters and health bitmask on both buses. |
 | `0x7FE` | `SYS_HEARTBEAT` | Low | RX | 10 Hz | SYS alive counter. Timeout (200 ms) inhibits motion. |
@@ -166,13 +166,13 @@ RT implements **layered, decoupled supervisors** evaluating vehicle state every 
                │        100 Hz Safety Evaluation Cycle          │
                └──────────────────────┬─────────────────────────┘
                                       │
-        ┌─────────────────────────────┼────────────────────────────┐
-        ▼                             ▼                            ▼
-┌──────────────────┐        ┌──────────────────┐         ┌──────────────────┐
-│  Safety Stream   │        │   MTR Health     │         │  Brake Fallback  │
-│    Authority     │        │   Supervisor     │         │   State Machine  │
-│ (SYS 0x011/0x110)│        │   (0x206 fbk)    │         │  (SYS vs RT 7B9) │
-└──────────────────┘        └──────────────────┘         └──────────────────┘
+                        ┌─────────────┴─────────────┐
+                        ▼                           ▼
+              ┌──────────────────┐        ┌──────────────────┐
+              │  Safety Stream   │        │   MTR Health     │
+              │    Authority     │        │   Supervisor     │
+              │ (SYS 0x011/0x110)│        │   (0x206 fbk)    │
+              └──────────────────┘        └──────────────────┘
 ```
 
 ### 5.1. SYS 0x011 Safety Authority & Asymmetric Clear
@@ -187,13 +187,11 @@ RT implements **layered, decoupled supervisors** evaluating vehicle state every 
 * Max brake (5000 kPa) is escalated only if a non-zero motion command was commanded within the last 500 ms (`g_last_nonzero_cmd_us`).
 * Recovery requires **3 consecutive fresh 0x206 frames** at the control cadence.
 
-### 5.3. SEB Brake Ownership & Emergency Fallback
-* Implemented in [`brake_fallback.h`](src/brake_fallback.h).
-* Three states:
-  1. `NORMAL`: SYS heartbeat (`0x7FE`) and SYS brake command (`0x7B9`) are healthy. RT does not transmit `0x7B9`.
-  2. `SYS_DEGRADED`: SYS heartbeat is lost (motion prohibited), but SYS `0x7B9` frames are still observed on Low CAN. RT does NOT transmit `0x7B9`.
-  3. `EMERGENCY_FALLBACK`: SYS `0x7B9` command has physically disappeared from the bus for `> 250 ms`. RT asserts `0x001` ESTOP and assumes emergency ownership of `0x7B9` (commanding 5000 kPa).
-* Handback is epoch-guarded (`handback_epoch_us_`): RT silences its own `0x7B9` and requires 5 consecutive fresh `0x7B9` frames from SYS before returning to `NORMAL`.
+### 5.3. SEB Brake Command Architecture (Single Producer Model)
+* SYS is the sole master, supervisor, and producer of `0x7B9 VCU_SEB_REQ` to SEB on Low CAN.
+* Handlebar mechanical brake levers and analog sensors are wired directly to SYS.
+* RT never transmits `0x7B9`, eliminating split-brain ownership races, dual-producer collisions, and CAN arbitration conflicts.
+* In AUTO mode, RT transmits requested brake pressure in kPa via `0x205 RT_BRAKE_CMD`. SYS arbitrates this with driver mechanical inputs and issues `0x7B9` commands directly to SEB.
 
 ### 5.4. Steering State Machine (`SteeringControl`)
 * Implemented in [`steering_control.h`](src/steering_control.h).

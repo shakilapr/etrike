@@ -66,7 +66,7 @@ struct MotionOutputSnapshot {
     uint8_t current_mode;            // 0=Manual, 1=Auto, 2=Estop
     uint8_t estop_reason;            // Active ESTOP reason code
     uint8_t safety_state;            // 0=Normal, 1=InternalEstop, 2=Fault
-    bool seb_emergency_takeover;     // True if RT owns 0x7B9 emergency transmission
+    bool seb_emergency_takeover;     // Deprecated: RT never transmits 0x7B9 (SYS is sole producer)
     bool steer_command_enable;       // True if 0x169 should transmit
     bool reversing;                  // Vehicle reversing state
 };

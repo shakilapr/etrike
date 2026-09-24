@@ -33,7 +33,6 @@ bool g_bypass_mtr_absent = false;
 #include "can_rx_router.h"
 #include "brake_arbitration.h"
 #include "seb_request.h"
-#include "brake_fallback.h"
 #include "encoder_pcnt.h"
 #include "phase2_motion.h"
 
@@ -150,7 +149,6 @@ std::atomic<int64_t>  g_task_alive_control_us{0};
 
 namespace rt {
 MtrHealthSupervisor g_mtr_health;
-SebBrakeFallback    g_brake_fallback;
 SafetyStreamSupervisor g_safety_authority;  // issue #10 (0x011 authority acquisition)
 }  // namespace rt
 
@@ -329,15 +327,6 @@ static can::gen::RtDiagRpt build_rt_diag_rpt() {
     dr.no_sys_authority = g_no_sys_authority.load(std::memory_order_relaxed);
     dr.brake_fallback_state = g_brake_fallback_state.load(std::memory_order_relaxed);
     return dr;
-}
-
-static void send_seb_req(rt::TwaiDriver& drv, can::Frame& fr,
-                         can::custom::seb::Command seb, uint8_t& rolling_counter) {
-    seb.control_enable = 1;
-    seb.rolling_counter = rolling_counter;
-    rolling_counter = (rolling_counter + 1) & 0x0F;
-    if (can::custom::seb::encode_command(seb, fr) != can::gen::CodecStatus::Ok) return;
-    drv.send(fr);
 }
 
 static uint8_t task_health_snapshot() {
@@ -707,7 +696,6 @@ static uint8_t task_health_snapshot() {
 
     uint8_t    node_status_roll = 0;
     uint8_t    secondary_slot = 0;
-    uint8_t    seb_roll = 0;
     auto*      drv = rt::can_low_driver();
 
     rt::ActuatorFeedbackSnapshot fbk_snap{};
@@ -1009,8 +997,7 @@ static uint8_t task_health_snapshot() {
             send_can_low(hb_frame);
         }
 
-        // 4. Actuator outputs: 0x205 + 0x169 at 50 Hz each, 0x7B9 emergency
-        // fallback, and 0x501 node status at 50 Hz.
+        // 4. Actuator outputs: 0x205 + 0x169 at 50 Hz each, and 0x501 node status at 50 Hz.
         // TWAI has one application TX slot, so secondary frames are alternated
         // on a 10 ms cadence — each frame therefore lands every 20 ms (50 Hz).
         const TickType_t tick_secondary = xTaskGetTickCount();
@@ -1020,10 +1007,7 @@ static uint8_t task_health_snapshot() {
             can::Frame secondary_frame{};
 
             if (out.current_mode != uint8_t(can::Mode::Manual)) {
-                if (out.seb_emergency_takeover) {
-                    // RT emergency 0x7B9 fallback wins over the alternation.
-                    send_seb_req(*drv, secondary_frame, rt::make_seb_takeover_req(), seb_roll);
-                } else if ((secondary_slot & 0x1) == 0) {
+                if ((secondary_slot & 0x1) == 0) {
                     // 0x205 RT_BRAKE_CMD (brake intent -> SYS -> SEB)
                     can::gen::RtBrakeCmd bmsg{out.brake_kpa};
                     if (can::encode_frame(bmsg, secondary_frame) == can::gen::CodecStatus::Ok) {
@@ -1095,13 +1079,11 @@ static uint8_t task_health_snapshot() {
     TickType_t last_wake = xTaskGetTickCount();
     uint32_t tick_counter = 0;
 
-    rt::g_brake_fallback.init(esp_timer_get_time());
     rt::g_safety_authority.reset(esp_timer_get_time());
 
     bool     m_estop_pending = false;
     uint8_t  m_estop_reason  = rt::kEstopReasonCanEstop;
     uint8_t  m_current_mode  = 0;
-    bool     m_seb_takeover  = false;
 
     while (true) {
         g_task_alive_control_us.store(esp_timer_get_time(), std::memory_order_relaxed);
@@ -1269,31 +1251,14 @@ static uint8_t task_health_snapshot() {
             g_last_nonzero_cmd_us.store(now, std::memory_order_relaxed);
         }
 
+        bool unused_takeover = false;
         rt::SafetyResult sr = run_safety_checks(now, startup_grace, obs,
-                                                m_estop_pending, m_current_mode, m_seb_takeover);
+                                                m_estop_pending, m_current_mode, unused_takeover);
         if (m_estop_pending && sr.estop_reason == rt::kEstopReasonCanEstop) {
             sr.estop_reason = m_estop_reason;
         }
 
-        // SEB Brake Fallback Supervisor
-        {
-            rt::SebFallbackInput fb_in;
-            fb_in.now_us = now;
-            const int64_t last_hb = g_last_sys_hb_us.load();
-            const bool hb_lost = (!g_bench_solo_mode && (last_hb < 0
-                || (now - last_hb) > int64_t(rt::kHeartbeatTimeoutMsSys) * 1000));
-            fb_in.sys_hb_fresh = !hb_lost;
-            const int64_t last_7b9 = g_last_0x7B9_rx_us.load();
-            fb_in.sys_0x7B9_observed =
-                (last_7b9 >= 0 && (now - last_7b9) < 100'000);
-            fb_in.startup_grace_active = startup_grace;
-            const auto fb_out = rt::g_brake_fallback.update(fb_in);
-            m_seb_takeover = fb_out.emergency_tx_0x7B9;
-        }
-        g_seb_takeover.store(m_seb_takeover);
         g_mtr_unavailable.store(rt::g_mtr_health.mtr_unavailable, std::memory_order_relaxed);
-        g_brake_fallback_state.store(static_cast<uint8_t>(rt::g_brake_fallback.state()),
-                                     std::memory_order_relaxed);
 
         if (sr.estop_reason != 0) {
             g_estop_reason.store(sr.estop_reason);
@@ -1311,8 +1276,7 @@ static uint8_t task_health_snapshot() {
 #endif
 
             const bool is_active_local_trip = (sr.obstacle_triggered ||
-                                               sr.estop_reason == rt::kEstopReasonBusOff ||
-                                               m_seb_takeover);
+                                               sr.estop_reason == rt::kEstopReasonBusOff);
             const bool sys_clear_in_progress = g_sys_clear_in_progress.load(std::memory_order_relaxed);
             if (is_active_local_trip && !sys_clear_in_progress && can_send_estop()) {
                 can::Frame estop_frame;
@@ -1393,7 +1357,7 @@ static uint8_t task_health_snapshot() {
         motion_out.estop_reason = g_estop_reason.load();
         motion_out.safety_state = (ss == rt::SteerState::STEER_ACTIVE) ? 0 :
                                   (ss == rt::SteerState::STEER_FAULT)   ? 2 : 1;
-        motion_out.seb_emergency_takeover = m_seb_takeover;
+        motion_out.seb_emergency_takeover = false;
         motion_out.steer_command_enable = (m_current_mode != uint8_t(can::Mode::Manual));
         motion_out.reversing = sp.reversing;
 
