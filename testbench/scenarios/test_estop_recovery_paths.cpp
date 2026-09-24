@@ -68,8 +68,11 @@ bool test_estop_reset_blocked_by_fault() {
     TestBench tb;
     bring_up_auto(tb);
     tb.host().send_drive_cmd(1500);
+    tb.press_estop_button();
     tb.seb().inject_l3_fault();
     tb.run_for_ms(300, 10);
+    tb.release_estop_button();
+    tb.run_for_ms(50, 10);
     bool latched = tb.sys().is_estop_latched();
 
     // Attempt reset with the fault STILL present.

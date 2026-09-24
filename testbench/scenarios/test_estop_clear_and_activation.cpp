@@ -112,8 +112,8 @@ bool test_estop_clear_does_not_mean_controllers_active() {
     assert(bench.mtr().is_traction_enabled());
     assert(bench.mtr().dac_output() > 0);
 
-    // 2. Trigger ESTOP via SEB L3 fault
-    bench.seb().inject_l3_fault();
+    // 2. Trigger ESTOP via hardware button
+    bench.press_estop_button();
     bench.run_for_ms(250);
 
     assert(bench.sys().is_estop_latched());
@@ -122,8 +122,8 @@ bool test_estop_clear_does_not_mean_controllers_active() {
     assert(bench.mtr().dac_output() == 0);
     assert(bench.seb().actual_stroke_mm() > 20.0f); // Emergency brake clamped
 
-    // 3. Clear the SEB L3 fault cause
-    bench.seb().clear_fault();
+    // 3. Clear the hardware button cause
+    bench.release_estop_button();
     bench.run_for_ms(50);
 
     // 4. Operator presses START button -> ESTOP signal clears

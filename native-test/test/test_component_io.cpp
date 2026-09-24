@@ -84,8 +84,7 @@ CHECK_EQ(d.mode,1,"mode");CHECK_EQ(d.safety_state,0,"safety");}
 
 static void t9(){T("=== 9. 0x721 SEB ===");
 seb::Status s;s.alignment_status=1;s.stroke_value_raw=900;s.error_status=0;
-protocol::Frame f=protocol::Frame::standard(seb::kStatusId,seb::kDlc);f.data[0]=1|(0<<1)|(0<<2);f.data[2]=900&0xFF;f.data[3]=(900>>8)&0xFF;uint8_t cs=0;
-for(int i=0;i<7;i++)cs^=f.data[i];f.data[7]=cs^0xFF;
+protocol::Frame f;seb::encode_status(s,f);
 seb::Status d;seb::decode_status(f.view(),d);
 CHECK_EQ(d.stroke_value_raw,900,"stroke");CHECK_EQ(d.error_status,0,"ok");}
 

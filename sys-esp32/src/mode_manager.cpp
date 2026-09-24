@@ -54,6 +54,17 @@ bool ModeManager::tick(bool mode_btn_pressed, bool start_btn_pressed) {
             }
             m_prev_start_btn = start_btn_pressed;  // consume the edge
             return false;
+        } else if (sys::latched_fault_present()) {
+            if (sys::latched_causes_currently_clearable()) {
+                sys::clear_latched_fault_reasons();
+                set_mode(can::Mode::Manual);
+                m_prev_mode_btn = mode_btn_pressed;
+                m_prev_start_btn = start_btn_pressed;
+                m_debounce = kDebounceMs / 100;
+                return true;
+            }
+            m_prev_start_btn = start_btn_pressed;
+            return false;
         }
     }
 

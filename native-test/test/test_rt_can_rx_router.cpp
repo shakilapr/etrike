@@ -131,10 +131,11 @@ int main() {
 
         fr.id = can::kIdSbwStatus;
         fr.dlc = 8;
+        fr.data.fill(0);
         fr.data[0] = 0x01;
-        fr.data[2] = 0x30;
-        fr.data[3] = 0x75;  // 30000 little-endian
-        fr.data[7] = 0xBB;  // XOR(bytes 0-6) ^ 0xFF
+        fr.data[1] = static_cast<uint8_t>(30000 >> 8);
+        fr.data[2] = static_cast<uint8_t>(30000 & 0xFF);
+        fr.data[7] = etrike::protocol::profiles::xor8_ff_v1(fr.data.data(), 7);
         rt::route_frame(fr, false, q);
 
         CHECK(steer_angle == 30000);

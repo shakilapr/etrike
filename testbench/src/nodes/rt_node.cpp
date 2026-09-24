@@ -1,5 +1,6 @@
 #include "nodes/rt_node.hpp"
 #include "protocol/codecs/ses.hpp"
+#include "protocol/codecs/seb.hpp"
 #include "protocol/compat/e2e.hpp"
 #include "shared_config.h"
 
@@ -184,6 +185,15 @@ void RtNode::receive_can(const std::string& bus_name, const etrike::protocol::Fr
             consecutive_mtr_fbk_count_++;
             if (consecutive_mtr_fbk_count_ >= 3) {
                 mtr_feedback_lost_ = false;
+            }
+        } else if (cf.id == etrike::protocol::codecs::seb::kStatusId) {
+            etrike::protocol::codecs::seb::Status st{};
+            if (etrike::protocol::codecs::seb::decode_status(cf.view(), st)
+                == etrike::protocol::CodecStatus::Ok) {
+                if (st.error_status == 3) {
+                    host_speed_mmps_ = 0;
+                    commanded_speed_mmps_ = 0;
+                }
             }
         }
     }

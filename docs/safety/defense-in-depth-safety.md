@@ -190,4 +190,4 @@ ESTOP is an **absorbing state** — once entered, the only way out is a full pow
 
 *Primary reference: [[emergency-system]] for the complete ESTOP system, trigger paths, emergency response matrix, rider's guide, and testing procedures.*
 
-*See also: [[listen-before-speaking]] for actuator boot safety, [[external-watchdog]] for hardware watchdog, [[high-voltage-isolation]] for galvanic isolation, [[physics-model]] §8 for rollover threshold, [[architecture]] §7.6 for safety mechanisms, §3 for mode state machine.*
+*See also: [[dual-ecu-task-separation-and-safety-supervision]] for modern dual-ECU separation of duties and actuator supervision, [[listen-before-speaking]] for actuator boot safety, [[external-watchdog]] for hardware watchdog, [[high-voltage-isolation]] for galvanic isolation, [[physics-model]] §8 for rollover threshold, [[architecture]] §7.6 for safety mechanisms, §3 for mode state machine.*

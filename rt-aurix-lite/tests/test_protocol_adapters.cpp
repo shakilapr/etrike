@@ -90,16 +90,14 @@ void test_ses_status_decode() {
     st.steering_angle_raw = 1500;  // 150.0?
     st.rolling_counter = 5;
 
-    // ses::decode_status needs a raw frame; build one manually with a valid
-    // XOR8 checksum (bytes 0-6 ^ 0xFF at byte 7).
-    Frame frame = Frame::standard(0x201u, 8u);
-    frame.data[0] = 0x01u;                       // aligned
-    frame.data[2] = 1500u & 0xFFu;               // angle LE
-    frame.data[3] = (1500u >> 8u) & 0xFFu;
-    frame.data[6] = 0x03u | (5u << 4u);          // integrity + rolling counter
-    std::uint8_t cks = 0;
-    for (int i = 0; i < 7; ++i) cks ^= frame.data[i];
-    frame.data[7] = cks ^ 0xFFu;
+    ses::Status in{};
+    in.angle_aligned = true;
+    in.steering_angle_raw = 1500;
+    in.rolling_counter = 5;
+    in.rolling_counter_enabled = true;
+    in.checksum_enabled = true;
+    Frame frame{};
+    CHECK(etrike::protocol::succeeded(ses::encode_status(in, frame)));
 
     rta::SteeringFeedback out;
     CHECK(rta::decode_ses_status(frame.view(), out));
@@ -110,14 +108,14 @@ void test_ses_status_decode() {
 }
 
 void test_seb_status_decode() {
-    Frame frame = Frame::standard(0x721u, 8u);
-    frame.data[0] = 0x01u;                       // alignment status
-    frame.data[2] = 700u & 0xFFu;                // stroke LE
-    frame.data[3] = (700u >> 8u) & 0xFFu;
-    frame.data[6] = 0x03u | (7u << 4u);
-    std::uint8_t cks = 0;
-    for (int i = 0; i < 7; ++i) cks ^= frame.data[i];
-    frame.data[7] = cks ^ 0xFFu;
+    seb::Status in{};
+    in.alignment_status = true;
+    in.stroke_value_raw = 700;
+    in.rolling_counter = 7;
+    in.rolling_counter_enabled = true;
+    in.checksum_enabled = true;
+    Frame frame{};
+    CHECK(etrike::protocol::succeeded(seb::encode_status(in, frame)));
 
     rta::BrakeFeedback out;
     CHECK(rta::decode_seb_status(frame.view(), out));

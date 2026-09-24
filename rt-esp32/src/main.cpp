@@ -909,9 +909,8 @@ static uint8_t task_health_snapshot() {
                     if (seb_err == 3) {
                         rt::diag().raise(etrike::diagnostics::DiagId::RtSesL3Fault,
                                          static_cast<std::uint16_t>(seb_err));
-                        g_estop_reason.store(rt::kEstopReasonInternal);
-                        rt::SafetyEvent evt{rt::SafetyEvent::ESTOP, rt::kEstopReasonInternal};
-                        enqueue_safety_event(evt, pdMS_TO_TICKS(10));
+                        rt::HostDriveSnapshot zero{};
+                        if (g_host_cmd_mailbox) xQueueOverwrite(g_host_cmd_mailbox, &zero);
                     }
                     uint16_t pres = (value.control_mode == 1 ? value.pressure_value_raw : 0);
                     g_seb_pressure_raw.store(pres);

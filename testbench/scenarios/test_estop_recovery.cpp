@@ -34,44 +34,45 @@ bool test_estop_seb_l3_and_rearm_recovery() {
     bench.seb().inject_l3_fault();
     bench.run_for_ms(100);
 
-    // Verify distributed latching across every node
-    std::cout << "  [P3] Checking distributed ESTOP latch across all ECUs:\n";
+    // Verify brake fault latched, positive traction cut, steering alive (no hard ESTOP)
+    std::cout << "  [P3] Checking SEB L3 brake fault safety response:\n";
+    std::cout << "       SYS Latched SEB L3: " << ((bench.sys().latched_faults() & sys::kLatchedSebL3) ? "LATCHED" : "CLEAR") << "\n";
     std::cout << "       SYS ESTOP: " << (bench.sys().is_estop_latched() ? "LATCHED" : "CLEAR") << "\n";
     std::cout << "       RT  ESTOP: " << (bench.rt().is_estop_latched() ? "LATCHED" : "CLEAR") << "\n";
-    std::cout << "       MTR ESTOP: " << (bench.mtr().is_estop_latched() ? "LATCHED" : "CLEAR") << "\n";
     std::cout << "       MTR DAC:   " << bench.mtr().dac_output() << "\n";
 
-    assert(bench.sys().is_estop_latched());
-    assert(bench.rt().is_estop_latched());
-    assert(bench.mtr().is_estop_latched());
+    assert(bench.sys().latched_faults() & sys::kLatchedSebL3);
+    assert(!bench.sys().is_estop_latched());
+    assert(!bench.rt().is_estop_latched());
     assert(bench.mtr().dac_output() == 0); // Motor killed immediately
 
     // ── Phase 4: Clear physical fault, attempt illegal drive commands ─
-    std::cout << "  [P4] Clearing SEB fault, attempting drive while ESTOP is latched...\n";
+    std::cout << "  [P4] Clearing SEB fault, attempting drive while brake fault is latched...\n";
     bench.seb().clear_fault();
     bench.host().send_drive_cmd(2000);
     bench.run_for_ms(1000);
 
     // Assert motion NEVER returns
     assert(bench.mtr().dac_output() == 0);
-    assert(bench.sys().is_estop_latched());
+    assert(bench.sys().latched_faults() & sys::kLatchedSebL3);
     std::cout << "  [P4] Motion remained suppressed (DAC == 0) as required.\n";
 
     // ── Phase 5: Operator presses START button ───────────────────────
-    std::cout << "  [P5] Operator presses START button to clear SYS/RT/MTR latches...\n";
+    std::cout << "  [P5] Operator presses START button to clear latched brake fault...\n";
     bench.press_start_button();
     bench.run_for_ms(200);
 
+    std::cout << "       SYS Latched SEB L3: " << ((bench.sys().latched_faults() & sys::kLatchedSebL3) ? "LATCHED" : "CLEAR") << "\n";
     std::cout << "       SYS ESTOP: " << (bench.sys().is_estop_latched() ? "LATCHED" : "CLEAR") << "\n";
     std::cout << "       RT  ESTOP: " << (bench.rt().is_estop_latched() ? "LATCHED" : "CLEAR") << "\n";
-    std::cout << "       MTR ESTOP: " << (bench.mtr().is_estop_latched() ? "LATCHED" : "CLEAR") << "\n";
 
+    assert(!(bench.sys().latched_faults() & sys::kLatchedSebL3));
     assert(!bench.sys().is_estop_latched());
     assert(!bench.rt().is_estop_latched());
     assert(!bench.mtr().is_estop_latched());
 
-    // CRITICAL: Even though ESTOP cleared, MTR requires explicit 0x113 REARM edge
-    std::cout << "       Checking MTR REARM status (DAC must remain 0)...\n";
+    // CRITICAL: Even though fault cleared, MTR requires explicit mode / drive transition
+    std::cout << "       Checking MTR status (DAC must remain 0)...\n";
     assert(bench.mtr().dac_output() == 0);
     std::cout << "  [P5] Verified: MTR remained unrearmed (DAC == 0) despite ESTOP clear.\n";
 

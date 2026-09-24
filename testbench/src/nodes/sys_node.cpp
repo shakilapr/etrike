@@ -122,8 +122,8 @@ void SysNode::receive_can(const std::string& bus_name, const etrike::protocol::F
 
         if (st.error_status == 3) {
             sys::set_latched_fault(sys::kLatchedSebL3);
-            safety_.set_estop(true);
-            mode_mgr_.force_estop();
+            publish_mode_cmd(last_now_ms_);
+            publish_pwr_cmd(last_now_ms_);
         }
 
         // Following error detection (Stroke mode only — mirrors sys main.cpp:510;
@@ -136,8 +136,8 @@ void SysNode::receive_can(const std::string& bus_name, const etrike::protocol::F
                     following_excursion_start_ms_ = last_now_ms_;
                 } else if (last_now_ms_ - following_excursion_start_ms_ >= 200) {
                     sys::set_latched_fault(sys::kLatchedBrakeFollowing);
-                    safety_.set_estop(true);
-                    mode_mgr_.force_estop();
+                    publish_mode_cmd(last_now_ms_);
+                    publish_pwr_cmd(last_now_ms_);
                 }
             } else {
                 following_excursion_start_ms_ = 0;
@@ -162,9 +162,8 @@ void SysNode::receive_can(const std::string& bus_name, const etrike::protocol::F
         if (l3_found) {
             sys::set_latched_fault(sys::kLatchedSebL3);
             g_seb_error_status.store(3);
-            safety_.set_estop(true);
-            mode_mgr_.force_estop();
-            broadcast_estop();
+            publish_mode_cmd(last_now_ms_);
+            publish_pwr_cmd(last_now_ms_);
         } else if (g_seb_error_status.load() == 3) {
             g_seb_error_status.store(0);
         }
@@ -229,6 +228,8 @@ void SysNode::step(uint32_t now_ms, uint32_t dt_ms) {
         if (mode_mgr_.mode() != can::Mode::Estop) {
             sys::mark_estop_reset(now_ms);
         }
+        publish_mode_cmd(now_ms);
+        publish_pwr_cmd(now_ms);
         hw_start_pressed_ = false;
     } else if (hw_mode_pressed_) {
         for (int i = 0; i < 6; ++i) mode_mgr_.tick(false, false);

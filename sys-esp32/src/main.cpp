@@ -471,9 +471,8 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
                     // fault (aligned with the 0x731 L3 path below) — full ESTOP.
                     // The latched reason survives until the explicit reset path
                     // confirms the underlying L3 has cleared.
-                    ESP_LOGE(TAG, "SEB error_status L3 in 0x721 (status=0x%02x)", value.status_byte);
+                    ESP_LOGE(TAG, "SEB error_status L3 in 0x721 (status=0x%02x) — latching brake fault", value.status_byte);
                     sys::set_latched_fault(sys::kLatchedSebL3);
-                    enter_estop("SEB 0x721 L3 fault");
                 }
             }
             // Extract actual stroke (LE u16 at bytes 2-3, scale 0.05, offset -30).
@@ -543,7 +542,6 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
                                               "diff=%u raw (~%d mm)",
                                          cmd, actual_raw, diff, int(diff * 0.05f));
                                 sys::set_latched_fault(sys::kLatchedBrakeFollowing);
-                                enter_estop("Brake following error latched");
                             }
                         }
                     } else {
@@ -595,8 +593,9 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
                 }
             }
             if (l3_found) {
-                enter_estop("SEB 0x731 L3 fault");
-                ESP_LOGW(TAG, "ESTOP triggered by SEB 0x731 L3 fault(s)");
+                sys::set_latched_fault(sys::kLatchedSebL3);
+                g_seb_error_status.store(3, std::memory_order_relaxed);
+                ESP_LOGW(TAG, "Brake fault latched by SEB 0x731 L3 fault(s)");
             }
             break;
         }

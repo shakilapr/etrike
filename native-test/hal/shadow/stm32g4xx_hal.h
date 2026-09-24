@@ -68,3 +68,7 @@ inline void HAL_GPIO_Init(void* port, GPIO_InitTypeDef* init) {
     (void)port;
     (void)init;
 }
+
+inline void HAL_Delay(uint32_t ms) {
+    (void)ms;
+}

@@ -15,15 +15,15 @@ bool test_01_estop_reset_loop() {
     bench.boot();
     bench.run_for_ms(1500);
 
-    // 1. Trigger ESTOP via SEB L3
-    bench.seb().inject_l3_fault();
+    // 1. Trigger ESTOP via hardware button
+    bench.press_estop_button();
     bench.run_for_ms(100);
     assert(bench.sys().is_estop_latched());
     assert(bench.rt().is_estop_latched());
     assert(bench.mtr().is_estop_latched());
 
     // 2. Remove the original cause
-    bench.seb().clear_fault();
+    bench.release_estop_button();
     bench.run_for_ms(50);
 
     // 3. Keep RT powered and press START button

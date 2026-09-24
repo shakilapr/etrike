@@ -142,15 +142,16 @@ bool test_estop_trigger_04_seb_l3_fault() {
     bench.seb().inject_l3_fault();
     bench.run_for_ms(60);
 
-    assert(bench.sys().is_estop_latched());
+    // SEB fault latches kLatchedSebL3; positive drive is cut without hard ESTOP killing steering
+    assert(!bench.sys().is_estop_latched());
     assert(bench.sys().latched_faults() & sys::kLatchedSebL3);
-    assert(bench.rt().is_estop_latched());
-    assert(bench.mtr().is_estop_latched());
+    assert(!bench.rt().is_estop_latched());
+    assert(bench.mtr().dac_output() == 0);
 
     // 2. Refusal check: try reset while error_status == 3
     bench.press_start_button();
     bench.run_for_ms(100);
-    assert(bench.sys().is_estop_latched());
+    assert(!bench.sys().is_estop_latched());
     assert(bench.sys().latched_faults() & sys::kLatchedSebL3);
 
     // 3. Clear cause: SEB fault cleared
@@ -182,15 +183,16 @@ bool test_estop_trigger_05_brake_following_error() {
     bench.seb().inject_stuck(15.0f);
     bench.run_for_ms(250); // 250ms > 200ms threshold
 
-    assert(bench.sys().is_estop_latched());
+    // Brake following error latches kLatchedBrakeFollowing; traction cut, steering preserved
+    assert(!bench.sys().is_estop_latched());
     assert(bench.sys().latched_faults() & sys::kLatchedBrakeFollowing);
-    assert(bench.rt().is_estop_latched());
-    assert(bench.mtr().is_estop_latched());
+    assert(!bench.rt().is_estop_latched());
+    assert(bench.mtr().dac_output() == 0);
 
     // 2. Refusal check: try reset while actuator is still stuck
     bench.press_start_button();
     bench.run_for_ms(100);
-    assert(bench.sys().is_estop_latched());
+    assert(!bench.sys().is_estop_latched());
     assert(bench.sys().latched_faults() & sys::kLatchedBrakeFollowing);
 
     // 3. Clear cause: actuator freed, returns to commanded position
@@ -301,16 +303,17 @@ bool test_estop_trigger_08_seb_0x731_err_info() {
     bench.low_can().send(NodeId::SEB, fr);
     bench.run_for_ms(50);
 
-    assert(bench.sys().is_estop_latched());
+    assert(!bench.sys().is_estop_latched());
     assert(bench.sys().latched_faults() & sys::kLatchedSebL3);
-    assert(bench.rt().is_estop_latched());
-    assert(bench.mtr().is_estop_latched());
+    assert(!bench.rt().is_estop_latched());
+    assert(bench.mtr().dac_output() == 0);
 
     // 2. Refusal check: keep sending 0x731 L3 error
     bench.low_can().send(NodeId::SEB, fr);
     bench.press_start_button();
     bench.run_for_ms(100);
-    assert(bench.sys().is_estop_latched());
+    assert(!bench.sys().is_estop_latched());
+    assert(bench.sys().latched_faults() & sys::kLatchedSebL3);
 
     // 3. Clear cause: stop 0x731 L3 frame and clear SEB
     bench.seb().clear_fault();
@@ -418,13 +421,13 @@ bool test_estop_trigger_11_mode_longpress_reset() {
     bench.boot();
     bench.run_for_ms(1500);
 
-    // 1. Trigger ESTOP via SEB L3
-    bench.seb().inject_l3_fault();
+    // 1. Trigger ESTOP via hardware button
+    bench.press_estop_button();
     bench.run_for_ms(100);
     assert(bench.sys().is_estop_latched());
 
-    // 2. Clear cause
-    bench.seb().clear_fault();
+    // 2. Clear cause (release button)
+    bench.release_estop_button();
     bench.run_for_ms(50);
 
     // 3. Instead of START button, hold MODE button for 3.0 seconds

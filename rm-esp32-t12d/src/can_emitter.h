@@ -72,7 +72,7 @@ public:
     }
 
     void reset_counters() noexcept {
-        rearm_ses_ticks_ = 20;
+        rearm_ses_ticks_ = 0;
         ses_online_ = false;
         last_0x201_ms_ = 0;
         ses_mode_status_ = 0;
@@ -89,7 +89,7 @@ public:
     }
 
 private:
-    uint32_t rearm_ses_ticks_{20};   // Countdown ticks for Control_Enable rising edge (200ms)
+    uint32_t rearm_ses_ticks_{0};   // Countdown ticks for Control_Enable rising edge (200ms)
     uint32_t last_0x201_ms_{0};       // Timestamp of last received 0x201 SES_STATUS
     uint8_t  ses_mode_status_{0};     // 0 = Manual/Assist, 1 = Auto/Angle Control
     bool     ses_online_{false};
