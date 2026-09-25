@@ -24,7 +24,8 @@ enum class SteerState : uint8_t {
     STEER_ACTIVE,             // Normal operation — transmit 0x169 at 50 Hz
     ESTOP_RAMP_TO_ZERO,       // Non-obstacle ESTOP: ramp to 0° at 20°/s, then hold
     ESTOP_HOLD_THEN_SILENT,   // Obstacle ESTOP: hold 500ms, then silent-stop
-    STEER_FAULT               // Timeout or silent-stop — stop transmitting
+    STEER_SILENT_STOP,        // Completed ESTOP centering/hold — de-energized, nominal stop
+    STEER_FAULT               // Hardware/sync fault (timeout, jam, plausibility)
 };
 class SteeringControl {
 public:
@@ -119,12 +120,11 @@ public:
                     m_centering_complete_ms = 0;
                 } else {
                     // Ramp complete — hold at 0° for kSteerEstopCenteringHoldMs, then silent-stop
-                    // into STEER_LISTEN_SYNC to de-energize the motor without asserting a spurious STEER_FAULT.
+                    // into STEER_SILENT_STOP to de-energize the motor without asserting a spurious STEER_FAULT.
                     if (m_centering_complete_ms == 0) {
                         m_centering_complete_ms = now_ms;
                     } else if (now_ms - m_centering_complete_ms >= static_cast<uint32_t>(kSteerEstopCenteringHoldMs)) {
-                        m_state = SteerState::STEER_LISTEN_SYNC;
-                        m_sync_start_ms = now_ms;
+                        m_state = SteerState::STEER_SILENT_STOP;
                         return false;
                     }
                 }
@@ -169,11 +169,12 @@ public:
                 m_state = SteerState::STEER_ACTIVE;
                 m_estop_exit_pending = false;
             } else {
-                m_state = SteerState::STEER_FAULT;
+                m_state = SteerState::STEER_SILENT_STOP;
             }
             return false;
         }
 
+        case SteerState::STEER_SILENT_STOP:
         case SteerState::STEER_FAULT:
             return false;
         }
@@ -223,9 +224,10 @@ public:
         }
     }
 
-    // Reset from FAULT to LISTEN_SYNC (START button short-press retry).
+    // Reset from FAULT or SILENT_STOP to LISTEN_SYNC (START button short-press retry).
     void reset_to_listen(uint32_t now_ms) {
-        if (m_state == SteerState::STEER_FAULT) {
+        if (m_state == SteerState::STEER_FAULT ||
+            m_state == SteerState::STEER_SILENT_STOP) {
             m_state = SteerState::STEER_LISTEN_SYNC;
             m_sync_start_ms = now_ms;
         }
@@ -234,14 +236,15 @@ public:
     // Gap #6: Exit ESTOP states — deferred until ramp/hold completes.
     // Pressing START during centering ramp must NOT stop 0x169 mid-ramp.
     // The steering ramp completes first, then transitions to ACTIVE.
-    // If steering already completed centering hold and entered silent-stop (STEER_FAULT),
+    // If steering already completed centering hold and entered silent-stop (STEER_SILENT_STOP),
     // or entered STEER_FAULT due to stationary scrub / jam, transition to STEER_LISTEN_SYNC
     // so normal operation can re-acquire without requiring a full ECU reboot.
     void exit_estop(uint32_t now_ms = 0) {
         if (m_state == SteerState::ESTOP_RAMP_TO_ZERO ||
             m_state == SteerState::ESTOP_HOLD_THEN_SILENT) {
             m_estop_exit_pending = true;  // defer until ramp/hold completes
-        } else if (m_state == SteerState::STEER_FAULT) {
+        } else if (m_state == SteerState::STEER_SILENT_STOP ||
+                   m_state == SteerState::STEER_FAULT) {
             m_state = SteerState::STEER_LISTEN_SYNC;
             m_sync_start_ms = now_ms;
         }

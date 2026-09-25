@@ -832,33 +832,40 @@ Brake lamp illuminates on any of: lever pressed, CAN 0x302 brake bit set, or SEB
 
 ## 18. Steering Control Architecture (Full)
 
-### 6-State Machine with Sub-Behaviors
+### 7-State Machine with Sub-Behaviors
 
 ```
-BOOT_WAIT(500ms) ??? LISTEN_SYNC ??? ACTIVE
-                        ?                ?
-                   ???????????      ???????????
-                   ?timeout?plaus?    ?obst?es?top?
-                   ?       ?     ?    ?    ?  ?
-                  FAULT  FAULT FAULT RAMP_TO_ZERO(20?/s)
-                   ?                     ?
-                   ?(follow err >300ms)   ?(ramp done)
-                   ???????????????????????
-                                        HOLD_THEN_SILENT(500ms)
-                                           ?(hold expires)
-                                          SILENT_STOP
+BOOT_WAIT(500ms) ───► LISTEN_SYNC ───► ACTIVE
+                        │                │
+                   ┌────┴──────┐    ┌────┴──────┐
+                   │timeout/pla│    │obst/estop │
+                   │   usible  │    │           │
+                   ▼           ▼    ▼           ▼
+                 FAULT       FAULT HOLD(500ms) RAMP_TO_ZERO(20°/s)
+                   ▲                │           │
+                   │(follow err>300)│           ▼ (ramp done)
+                   │                └─────────► HOLD(1500ms)
+                   │                            │ (hold expires)
+                   │                            ▼
+                   └───────────────────────── SILENT_STOP (de-energized, nominal)
 ```
 
 **LISTEN_SYNC failures:**
-- Timeout: no 0x201 for 5s ? FAULT
-- Alignment: SES reports `angle_status != 1` ? FAULT
-- Plausibility: angle >30? off center at boot ? FAULT
+- Timeout: no 0x201 for 5s → FAULT
+- Alignment: SES reports `angle_status != 1` → FAULT
+- Plausibility: angle >30° off center at boot → FAULT
 
-**RAM monitoring (Gap C3):** During ESTOP_RAMP_TO_ZERO, monitors `|active_angle - ses_angle|`. If >5? for >1s ? FAULT (jammed linkage detection).
+**Silent Stop (Nominal ESTOP Completion):**
+- Once ESTOP centering ramp reaches 0°, steering holds at center for 1500 ms to settle, then transitions to `STEER_SILENT_STOP`.
+- Transmission of 0x169 ceases to de-energize the motor and avoid fighting stationary ground scrub friction.
+- `STEER_SILENT_STOP` reports `safety_state = 1` (`InternalEstop`) and `degraded = false`. It is NOT a hardware fault.
+- Genuine faults (`RtSteerSyncTimeout`, `RtSteerImplausibleAngle`, `RtSteerEstopJam`) transition to `STEER_FAULT`, reporting `safety_state = 2` (`Fault`) and `degraded = true`.
 
-**Deferred exit (Gap #6):** START button during ramp sets `m_estop_exit_pending`. Ramp completes to 0? first, THEN transitions to ACTIVE. A new `set_target()` clears pending exit. A new `start_estop()` overrides it.
+**RAM monitoring (Gap C3):** During ESTOP_RAMP_TO_ZERO, monitors `|active_angle - ses_angle|`. If >5° for >1s → FAULT (jammed linkage detection).
 
-**Obstacle ESTOP dynamic clamp (Gap #9):** Hold angle is clamped to `compute_dynamic_limit(speed)`. At high speed the limit may be only 5?, preventing rollover during hard braking.
+**Deferred exit (Gap #6):** START button during ramp sets `m_estop_exit_pending`. Ramp completes to 0° first, THEN transitions to ACTIVE. A new `set_target()` clears pending exit. A new `start_estop()` overrides it.
+
+**Obstacle ESTOP dynamic clamp (Gap #9):** Hold angle is clamped to `compute_dynamic_limit(speed)`. At high speed the limit may be only 5°, preventing rollover during hard braking.
 
 **Dynamic slew rate:** `125 + (speed_kmh - 2) * (400/23)` deg/s, clamped [125, 525]. Faster steering at higher speeds.
 
@@ -873,8 +880,9 @@ clamped to [5.0, 40.0]
 
 ```
 threshold_deg = max(2.0, 0.25 * dynamic_limit)
-must persist >300ms to trigger FAULT
+must persist >300ms against rate-limited reference to trigger FAULT
 ```
+To avoid false-alarm ESTOPs on rapid step setpoints, the monitor compares actual angle against an internal slew-rate limited reference angle advancing toward the command at the actuator's physical slew rate (`kSteerRateMinDegS`). A healthy actuator slewing normally tracks the reference; only an actuator stalled or jammed for >300ms trips `kEstopReasonFollowingError`.
 
 ---
 

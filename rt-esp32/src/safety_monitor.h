@@ -187,7 +187,6 @@ inline rt::SafetyResult run_safety_checks(int64_t now, bool startup_grace,
     }
 
     // 5. Steering following-error check (arch §7.6, Phase 3 remediation)
-    // 5. Steering following-error check (arch §7.6, Phase 3 remediation)
     // Slew-progress stall supervision: If the actuator is actively rotating towards
     // the target, it is in normal mechanical transit and will not trip. If it stalls / jams
     // (no progress towards target for >300ms while error > threshold), ESTOP trips.
