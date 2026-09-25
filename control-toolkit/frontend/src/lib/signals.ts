@@ -375,12 +375,12 @@ export function getSteeringPipeline(messages: MessageState[]) {
   const hostAngleRaw = signalNum(hostSteer, 'steer_angle_0_1deg')
   const hostSteerDeg = hostAngleRaw != null ? hostAngleRaw * 0.1 : null
 
-  const rtAngleRaw = signalNum(rtSesReq, 'target_angle_raw')
+  const rtAngleRaw = frameRecent(rtSesReq) ? signalNum(rtSesReq, 'target_angle_raw') : null
   const rtTargetAngleDeg =
     rtAngleRaw != null
       ? (rtAngleRaw >= 10000 ? (rtAngleRaw - 30000) * 0.1 : rtAngleRaw * 0.1)
       : null
-  const rtTargetSlewRate = signalNum(rtSesReq, 'target_speed_raw')
+  const rtTargetSlewRate = frameRecent(rtSesReq) ? signalNum(rtSesReq, 'target_speed_raw') : null
   const rtSteerStateCode = signalNum(rtState, 'steer_state')
   const steerStateLabels: Record<number, string> = {
     0: 'BOOT_WAIT',
@@ -438,11 +438,11 @@ export function getBrakePipeline(messages: MessageState[]) {
   const sebStatus = findMsg(messages, 'SEB_STATUS')
   const brakeDiag = findMsg(messages, 'BRAKE_DIAG')
 
-  const hostPressureKpa = signalNum(hostBrake, 'brake_pressure_kpa')
-  const rtPressureKpa = signalNum(rtBrake, 'brake_pressure_kpa')
+  const hostPressureKpa = frameRecent(hostBrake) ? signalNum(hostBrake, 'brake_pressure_kpa') : null
+  const rtPressureKpa = frameRecent(rtBrake) ? signalNum(rtBrake, 'brake_pressure_kpa') : null
 
-  const sebReqPressureRaw = signalNum(sysSebReq, 'pressure_request_raw')
-  const sebReqStrokeRaw = signalNum(sysSebReq, 'stroke_request_raw')
+  const sebReqPressureRaw = frameRecent(sysSebReq) ? signalNum(sysSebReq, 'pressure_request_raw') : null
+  const sebReqStrokeRaw = frameRecent(sysSebReq) ? signalNum(sysSebReq, 'stroke_request_raw') : null
   const sysPressureKpa =
     signalNum(sysSebReq, 'brake_pressure_kpa') ??
     (sebReqPressureRaw != null ? sebReqPressureRaw * 50 : null)
