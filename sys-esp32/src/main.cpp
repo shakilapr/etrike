@@ -105,7 +105,7 @@ static bool send_estop_frame(const char* caller) {
     can::gen::SafetyEstop message{};
     if (can::gen::encode_safety_estop(message, frame) != can::gen::CodecStatus::Ok)
         return false;
-    sys::mark_estop_broadcast(static_cast<uint32_t>(xTaskGetTickCount()));
+    sys::mark_estop_broadcast(static_cast<uint32_t>(pdTICKS_TO_MS(xTaskGetTickCount())));
     return send_can(frame, caller);
 }
 
@@ -189,15 +189,19 @@ static std::atomic<uint16_t> g_cmd_stroke_raw{600};             // 600 = 0mm
 // ── SEB version first-receipt guard (0x741) ─────────────────────────
 static std::atomic<bool>     g_seb_version_logged{false};
 
-// ── ESTOP trigger timestamp ─────────────────────────────────────────
+// ── ESTOP trigger timestamp & MTR ACK tracking ──────────────────────
+#include "mtr_estop_ack.h"
 static std::atomic<uint32_t> g_last_estop_trigger_tick{0};
+static sys::MtrEstopAckWatchdog g_mtr_ack_watchdog;
 
 // Authoritative ESTOP entry helper.
 static void enter_estop(const char* reason) {
     const bool was_estop = (g_mode_mgr.mode() == can::Mode::Estop);
     if (!was_estop) {
         g_mode_mgr.force_estop();
-        g_last_estop_trigger_tick.store(static_cast<uint32_t>(xTaskGetTickCount()), std::memory_order_relaxed);
+        const uint32_t now_ms = static_cast<uint32_t>(pdTICKS_TO_MS(xTaskGetTickCount()));
+        g_last_estop_trigger_tick.store(now_ms, std::memory_order_relaxed);
+        g_mtr_ack_watchdog.trigger(now_ms, g_motor_fault_flags.load(std::memory_order_relaxed));
         ESP_LOGE(TAG, "ESTOP entered [edge]: %s", reason);
     }
     // Broadcast 0x001 on CAN (rate-limited by can_send_estop)
@@ -342,7 +346,7 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
                 /*physical_estop=*/g_safety.estop_active(),
                 /*hb_ok=*/g_safety.heartbeat_ok(),
                 /*measured_speed_mmps=*/g_wheel_measured_mmps.load(std::memory_order_relaxed),
-                /*mtr_ack_confirmed=*/true,
+                /*mtr_ack_confirmed=*/(g_bypass_mtr_absent || g_mtr_ack_watchdog.has_acknowledged()),
                 /*token=*/static_cast<uint16_t>(req.reset_token)
             );
 
@@ -354,7 +358,7 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
             if (blockers == 0) {
                 reset_ok = g_mode_mgr.try_exit_estop_remote(blockers);
                 if (reset_ok) {
-                    sys::mark_estop_reset(static_cast<uint32_t>(xTaskGetTickCount()));
+                    sys::mark_estop_reset(static_cast<uint32_t>(pdTICKS_TO_MS(xTaskGetTickCount())));
                     ESP_LOGI(TAG, "ESTOP reset via Host request seq=%u accepted", req.request_seq);
                 }
             }
@@ -382,6 +386,7 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
             if (can::gen::decode_mtr_motor_fbk(fr.view(), fbk) != can::gen::CodecStatus::Ok) break;
             g_motor_command_speed_mmps.store(fbk.motor_command_speed_mmps, std::memory_order_relaxed);
             g_motor_fault_flags.store(fbk.fault_flags, std::memory_order_relaxed);
+            g_mtr_ack_watchdog.on_feedback_received(fbk.fault_flags);
             g_mtr_gear_state.store(fbk.gear_state, std::memory_order_relaxed);  // C6b
             g_last_mtr_fbk_tick.store(xTaskGetTickCount(), std::memory_order_relaxed);
 
@@ -390,10 +395,10 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
             // If SYS missed the ESTOP frame, this provides a redundant path.
             // Guarded with rx_estop_suppressed() so that during an operator reset out of ESTOP,
             // the lingering acknowledgment from MTR does not immediately re-trip SYS into ESTOP.
-            const uint32_t now_tick = static_cast<uint32_t>(xTaskGetTickCount());
+            const uint32_t now_ms = static_cast<uint32_t>(pdTICKS_TO_MS(xTaskGetTickCount()));
             if ((fbk.fault_flags & shared::kMtrFaultEstopActive)
                 && g_mode_mgr.mode() != can::Mode::Estop
-                && !sys::rx_estop_suppressed(now_tick)) {
+                && !sys::rx_estop_suppressed(now_ms)) {
                 ESP_LOGW(TAG, "MTR reports ESTOP_ACTIVE in 0x206 fault_flags — propagating");
                 enter_estop("MTR ESTOP_ACTIVE propagated");
             }
@@ -692,6 +697,23 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
             }
         }
 
+        // F3: MTR ESTOP ACK non-blocking supervision (BUG-03)
+        // If in ESTOP on a vehicle build, monitor if MTR confirmed ESTOP_ACTIVE in 0x206.
+        // Never force ESTOP or flood CAN on retry; log rate-limited warning if unconfirmed > 500ms.
+        if (!g_bypass_mtr_absent && g_mode_mgr.mode() == can::Mode::Estop) {
+            if (!g_mtr_ack_watchdog.has_acknowledged()) {
+                uint32_t estop_start = g_last_estop_trigger_tick.load(std::memory_order_relaxed);
+                uint32_t now_ms = static_cast<uint32_t>(pdTICKS_TO_MS(xTaskGetTickCount()));
+                if (estop_start > 0 && (now_ms - estop_start) >= 500) {
+                    static TickType_t last_ack_warn = 0;
+                    if (last_ack_warn == 0 || (xTaskGetTickCount() - last_ack_warn) >= pdMS_TO_TICKS(5000)) {
+                        ESP_LOGW(TAG, "MTR ESTOP ACK unconfirmed (waiting for 0x206)");
+                        last_ack_warn = xTaskGetTickCount();
+                    }
+                }
+            }
+        }
+
         // F4: 0x206 staleness check (Gap #15)
         // 0x206 is setpoint-echo telemetry without physical speed sensing;
         // traction loss / runaway supervision will be handled when encoders are fitted.
@@ -738,7 +760,7 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
         // 0x001 still in flight on the bus cannot instantly re-latch ESTOP
         // (livelock). The harness shares this exact policy via sys::rx_estop_suppressed.
         if (mode_was_estop && g_mode_mgr.mode() != can::Mode::Estop) {
-            sys::mark_estop_reset(static_cast<uint32_t>(xTaskGetTickCount()));
+            sys::mark_estop_reset(static_cast<uint32_t>(pdTICKS_TO_MS(xTaskGetTickCount())));
         }
         mode_was_estop = (g_mode_mgr.mode() == can::Mode::Estop);
         if (changed) {
@@ -916,8 +938,10 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
                 // SEB has been acquired at least once; monitor runtime staleness.
                 TickType_t last = g_last_seb_status_tick.load(std::memory_order_relaxed);
                 const bool stale = (now_ticks - last) >= pdMS_TO_TICKS(sys::kSebStatusTimeoutMs);
+                static int seb_comms_recover_count = 0;
                 if (stale) {
                     sys::set_inhibit(sys::kInhibitSebCommsLoss);
+                    seb_comms_recover_count = 0;
                     static TickType_t last_staleness_warn = 0;
                     if (last_staleness_warn == 0
                         || (now_ticks - last_staleness_warn) >= pdMS_TO_TICKS(1000)) {
@@ -928,7 +952,6 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
                 } else if (sys::g_inhibit_reasons.load() & sys::kInhibitSebCommsLoss) {
                     // Fresh status present: confirmed recovery
                     // (consecutive fresh observations at this 50 Hz cadence).
-                    static int seb_comms_recover_count = 0;
                     if (++seb_comms_recover_count >= 3) {
                         sys::clear_inhibit(sys::kInhibitSebCommsLoss);
                         seb_comms_recover_count = 0;

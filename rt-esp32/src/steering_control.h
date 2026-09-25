@@ -82,10 +82,10 @@ public:
             if (ses_angle_raw == INT16_MIN) return false;
             // Alignment check (gap C2): SES must report angle_status == 1
             if (ses_angle_status == 0) return false;  // still center-finding
-            // Angle plausibility: at power-on wheels should be near center.
-            // If >30° off, likely wrong offset or sensor fault — refuse ACTIVE.
-            if (std::abs(ses_angle_raw) > 300) {  // 30° in 0.1° units
-                ESP_LOGE("steer", "Angle implausible at sync: %d (0.1°) — check offset", ses_angle_raw);
+            // Angle plausibility: check against physical mechanical stops (45° = 450 in 0.1° units).
+            // Normal parked turns (e.g. 35°) within the 40° limit must not be falsely rejected.
+            if (std::abs(ses_angle_raw) > 450) {
+                ESP_LOGE("steer", "Angle outside physical stops at sync: %d (0.1°) — sensor fault", ses_angle_raw);
                 rt::diag().raise(etrike::diagnostics::DiagId::RtSteerImplausibleAngle,
                                  static_cast<std::uint16_t>(std::abs(ses_angle_raw)));
                 m_state = SteerState::STEER_FAULT;
