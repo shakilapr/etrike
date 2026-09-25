@@ -32,3 +32,5 @@ deployment blockers; source configuration takes precedence over older tables.
 - GPIO33-37 are unavailable on the project's ESP32-S3 N16R8 modules because they are used by the octal flash/PSRAM interface. GPIO35 is not a strapping pin, but it must not be used as board I/O on this module variant.
 - GPIO0, GPIO3, GPIO45, and GPIO46 are ESP32-S3 strapping pins. Do not move safety or actuator wiring to them without a boot-level analysis.
 - Relay coils, lamps, and 72 V interfaces require transistor/opto drivers, flyback suppression, suitable fusing, and a common low-voltage ground where isolation is not deliberate. No ESP32 GPIO can drive those loads directly.
+- GPIO48 on `esp32-s3-devkitc-1-n16r8` is wired to the onboard WS2812 addressable RGB LED. To use the onboard diagnostic visual language ([`rgb-status-led-visual-language.md`](./rgb-status-led-visual-language.md)) on SYS, `kBulbAuto` must be moved off GPIO48 to a free GPIO (e.g. GPIO10).
+

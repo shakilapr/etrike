@@ -110,13 +110,11 @@ SYS separates transient/recoverable degradation from permanent safety-latched fa
 1. **Transient Inhibits (`InhibitReason`):**
    - `kInhibitMtrFbkLoss`: `0x206` missing $> 200\,\text{ms}$.
    - `kInhibitSebCommsLoss`: `0x721` missing $> 100\,\text{ms}$ (or not seen within 1000 ms of boot).
-   - `kInhibitBrakeFollowing`: Brake cylinder stroke excursion $> 3\,\text{mm}$ ($> 60$ raw) persisting $> 100\,\text{ms}$ (debounced).
    - **Action:** Clamps `0x110` mode to MANUAL and drops `0x113` power to OFF. Motion is inhibited.
    - **Recovery:** Clears automatically after 3 consecutive healthy frames.
 
 2. **Latched Safety Faults (`LatchedFaultReason`):**
-   - `kLatchedBrakeFollowing`: Brake excursion persisting $\ge 500\,\text{ms}$ without mechanical progress (actuator stall/jam).
-   - `kLatchedSebL3`: `0x721` reports error status $\ge 3$ or `0x731` reports Level 3 error bits.
+   - `kLatchedSebL3`: `0x721` reports error status $\ge 3$ or `0x731` reports Level 3 error bits (actuator internal hardware fault / overcurrent / motor stall).
    - **Action:** Clamps `0x110` mode to MANUAL and drops `0x113` power to OFF, cutting positive propulsion while keeping steer-by-wire (SES) operational and 12V auxiliary power intact (does not force ESTOP or broadcast `0x001`).
    - **Recovery:** Requires an explicit validated reset transaction (`START` button falling edge or `0x114` remote reset) while `latched_causes_currently_clearable()` returns true.
 

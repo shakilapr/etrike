@@ -190,59 +190,10 @@ inline rt::SafetyResult run_safety_checks(int64_t now, bool startup_grace,
                          static_cast<std::uint16_t>((now - host_hb) / 1000));
     }
 
-    // 5. Steering following-error check (arch §7.6, Phase 3 remediation)
-    // Slew-progress stall supervision: If the actuator is actively rotating towards
-    // the target, it is in normal mechanical transit and will not trip. If it stalls / jams
-    // (no progress towards target for >300ms while error > threshold), ESTOP trips.
-    static int steer_follow_err_ticks = 0;
-    static int16_t prev_actual_0_1deg = INT16_MIN;
-
-    if (!g_bypass_eps_sync && !r.zero_setpoints
-        && g_steering.state() == rt::SteerState::STEER_ACTIVE) {
-        int16_t cmd_0_1deg    = g_last_cmd_angle_0_1deg.load();
-        int16_t actual_0_1deg = g_ses_angle_0_1deg.load();
-        if (actual_0_1deg != INT16_MIN) {
-            int32_t diff = int32_t(cmd_0_1deg) - int32_t(actual_0_1deg);
-            int32_t err_0_1deg = (diff >= 0 ? diff : -diff);
-            float threshold_deg = rt::compute_following_error_threshold(g_mtr_motor_command_speed_mmps.load());
-            int32_t threshold_0_1deg = static_cast<int32_t>(threshold_deg * 10.0f);
-            constexpr int kTickLimit = rt::kSteerFollowingErrMs / (1000 / rt::kControlLoopHz);
-
-            // Check if actual steering is making physical progress towards the commanded target
-            bool making_progress = false;
-            if (prev_actual_0_1deg != INT16_MIN) {
-                int32_t delta = int32_t(actual_0_1deg) - int32_t(prev_actual_0_1deg);
-                if ((diff > 0 && delta > 0) || (diff < 0 && delta < 0)) {
-                    making_progress = true;
-                }
-            }
-            prev_actual_0_1deg = actual_0_1deg;
-
-            if (err_0_1deg > threshold_0_1deg) {
-                if (!making_progress) {
-                    if (++steer_follow_err_ticks >= kTickLimit) {
-                        ESP_LOGW("rt", "Steer follow err >%.1f° for >%dms (stalled) — ESTOP",
-                                 static_cast<double>(threshold_deg), rt::kSteerFollowingErrMs);
-                        r.zero_setpoints = true;
-                        r.brake_kpa = shared::kAssistStopKpa;
-                        r.disable_steering = false;
-                        r.estop_reason = rt::kEstopReasonFollowingError;
-                        rt::diag().raise(etrike::diagnostics::DiagId::RtSteerFollowingError,
-                                         static_cast<std::uint16_t>(err_0_1deg));
-                    }
-                } else if (steer_follow_err_ticks > 0) {
-                    steer_follow_err_ticks--;
-                }
-            } else {
-                steer_follow_err_ticks = 0;
-            }
-        } else {
-            prev_actual_0_1deg = INT16_MIN;
-        }
-    } else {
-        steer_follow_err_ticks = 0;  // Reset on state transitions (e.g., ESTOP → recovery)
-        prev_actual_0_1deg = INT16_MIN;
-    }
+    // 5. Steering actuator health is monitored via SES internal Level 3 hardware diagnostics
+    // (0x202 SES_ERR_INFO), sync timeout, and CAN feedback arrival freshness.
+    // Software following-error tripwires are removed to eliminate false ESTOP trips caused by
+    // ground scrub friction, mechanical deflection, and feedback delay.
 
     // 5b. SES Level 3 Hardware Fault (0x202 SES_ERR_INFO)
     // Anti-rollover MRM: Inhibit propulsion and apply gentle deceleration

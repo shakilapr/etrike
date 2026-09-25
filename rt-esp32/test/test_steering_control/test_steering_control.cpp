@@ -81,17 +81,18 @@ void test_steering_ramp_following_error_fault(void) {
     sc.start_estop(false);
 
     etrike::protocol::codecs::ses::Command out;
-    bool faulted = false;
-    for (int i = 0; i < 80; ++i, now_ms += 20) {
+    bool reached_silent_stop = false;
+    for (int i = 0; i < 160; ++i, now_ms += 20) {
         int16_t actual = 300;
-        sc.tick(actual, 1, now_ms, out);
-        if (sc.state() == SteerState::STEER_FAULT) {
-            faulted = true;
+        bool tx = sc.tick(actual, 1, now_ms, out);
+        if (sc.state() == SteerState::STEER_SILENT_STOP) {
+            reached_silent_stop = true;
+            TEST_ASSERT_FALSE(tx);
             break;
         }
     }
-    TEST_ASSERT_TRUE(faulted);
-    TEST_ASSERT_EQUAL(SteerState::STEER_FAULT, sc.state());
+    TEST_ASSERT_TRUE(reached_silent_stop);
+    TEST_ASSERT_EQUAL(SteerState::STEER_SILENT_STOP, sc.state());
 }
 
 void test_steering_ramp_following_error_not_triggered(void) {

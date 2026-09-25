@@ -211,3 +211,11 @@ SYS receives `0x302` on low bus. It cannot tell whether the bits came from Jetso
 | MANUAL bulb | OFF |
 
 All lamps except brake go dark. The 12V accessory relay (GPIO40) is cut on ESTOP, so all relay-driven lights lose power at the source regardless of MCU GPIO state.
+
+---
+
+## 11. Onboard ECU Diagnostic RGB LEDs (RT & SYS)
+
+For the onboard addressable WS2812 RGB status LEDs on both `rt-esp32` and `sys-esp32` (GPIO 48), see the dedicated specification:
+* [**Onboard RGB Status LED Visual Language Specification**](./rgb-status-led-visual-language.md)
+

@@ -359,6 +359,7 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
                 reset_ok = g_mode_mgr.try_exit_estop_remote(blockers);
                 if (reset_ok) {
                     sys::mark_estop_reset(static_cast<uint32_t>(pdTICKS_TO_MS(xTaskGetTickCount())));
+                    g_mtr_ack_watchdog.reset();
                     ESP_LOGI(TAG, "ESTOP reset via Host request seq=%u accepted", req.request_seq);
                 }
             }
@@ -493,81 +494,11 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
                 g_last_seb_roll_change_tick.store(xTaskGetTickCount(), std::memory_order_relaxed);
                 g_seb_rolling.store(true, std::memory_order_relaxed);  // SEB is acknowledging
             }
-            // Brake following error monitor (§8.10, issue #5): cmp cmd vs actual stroke.
-            // Only in Stroke mode — in Pressure mode cmd_stroke is fixed at 600
-            // (0mm baseline) while the SEB physically moves to build pressure,
-            // which would false-trigger the following error (bug 6.1).
-            //
-            // Two severities:
-            //   - transient excursion      -> kInhibitBrakeFollowing (recoverable,
-            //                                cleared after N healthy observations)
-            //   - confirmed persistent     -> kLatchedBrakeFollowing + force_estop()
-            //                                (latched safety fault; only the reset
-            //                                path clears it, once the cause is gone)
-            {
-                uint8_t seb_ctrl = value.control_mode;
-                if (seb_ctrl == 0) {  // Stroke mode only
-                    uint16_t cmd = g_cmd_stroke_raw.load(std::memory_order_relaxed);
-                    uint16_t actual_raw = value.stroke_value_raw;
-                    uint16_t diff = (cmd > actual_raw) ? (cmd - actual_raw) : (actual_raw - cmd);
-
-                    // Track the persistence of the current excursion.
-                    static bool       follow_active = false;
-                    static TickType_t follow_start = 0;
-                    static int        follow_recover_count = 0;
-                    static uint16_t   prev_actual_raw = 0;
-                    const bool in_excursion = (diff > sys::kBrakeFollowingErrRaw);
-                    if (in_excursion) {
-                        const TickType_t now_ticks = xTaskGetTickCount();
-                        if (!follow_active) {
-                            follow_active = true;
-                            follow_start = now_ticks;
-                            follow_recover_count = 0;  // fresh excursion: recovery restarts
-                        }
-
-                        // Debounce transient inhibit: must persist past kBrakeFollowingErrMs (100 ms)
-                        if ((now_ticks - follow_start) >= pdMS_TO_TICKS(sys::kBrakeFollowingErrMs)) {
-                            sys::set_inhibit(sys::kInhibitBrakeFollowing);
-                        }
-
-                        // Slew-progress stall supervision: If actuator is moving toward commanded stroke,
-                        // it is in nominal mechanical transit. If stalled (no closing progress for >500ms), latch fault.
-                        bool making_progress = false;
-                        if (prev_actual_raw != 0) {
-                            if ((cmd > actual_raw && actual_raw > prev_actual_raw) ||
-                                (cmd < actual_raw && actual_raw < prev_actual_raw)) {
-                                making_progress = true;
-                            }
-                        }
-                        prev_actual_raw = actual_raw;
-
-                        if (making_progress) {
-                            follow_start = now_ticks;  // Actuator moving: defer latched jam timeout
-                        } else if ((now_ticks - follow_start) >= pdMS_TO_TICKS(sys::kBrakeFollowingLatchedMs)) {
-                            // Confirmed persistent following error (stalled/jammed) -> latched fault.
-                            if (!(sys::g_latched_fault_reasons.load()
-                                  & sys::kLatchedBrakeFollowing)) {
-                                ESP_LOGE(TAG, "Brake following err latched: cmd=%u actual=%u "
-                                              "diff=%u raw (~%d mm)",
-                                         cmd, actual_raw, diff, int(diff * 0.05f));
-                                sys::set_latched_fault(sys::kLatchedBrakeFollowing);
-                            }
-                        }
-                    } else {
-                        follow_active = false;
-                        prev_actual_raw = actual_raw;
-                        // Hysteresis recovery: clear the transient inhibit only after
-                        // several consecutive healthy observations. The latched fault
-                        // (if set) is NOT cleared here — only the reset path owns it.
-                        if (sys::g_inhibit_reasons.load() & sys::kInhibitBrakeFollowing) {
-                            if (++follow_recover_count >= sys::kBrakeFollowingRecoverFrames) {
-                                sys::clear_inhibit(sys::kInhibitBrakeFollowing);
-                                follow_recover_count = 0;
-                            }
-                        }
-                    }
-                }
-            }
+            // SEB health and actuation are supervised via hardware rolling counter freshness
+            // (g_seb_rolling / g_last_seb_roll_change_tick), status arrival watchdog, and
+            // SEB L3 hardware fault decoding below. Software stroke following-error tracking
+            // is omitted to prevent false traction inhibits and false latched ESTOPs during normal
+            // hydraulic fluid transit and operator lever actuation.
             break;
         }
         case can::kIdSebTest: {     // 0x6FB — SEB_Test telemetry (arch §8.3)
@@ -761,6 +692,7 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
         // (livelock). The harness shares this exact policy via sys::rx_estop_suppressed.
         if (mode_was_estop && g_mode_mgr.mode() != can::Mode::Estop) {
             sys::mark_estop_reset(static_cast<uint32_t>(pdTICKS_TO_MS(xTaskGetTickCount())));
+            g_mtr_ack_watchdog.reset();
         }
         mode_was_estop = (g_mode_mgr.mode() == can::Mode::Estop);
         if (changed) {

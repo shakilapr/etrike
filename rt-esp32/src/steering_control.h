@@ -38,7 +38,6 @@ public:
         m_sync_start_ms = 0;
         m_estop_hold_start_ms = 0;
         m_estop_hold_angle = 0;
-        m_estop_following_err_start_ms = 0;
         m_centering_complete_ms = 0;
     }
     SteerState state() const { return m_state.load(std::memory_order_relaxed); }
@@ -82,10 +81,11 @@ public:
             if (ses_angle_raw == INT16_MIN) return false;
             // Alignment check (gap C2): SES must report angle_status == 1
             if (ses_angle_status == 0) return false;  // still center-finding
-            // Angle plausibility: check against physical mechanical stops (45° = 450 in 0.1° units).
-            // Normal parked turns (e.g. 35°) within the 40° limit must not be falsely rejected.
-            if (std::abs(ses_angle_raw) > 450) {
-                ESP_LOGE("steer", "Angle outside physical stops at sync: %d (0.1°) — sensor fault", ses_angle_raw);
+            // Angle plausibility: check against maximum steering travel limit (40° = 400 in 0.1° units).
+            // Normal parked turns (e.g. 35°) within the 40° limit must not be falsely rejected,
+            // while implausible sensor readings (> 40°) trigger sensor fault.
+            if (std::abs(ses_angle_raw) > 400) {
+                ESP_LOGE("steer", "Angle outside steering limits at sync: %d (0.1°) — sensor fault", ses_angle_raw);
                 rt::diag().raise(etrike::diagnostics::DiagId::RtSteerImplausibleAngle,
                                  static_cast<std::uint16_t>(std::abs(ses_angle_raw)));
                 m_state = SteerState::STEER_FAULT;
@@ -127,27 +127,6 @@ public:
                         m_state = SteerState::STEER_SILENT_STOP;
                         return false;
                     }
-                }
-            }
-
-            // Gap C3: following-error check during ESTOP centering ramp.
-            // Both m_active_angle and ses_angle_raw are offset-free 0.1° units.
-            // Use int32_t to avoid overflow when angles span large ranges
-            // (e.g., m_active_angle=30000, ses_angle_raw=-30000 → diff=60000,
-            //  which overflows int16_t).
-            if (ses_angle_raw != INT16_MIN) {
-                int32_t err = std::abs(int32_t(m_active_angle) - int32_t(ses_angle_raw));
-                if (err > 50) {  // 5° = 50 in 0.1° units
-                    if (m_estop_following_err_start_ms == 0)
-                        m_estop_following_err_start_ms = now_ms;
-                    else if (now_ms - m_estop_following_err_start_ms > 1000) {
-                        rt::diag().raise(etrike::diagnostics::DiagId::RtSteerEstopJam,
-                                         static_cast<std::uint16_t>(err));
-                        m_state = SteerState::STEER_FAULT;
-                        return false;  // silent-stop — linkage likely jammed
-                    }
-                } else {
-                    m_estop_following_err_start_ms = 0;
                 }
             }
 
@@ -209,7 +188,6 @@ public:
                 m_estop_hold_start_ms = 0;
             } else {
                 m_state = SteerState::ESTOP_RAMP_TO_ZERO;
-                m_estop_following_err_start_ms = 0;
                 m_centering_complete_ms = 0;
                 // ramp starts from current m_active_angle toward 0°
             }
@@ -275,7 +253,6 @@ private:
     uint32_t   m_sync_start_ms = 0;
     uint32_t   m_estop_hold_start_ms = 0;
     int16_t    m_estop_hold_angle = 0;
-    uint32_t   m_estop_following_err_start_ms = 0;
     uint32_t   m_centering_complete_ms = 0;
     bool       m_estop_exit_pending = false;  // Gap #6: deferred exit flag
 };
