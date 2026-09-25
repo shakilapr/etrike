@@ -88,7 +88,7 @@ export class TricycleKinematics {
     let v = cmd.speedMmps / 1000;        // m/s
     const w = cmd.yawRateMradS / 1000;   // rad/s
     const L = WHEELBASE_MM / 1000;       // m
-    const kYawEpsilon = 0.001;
+    const kYawEpsilon = 0.025; // Threshold for intentional standstill turn request (25 mrad/s ~ 1.43 deg/s)
     const steerLimitRad = deg2rad(STEER_HARD_LIMIT_DEG);
     const lowSpeedMps = LOW_SPEED_THRESH_MMPS / 1000;
 
@@ -110,9 +110,13 @@ export class TricycleKinematics {
       this.steerHoldRad = steer;
       ok = true;
     } else {
-      // Decay toward straight at low speed
+      // Sub-threshold yaw noise at low speed/standstill decays toward straight
       const kSteerDecayFactor = 0.8;
       steer = this.steerHoldRad * kSteerDecayFactor;
+      if (Math.abs(steer) < 0.001) {
+        steer = 0;
+      }
+      this.steerHoldRad = steer;
     }
 
     // Clamp speed

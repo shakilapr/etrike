@@ -30,7 +30,7 @@ bool Kinematics::resolve(const DriveDemand& cmd, KinematicsResult& out) {
     float       v = cmd.speed_mmps / 1000.0f;       // m/s
     float const w = cmd.yaw_rate_mrad_s / 1000.0f;  // rad/s
     float const L = shared::kWheelbaseMM / 1000.0f; // m
-    constexpr float kYawEpsilon = 0.001f;
+    constexpr float kYawEpsilon = 0.025f; // Threshold for intentional standstill turn request (25 mrad/s ~ 1.43 deg/s)
     const float steer_limit_rad = deg2rad(kSteerLimitDeg);
     const float low_speed_mps   = shared::kLowSpeedThreshMmps / 1000.0f;
 
@@ -55,9 +55,13 @@ bool Kinematics::resolve(const DriveDemand& cmd, KinematicsResult& out) {
         m_steer_hold_rad = steer;
         ok = true;
     } else {
-        // Decay toward straight at low speed.
+        // Sub-threshold yaw noise at low speed/standstill decays toward straight
         constexpr float kSteerDecayFactor = 0.8f;
         steer = m_steer_hold_rad * kSteerDecayFactor;
+        if (std::abs(steer) < 0.001f) {
+            steer = 0.0f;
+        }
+        m_steer_hold_rad = steer;
     }
 
     // Clamp speed to configured limits.
