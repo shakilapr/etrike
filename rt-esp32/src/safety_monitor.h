@@ -232,6 +232,8 @@ inline rt::SafetyResult run_safety_checks(int64_t now, bool startup_grace,
             } else {
                 steer_follow_err_ticks = 0;
             }
+        } else {
+            prev_actual_0_1deg = INT16_MIN;
         }
     } else {
         steer_follow_err_ticks = 0;  // Reset on state transitions (e.g., ESTOP → recovery)
