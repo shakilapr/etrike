@@ -507,20 +507,39 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
                     uint16_t diff = (cmd > actual_raw) ? (cmd - actual_raw) : (actual_raw - cmd);
 
                     // Track the persistence of the current excursion.
-                    static bool      follow_active = false;
+                    static bool       follow_active = false;
                     static TickType_t follow_start = 0;
-                    static int       follow_recover_count = 0;
+                    static int        follow_recover_count = 0;
+                    static uint16_t   prev_actual_raw = 0;
                     const bool in_excursion = (diff > sys::kBrakeFollowingErrRaw);
                     if (in_excursion) {
+                        const TickType_t now_ticks = xTaskGetTickCount();
                         if (!follow_active) {
                             follow_active = true;
-                            follow_start = xTaskGetTickCount();
+                            follow_start = now_ticks;
                             follow_recover_count = 0;  // fresh excursion: recovery restarts
-                            // Excursion present: transient inhibit is active now.
+                        }
+
+                        // Debounce transient inhibit: must persist past kBrakeFollowingErrMs (100 ms)
+                        if ((now_ticks - follow_start) >= pdMS_TO_TICKS(sys::kBrakeFollowingErrMs)) {
                             sys::set_inhibit(sys::kInhibitBrakeFollowing);
-                        } else if ((xTaskGetTickCount() - follow_start)
-                                   >= pdMS_TO_TICKS(sys::kBrakeFollowingLatchedMs)) {
-                            // Confirmed persistent following error -> latched fault.
+                        }
+
+                        // Slew-progress stall supervision: If actuator is moving toward commanded stroke,
+                        // it is in nominal mechanical transit. If stalled (no closing progress for >500ms), latch fault.
+                        bool making_progress = false;
+                        if (prev_actual_raw != 0) {
+                            if ((cmd > actual_raw && actual_raw > prev_actual_raw) ||
+                                (cmd < actual_raw && actual_raw < prev_actual_raw)) {
+                                making_progress = true;
+                            }
+                        }
+                        prev_actual_raw = actual_raw;
+
+                        if (making_progress) {
+                            follow_start = now_ticks;  // Actuator moving: defer latched jam timeout
+                        } else if ((now_ticks - follow_start) >= pdMS_TO_TICKS(sys::kBrakeFollowingLatchedMs)) {
+                            // Confirmed persistent following error (stalled/jammed) -> latched fault.
                             if (!(sys::g_latched_fault_reasons.load()
                                   & sys::kLatchedBrakeFollowing)) {
                                 ESP_LOGE(TAG, "Brake following err latched: cmd=%u actual=%u "
@@ -531,6 +550,7 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
                         }
                     } else {
                         follow_active = false;
+                        prev_actual_raw = actual_raw;
                         // Hysteresis recovery: clear the transient inhibit only after
                         // several consecutive healthy observations. The latched fault
                         // (if set) is NOT cleared here — only the reset path owns it.

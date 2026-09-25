@@ -70,6 +70,13 @@ public:
             // Architecture §8.6: transmit 50 Hz with lever-based defaults, ignore CAN 0x205
             if (has_status && (status_byte0 & 1)) {
                 m_state = BrakeState::ACTIVE;    // recover when 0x721 alignment arrives
+                if (m_sync_stroke_raw == 0) {
+                    m_sync_stroke_raw = stroke_raw;
+                }
+                m_use_sync_stroke = true;
+                build_command(lever, estop, brake_kpa, mode, out);
+                m_use_sync_stroke = false;
+                return true;
             }
             build_command(lever, estop, 0, mode, out); // DEGRADED: lever-only, no CAN pressure
             return true;
