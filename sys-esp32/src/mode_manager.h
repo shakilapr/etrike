@@ -37,6 +37,10 @@ public:
     // Parses incoming 0x111 HMI_MODE_REQ. Returns true if mode changed.
     bool parse_hmi_mode(uint8_t requested_mode);
 
+    // Driver brake takeover: if in AUTO, pulling the handlebar brake lever immediately
+    // transitions mode to MANUAL to remove motor propulsion authority.
+    bool handle_driver_brake_takeover(bool lever_pressed);
+
     can::Mode mode() const { return m_mode.load(std::memory_order_relaxed); }
     uint8_t mode_u8() const { return uint8_t(m_mode.load(std::memory_order_relaxed)); }
     const char* name() const;

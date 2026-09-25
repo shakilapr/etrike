@@ -637,6 +637,14 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
         g_safety.set_estop(estop_hw);
         g_safety.set_brake_lever(brake_lever);
 
+        // Driver brake takeover: pulling the lever in AUTO transitions to MANUAL immediately
+        // and zeros motor propulsion setpoints so the motor never drives against the brakes.
+        if (g_mode_mgr.handle_driver_brake_takeover(brake_lever)) {
+            ESP_LOGW(TAG, "Driver brake lever takeover: transitioning AUTO -> MANUAL");
+            g_setpoint_speed_mmps.store(0, std::memory_order_relaxed);
+            g_setpoint_gear.store(0, std::memory_order_relaxed);
+        }
+
         // Developer bypass suppresses only missing-dependency faults. The
         // physical ESTOP remains unbypassable.
         bool estop_triggered = g_safety.estop_active()

@@ -137,6 +137,14 @@ bool ModeManager::parse_hmi_mode(uint8_t requested_mode) {
     return false;
 }
 
+bool ModeManager::handle_driver_brake_takeover(bool lever_pressed) {
+    if (lever_pressed && m_mode.load(std::memory_order_relaxed) == can::Mode::Auto) {
+        set_mode(can::Mode::Manual);
+        return true;
+    }
+    return false;
+}
+
 const char* ModeManager::name() const {
     switch (m_mode) {
         case can::Mode::Manual: return "MANUAL";

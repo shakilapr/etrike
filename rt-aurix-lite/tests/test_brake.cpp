@@ -116,11 +116,17 @@ void test_build_command_priority() {
     CHECK(out.pressure_raw == 20);
     CHECK(out.auto_brake);
 
-    // Lever override beats pressure
-    CHECK(bc.tick(true, false, 5000, Mode::Auto, fb, out));
+    // Lever override provides manual stroke (15 mm -> raw 900) over moderate pressure
+    CHECK(bc.tick(true, false, 1000, Mode::Auto, fb, out));
     CHECK(out.stroke_mode);
     CHECK(out.stroke_raw == 900);  // 15 mm -> raw 900
     CHECK(!out.auto_brake);
+
+    // Safe Envelope: autonomous high-pressure emergency braking (5000 kPa) is not diminished by lever
+    CHECK(bc.tick(true, false, 5000, Mode::Auto, fb, out));
+    CHECK(!out.stroke_mode);
+    CHECK(out.pressure_raw == 100);  // 5000 kPa / 50 = 100 raw (5.0 MPa)
+    CHECK(out.auto_brake);
 
     // ESTOP beats lever and pressure -> max stroke 27 mm (1140)
     CHECK(bc.tick(true, true, 0, Mode::Manual, fb, out));

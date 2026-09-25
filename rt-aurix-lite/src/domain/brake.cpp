@@ -26,12 +26,22 @@ void BrakeControl::build_command(bool lever, bool estop, std::int32_t brake_kpa,
         out.pressure_raw = 0;
         out.auto_brake = false;
     } else if (lever) {
-        // Driver override always wins — 15 mm stroke.
-        out.stroke_mode = true;
-        out.stroke_raw = static_cast<std::uint16_t>(
-            (kBrakeManualStroke - shared::kBrakeStrokeOffset) / shared::kBrakeStrokeScale);
-        out.pressure_raw = 0;
-        out.auto_brake = false;
+        // Safe-Envelope Principle: If autonomous emergency braking is commanding
+        // high pressure (> 2000 kPa / 2.0 MPa), manual lever pull must NOT diminish it.
+        if (brake_kpa > 2000) {
+            out.stroke_mode = false;
+            out.stroke_raw = kStrokeRawZero;
+            std::int32_t raw = (brake_kpa + 25) / 50;
+            out.pressure_raw = static_cast<std::uint8_t>(
+                raw > shared::kSebMaxPressureRaw ? shared::kSebMaxPressureRaw : raw);
+            out.auto_brake = true;
+        } else {
+            out.stroke_mode = true;
+            out.stroke_raw = static_cast<std::uint16_t>(
+                (kBrakeManualStroke - shared::kBrakeStrokeOffset) / shared::kBrakeStrokeScale);
+            out.pressure_raw = 0;
+            out.auto_brake = false;
+        }
     } else if (brake_kpa > 0) {
         // Pressure mode from automated braking (Jetson via arbitration).
         out.stroke_mode = false;

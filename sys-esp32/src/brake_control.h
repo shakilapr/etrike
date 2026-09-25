@@ -107,12 +107,22 @@ private:
             out.pressure_request_raw = 0;
             out.auto_brake = false;  // emergency braking — not automated driving
         } else if (lever) {
-            // DRIVER OVERRIDE: lever always wins — architecture §8.6
-            // "Lever pressed → kBrakeManualStroke (driver override always wins)"
-            out.control_mode = can::custom::seb::ControlMode::Stroke;
-            out.stroke_request_raw = uint16_t((kBrakeManualStroke - shared::kBrakeStrokeOffset) / shared::kBrakeStrokeScale);
-            out.pressure_request_raw = 0;
-            out.auto_brake = false;  // manual braking
+            // Safe-Envelope Principle: If autonomous emergency braking is commanding
+            // high pressure (> 2000 kPa / 2.0 MPa), manual lever pull must NOT diminish it.
+            if (brake_kpa > 2000) {
+                out.control_mode = can::custom::seb::ControlMode::Pressure;
+                out.stroke_request_raw = kStrokeRawZero;
+                int32_t raw = (brake_kpa + 25) / 50;
+                out.pressure_request_raw = uint8_t(raw > shared::kSebMaxPressureRaw ? shared::kSebMaxPressureRaw : raw);
+                out.auto_brake = true;
+            } else {
+                // DRIVER OVERRIDE: lever provides kBrakeManualStroke (15.0mm ~ 2.0 MPa)
+                // when manual demand exceeds low or zero autonomous brake requests.
+                out.control_mode = can::custom::seb::ControlMode::Stroke;
+                out.stroke_request_raw = uint16_t((kBrakeManualStroke - shared::kBrakeStrokeOffset) / shared::kBrakeStrokeScale);
+                out.pressure_request_raw = 0;
+                out.auto_brake = false;
+            }
         } else if (brake_kpa > 0) {
             // Pressure Mode from 0x205 — verified kPa→raw conversion
             // Scale: 0.05 MPa/bit, range 0–5 MPa → raw = kPa * 0.02, clamp to kSebMaxPressureRaw
