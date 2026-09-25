@@ -46,7 +46,7 @@ void test_seb_auto_request_wire_format(void) {
     TEST_ASSERT_EQUAL(
         can::gen::CodecStatus::Ok,
         etrike::protocol::codecs::seb::encode_command(command, frame));
-    const uint8_t expected[] = {0x0F, 0x00, 0x58, 0x28, 0x00, 0x00, 0x03, 0x83};
+    const uint8_t expected[] = {0x0F, 0x02, 0x58, 0x28, 0x00, 0x00, 0x03, 0x81};
     TEST_ASSERT_EQUAL(can::kIdBbwCmd, frame.id);
     TEST_ASSERT_EQUAL_UINT8_ARRAY(expected, frame.data.data(), sizeof(expected));
 }

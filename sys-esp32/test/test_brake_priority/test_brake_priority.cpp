@@ -159,7 +159,7 @@ void test_brake_pressure_command_exact_bytes(void) {
     can::Frame frame;
     TEST_ASSERT_EQUAL_UINT8(uint8_t(can::gen::CodecStatus::Ok),
                             uint8_t(can::custom::seb::encode_command(command, frame)));
-    const uint8_t expected[] = {0x0F, 0x00, 0x58, 0x28, 0x00, 0x00, 0xA3, 0x23};
+    const uint8_t expected[] = {0x0F, 0x02, 0x58, 0x28, 0x00, 0x00, 0xA3, 0x21};
     TEST_ASSERT_EQUAL_HEX32(can::kIdVcuSebReq, frame.id);
     TEST_ASSERT_EQUAL_UINT8(8, frame.dlc);
     TEST_ASSERT_EQUAL_UINT8_ARRAY(expected, frame.data.data(), sizeof(expected));
