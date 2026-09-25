@@ -174,11 +174,15 @@ inline rt::SafetyResult run_safety_checks(int64_t now, bool startup_grace,
                          static_cast<std::uint16_t>((now - sys_hb) / 1000));
     }
 
-    // 4. Host heartbeat timeout (arch ?7.6: 1500ms ? assisted stop)
+    // 4. Host heartbeat timeout (arch §7.6: 1500ms — assisted stop)
     int64_t host_hb = g_last_host_hb_us.load();
     if (!g_bench_solo_mode && host_hb > 0
         && (now - host_hb) > int64_t(shared::kHeartbeatTimeoutMsHost) * 1000) {
-        ESP_LOGW("rt", "Host heartbeat timeout ? assisted stop brake=2000kPa");
+        static int64_t last_host_hb_log_us = 0;
+        if (now - last_host_hb_log_us > 1'000'000) {
+            last_host_hb_log_us = now;
+            ESP_LOGW("rt", "Host heartbeat timeout — assisted stop brake=2000kPa");
+        }
         r.zero_setpoints = true;
         r.estop_reason = rt::kEstopReasonHeartbeat;
         g_brake_request_kpa.store(shared::kAssistStopKpa);
