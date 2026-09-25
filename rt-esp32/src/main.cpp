@@ -1357,10 +1357,7 @@ static uint8_t task_health_snapshot() {
         rt::MotionOutputSnapshot motion_out{};
         const bool motion_mode = (m_current_mode == uint8_t(can::Mode::Auto));
         auto ss = g_steering.state();
-        bool drive_allowed = motion_mode
-            && (ss == rt::SteerState::STEER_ACTIVE
-                || ss == rt::SteerState::ESTOP_RAMP_TO_ZERO
-                || ss == rt::SteerState::ESTOP_HOLD_THEN_SILENT);
+        bool drive_allowed = motion_mode && (ss == rt::SteerState::STEER_ACTIVE);
 
         motion_out.motor_speed_mmps = drive_allowed ? sp.motor_speed_mmps : 0;
         if (!drive_allowed) {
