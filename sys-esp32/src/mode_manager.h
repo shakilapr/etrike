@@ -9,7 +9,9 @@
 #include "config.h"
 #include "inhibit_state.h"
 
+#ifndef ENABLE_CAN_HMI
 #define ENABLE_CAN_HMI true
+#endif
 
 namespace sys {
 
