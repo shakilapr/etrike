@@ -204,6 +204,10 @@ public:
         return state_.load(std::memory_order_acquire) == TWAI_ERROR_BUS_OFF;
     }
 
+    bool bus_off() const {
+        return recovery_needed();
+    }
+
     HealthSnapshot health_snapshot() const {
         twai_node_status_t info{};
         if (node_) (void)twai_node_get_info(node_, &info, nullptr);
