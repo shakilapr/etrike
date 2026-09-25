@@ -119,11 +119,12 @@ public:
                     m_centering_complete_ms = 0;
                 } else {
                     // Ramp complete — hold at 0° for kSteerEstopCenteringHoldMs, then silent-stop
-                    // to de-energize the motor and avoid fighting stationary ground scrub friction.
+                    // into STEER_LISTEN_SYNC to de-energize the motor without asserting a spurious STEER_FAULT.
                     if (m_centering_complete_ms == 0) {
                         m_centering_complete_ms = now_ms;
                     } else if (now_ms - m_centering_complete_ms >= static_cast<uint32_t>(kSteerEstopCenteringHoldMs)) {
-                        m_state = SteerState::STEER_FAULT;
+                        m_state = SteerState::STEER_LISTEN_SYNC;
+                        m_sync_start_ms = now_ms;
                         return false;
                     }
                 }
