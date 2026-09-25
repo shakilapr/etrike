@@ -40,10 +40,14 @@ bool g_bypass_mtr_absent = false;
 #include "brake_control.h"
 #include "light_control.h"
 #include "indicator_control.h"
+#include "sys_status_led.h"
 // #include "wdt_toggle.h"
 
 
 static const char* TAG = "sys";
+
+static shared::led::Ws2812Strip g_status_led;
+
 
 // ── Per-task alive counters for multi-task watchdog ─────────────────
 static std::atomic<uint32_t> g_alive_safety{0};
@@ -941,7 +945,7 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
 // ── Indicator task (prio 2, 5 Hz) ──────────────────────────────────
 
 [[noreturn]] static void task_indicator(void*) {
-    TickType_t period = pdMS_TO_TICKS(200);  // 5 Hz
+    TickType_t period = pdMS_TO_TICKS(40);  // 25 Hz (was 5 Hz, renders smooth breathing and pips)
     TickType_t last   = xTaskGetTickCount();
     while (1) {
         [[maybe_unused]] auto out = g_indicator.tick(g_mode_mgr.mode());
@@ -965,6 +969,32 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
         // Keep 12V accessory relay energized even during ESTOP so indicator bulbs remain visible
         gpio_set_level(static_cast<gpio_num_t>(sys::kPower12vRelay), 1);
 #endif
+
+        // Status LED Evaluation (25 Hz)
+        {
+            const uint32_t now_ms = static_cast<uint32_t>(pdTICKS_TO_MS(xTaskGetTickCount()));
+            sys::SysLedInputs led_in{};
+            led_in.twai_bus_off         = g_can.recovery_needed();
+            led_in.estop_active         = sys_estop_latched() || (mode == can::Mode::Estop);
+            led_in.local_estop_cause    = g_safety.estop_active() || (sys::g_latched_fault_reasons.load(std::memory_order_relaxed) != 0);
+            led_in.mtr_ack_retrying     = g_mtr_ack_watchdog.is_pending();
+            led_in.actuator_fault       = (sys::g_latched_fault_reasons.load(std::memory_order_relaxed) != 0)
+                                       || g_mtr_ack_watchdog.has_latched_fault();
+            led_in.actuator_inhibit     = sys::any_inhibit();
+
+            led_in.rt_hb_ok             = g_bench_solo_mode || g_safety.heartbeat_ok();
+            led_in.rt_cmd_stale         = (g_setpoint_speed_mmps.load(std::memory_order_relaxed) == 0 && sys::any_inhibit());
+            led_in.boot_grace_active    = (now_ms < shared::kStartupGracePeriodMs);
+            led_in.mode_auto            = (mode == can::Mode::Auto);
+            led_in.drive_cmd_nonzero    = (g_setpoint_speed_mmps.load(std::memory_order_relaxed) != 0);
+            led_in.manual_active_input  = g_safety.brake_lever_pressed()
+                                       || (g_motor_command_speed_mmps.load(std::memory_order_relaxed) != 0);
+            led_in.brake_lever_override = (mode == can::Mode::Auto && g_safety.brake_lever_pressed());
+
+            const auto pat = sys::evaluate_sys_led(led_in);
+            const auto rgb = shared::led::render(pat, now_ms);
+            g_status_led.set(rgb);
+        }
 
         vTaskDelayUntil(&last, period);
     }
@@ -1243,6 +1273,9 @@ static void init_board_gpio() {
 extern "C" void app_main() {
     ESP_LOGI(TAG, "SYS ESP32-S3 initializing...");
     init_board_gpio();
+    g_status_led.init(sys::kRgbLedGpio);
+    g_status_led.set(shared::led::scale_rgb(shared::led::palette_lookup(shared::led::DomainColor::White), 64));
+
     
     // Evaluate System Run Mode
     {

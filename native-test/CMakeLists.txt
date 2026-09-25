@@ -503,6 +503,21 @@ target_include_directories(rm_t12d_suite PRIVATE
 )
 add_test(NAME rm_t12d_suite COMMAND rm_t12d_suite)
 
+
+# ── Onboard Status LED Visual Language Suite ────────────────────────
+add_executable(test_status_led
+    test/test_status_led.cpp
+)
+target_include_directories(test_status_led PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${ETRIKE_ROOT}
+    ${ETRIKE_ROOT}/shared
+    ${ETRIKE_ROOT}/rt-esp32/src
+    ${ETRIKE_ROOT}/sys-esp32/src
+)
+add_test(NAME test_status_led COMMAND test_status_led)
+
+
 # ── RT-AURIX-Lite (host-first firmware core + tests) ────────────────
 add_subdirectory(
     ${ETRIKE_ROOT}/rt-aurix-lite

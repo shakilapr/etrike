@@ -7,6 +7,10 @@
 // generator can be unit-tested on host and driven at 50 Hz on ESP32-S3.
 
 #include <cstdint>
+#if defined(ESP_PLATFORM) && !defined(TESTING)
+#include "driver/rmt_tx.h"
+#include "driver/rmt_encoder.h"
+#endif
 
 namespace shared::led {
 
@@ -14,6 +18,13 @@ struct Rgb {
     uint8_t r = 0;
     uint8_t g = 0;
     uint8_t b = 0;
+
+    constexpr bool operator==(const Rgb& o) const {
+        return r == o.r && g == o.g && b == o.b;
+    }
+    constexpr bool operator!=(const Rgb& o) const {
+        return !(*this == o);
+    }
 };
 
 // ── 1. The 7 Domain Colors (Where is the issue?) ─────────────────────────
@@ -165,5 +176,75 @@ constexpr Rgb render(const VisualPattern& pat, uint32_t now_ms, uint8_t max_brig
             return {0, 0, 0};
     }
 }
+
+// ── 4. Zero-Dependency ESP-IDF 5.x RMT WS2812 Hardware Driver ────────────
+// Fits 24 bits (1 pixel) inside a single 48-symbol RMT hardware memory block:
+// zero threshold interrupts and < 2 us non-blocking enqueue.
+class Ws2812Strip {
+public:
+    bool init([[maybe_unused]] int gpio_num) {
+#if defined(ESP_PLATFORM) && !defined(TESTING)
+        rmt_tx_channel_config_t tx_cfg = {};
+        tx_cfg.clk_src           = RMT_CLK_SRC_DEFAULT;
+        tx_cfg.gpio_num          = static_cast<gpio_num_t>(gpio_num);
+        tx_cfg.mem_block_symbols = 48;
+        tx_cfg.resolution_hz     = 10'000'000;  // 10 MHz (100 ns per tick)
+        tx_cfg.trans_queue_depth = 4;
+        if (rmt_new_tx_channel(&tx_cfg, &m_channel) != ESP_OK) {
+            return false;
+        }
+
+        rmt_bytes_encoder_config_t enc_cfg = {};
+        // WS2812B/C timing @ 100 ns tick: T0H=0.4us(4), T0L=0.8us(8), T1H=0.8us(8), T1L=0.4us(4)
+        enc_cfg.bit0.level0    = 1;
+        enc_cfg.bit0.duration0 = 4;
+        enc_cfg.bit0.level1    = 0;
+        enc_cfg.bit0.duration1 = 8;
+        enc_cfg.bit1.level0    = 1;
+        enc_cfg.bit1.duration0 = 8;
+        enc_cfg.bit1.level1    = 0;
+        enc_cfg.bit1.duration1 = 4;
+        enc_cfg.flags.msb_first = 1;
+        if (rmt_new_bytes_encoder(&enc_cfg, &m_encoder) != ESP_OK) {
+            return false;
+        }
+
+        if (rmt_enable(m_channel) != ESP_OK) {
+            return false;
+        }
+        m_initialized = true;
+        set({0, 0, 0});
+        return true;
+#else
+        m_initialized = true;
+        return true;
+#endif
+    }
+
+    void set(Rgb c) {
+        if (!m_initialized) return;
+        if (m_has_last && c == m_last) return;
+        m_last     = c;
+        m_has_last = true;
+#if defined(ESP_PLATFORM) && !defined(TESTING)
+        const uint8_t grb[3] = {c.g, c.r, c.b};
+        rmt_transmit_config_t tx_cfg = {};
+        tx_cfg.loop_count      = 0;
+        tx_cfg.flags.eot_level = 0;  // Hold LOW between ticks (>280 us WS2812 latch)
+        (void)rmt_transmit(m_channel, m_encoder, grb, sizeof(grb), &tx_cfg);
+#endif
+    }
+
+    Rgb last_color() const { return m_last; }
+
+private:
+    bool m_initialized = false;
+    bool m_has_last    = false;
+    Rgb  m_last{};
+#if defined(ESP_PLATFORM) && !defined(TESTING)
+    rmt_channel_handle_t m_channel = nullptr;
+    rmt_encoder_handle_t m_encoder = nullptr;
+#endif
+};
 
 } // namespace shared::led

@@ -35,12 +35,14 @@ constexpr int kSwitchHeadlight =  7;
 constexpr int kLightBrake     = 21;
 
 // ── mode indicator bulbs + 12V relay ─────────────────────────────
-constexpr int kBulbAuto       = 48;
+constexpr int kBulbAuto       = 10;  // moved from GPIO 48 to dedicate 48 to onboard WS2812
+constexpr int kRgbLedGpio     = 48;  // onboard WS2812 RGB LED (DevKitC-1)
 constexpr int kBulbManual     = 39;
 constexpr int kBulbReady      = 17;  // green — system ready (AUTO/MANUAL, RT alive, no faults)
 constexpr int kBulbEstop      = 18;  // red — dedicated ESTOP indicator (moved from 20 to avoid USB conflict)
 constexpr int kBulbBypass     = 14;  // yellow/amber — developer override / safety bypass active
 constexpr int kPower12vRelay  = 40;
+
 
 // ── watchdog ──────────────────────────────────────────────────────
 // constexpr int kWdtToggleGpio = 47; // Temporarily disabled
