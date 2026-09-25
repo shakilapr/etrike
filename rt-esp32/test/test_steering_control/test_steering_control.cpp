@@ -131,9 +131,9 @@ void test_steering_hold_then_silent_timeout(void) {
     etrike::protocol::codecs::ses::Command out;
     for (int i = 0; i < 26; ++i, now_ms += 20) {
         sc.tick(0, 1, now_ms, out);
-        if (sc.state() == SteerState::STEER_FAULT) break;
+        if (sc.state() == SteerState::STEER_SILENT_STOP) break;
     }
-    TEST_ASSERT_EQUAL(SteerState::STEER_FAULT, sc.state());
+    TEST_ASSERT_EQUAL(SteerState::STEER_SILENT_STOP, sc.state());
 }
 
 void test_steering_exit_estop_deferred_ramp(void) {
@@ -208,7 +208,7 @@ void test_steering_command_wire_format(void) {
     TEST_ASSERT_EQUAL(
         can::gen::CodecStatus::Ok,
         etrike::protocol::codecs::ses::encode_command(command, frame));
-    const uint8_t expected[] = {0x03, 0x00, 0x30, 0x75, 0x7D, 0x13, 0x00, 0xD7};
+    const uint8_t expected[] = {0x02, 0x00, 0x30, 0x75, 0x7D, 0x13, 0x00, 0xD6};
     TEST_ASSERT_EQUAL(can::kIdSbwCmd, frame.id);
     TEST_ASSERT_EQUAL_UINT8_ARRAY(expected, frame.data.data(), sizeof(expected));
 }
@@ -229,7 +229,7 @@ void test_steering_centering_hold_then_silent(void) {
         int16_t actual = cmd;
         sc.tick(actual, 1, now_ms, out);
     }
-    TEST_ASSERT_EQUAL(SteerState::STEER_FAULT, sc.state());
+    TEST_ASSERT_EQUAL(SteerState::STEER_SILENT_STOP, sc.state());
 
     // Clean recovery via exit_estop() directly restores LISTEN_SYNC
     sc.exit_estop(now_ms);
