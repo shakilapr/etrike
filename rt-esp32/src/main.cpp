@@ -885,13 +885,6 @@ static uint8_t task_health_snapshot() {
                 continue;
             }
 
-            // VCU_SEB_REQ (0x7B9) observation
-            if (fr.id == can::kIdVcuSebReq) {
-                g_last_0x7B9_rx_us.store(now_us, std::memory_order_relaxed);
-                fbk_snap.last_0x7b9_rx_us = now_us;
-                if (g_feedback_mailbox) xQueueOverwrite(g_feedback_mailbox, &fbk_snap);
-                continue;
-            }
 
             // BBW_STATUS (0x721)
             if (fr.id == can::kIdBbwStatus) {
@@ -1215,20 +1208,38 @@ static uint8_t task_health_snapshot() {
         rt::apply_fresh_direct_steering(direct_steer,
             g_last_direct_steer_us.load(), now, sp);
 
+        // ── Obstacle reaction feature (FROZEN) ──────────────────────────────────
+        // The Host CAN command (0x400 HOST_OBSTACLE_DIST) is retained and decoded
+        // in CAN RX for protocol compatibility and telemetry. However, low-level obstacle
+        // logic (speed limiting, brake scaling, and low-level obstacle ESTOP) is frozen
+        // and performs no active intervention for now.
+        //
+        // RATIONALE:
+        // 1. Perception & Trajectory Ownership: Obstacle sensors (LiDAR/cameras) are
+        //    processed on the Host (Jetson / Autoware), which computes speed profiles
+        //    and deceleration curves.
+        // 2. Actuator Contradiction Avoidance: Simultaneous low-level linear brake
+        //    interpolation against forward motor setpoints causes propulsion to fight
+        //    the hydraulic brakes.
+        // 3. Stopping Authority: The Host directly commands stopping via 0x300
+        //    (speed=0) and 0x301 (brake pressure request).
+        //
+        // This feature is frozen for now and can be reconsidered in the future if
+        // dedicated low-level safety sensors (e.g. radar or ultrasonic bumpers) are
+        // wired directly to the RT controller for independent hardware-level crash mitigation.
+        int32_t obs_kpa = 0;
+        /*
         int64_t last_obs_us = g_last_obstacle_us.load(std::memory_order_relaxed);
         uint32_t obs = UINT32_MAX;
         if (last_obs_us > 0 && (now - last_obs_us) <= int64_t(shared::kObstacleStaleTimeoutMs) * 1000) {
             obs = g_obstacle_mm.load(std::memory_order_relaxed);
         }
 
-        // Apply obstacle speed limiting and braking only for forward motion setpoints.
-        // In reverse (sp.motor_speed_mmps < 0) or standstill, front obstacles do not inhibit
-        // reversing or lock brakes, allowing the vehicle to reverse away from front hazards.
-        int32_t obs_kpa = 0;
         if (sp.motor_speed_mmps > 0) {
             sp.motor_speed_mmps = rt::PhysicsModel::obstacle_limit(sp.motor_speed_mmps, obs);
             obs_kpa = rt::PhysicsModel::obstacle_to_kpa(obs);
         }
+        */
 
 #if ETRIKE_RT_SPEED_FEEDBACK_SOURCE == 3
         g_calc_speed.update(sp.motor_speed_mmps, 0.01f);
@@ -1261,7 +1272,8 @@ static uint8_t task_health_snapshot() {
         }
 
         bool unused_takeover = false;
-        rt::SafetyResult sr = run_safety_checks(now, startup_grace, obs,
+        // Obstacle ESTOP frozen: pass UINT32_MAX (clear) so RT does not trip obstacle ESTOP locally.
+        rt::SafetyResult sr = run_safety_checks(now, startup_grace, UINT32_MAX,
                                                 m_estop_pending, m_current_mode, unused_takeover);
         if (m_estop_pending && sr.estop_reason == rt::kEstopReasonCanEstop) {
             sr.estop_reason = m_estop_reason;

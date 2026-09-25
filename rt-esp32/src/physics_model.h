@@ -31,6 +31,9 @@ public:
     // Returns true on success. Steer angle is internally clamped.
     bool resolve(const DriveCmd& cmd, ResolvedSetpoint& out);
 
+    // [FEATURE FROZEN]: Low-level obstacle reaction is frozen in the control loop.
+    // Perception and trajectory stopping profiles belong to Host (0x300 / 0x301).
+    // These functions are retained as pure math utilities for unit tests and future reconsideration.
     // Obstacle speed limiter: linearly scales speed from 0 at stop-dist
     // to full speed at clear-dist.
     static int32_t obstacle_limit(int32_t target_mmps, unsigned obstacle_mm);

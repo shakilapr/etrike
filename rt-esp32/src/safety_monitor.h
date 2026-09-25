@@ -155,12 +155,10 @@ inline rt::SafetyResult run_safety_checks(int64_t now, bool startup_grace,
         rt::g_mtr_health.update(now, mode_auto && !g_bypass_mtr_absent, mtr_fresh);
     }
 
-    // 3. SYS heartbeat timeout (architecture ?8.6: 200ms)
-    // Issue #3: heartbeat loss ALONE does not grant RT brake ownership. RT
-    // zeros propulsion here (motion prohibited) and enters SYS_DEGRADED; the
-    // SEB brake fallback machine (brake_fallback.h) decides whether RT must
-    // become the emergency 0x7B9 writer (only once SYS's 0x7B9 has also
-    // disappeared). seb_takeover is owned by that machine, not this check.
+    // 3. SYS heartbeat timeout (architecture §8.6: 200ms)
+    // On SYS heartbeat loss, RT zeros propulsion (motion prohibited).
+    // RT does not command the SEB brake; SYS owns SEB, and fail-safe braking
+    // is enforced by SYS and SEB's internal watchdogs.
     int64_t sys_hb = g_last_sys_hb_us.load();
     if (!g_bench_solo_mode && sys_hb > 0
         && (now - sys_hb) > int64_t(rt::kHeartbeatTimeoutMsSys) * 1000) {
@@ -168,7 +166,7 @@ inline rt::SafetyResult run_safety_checks(int64_t now, bool startup_grace,
         static int64_t last_sys_hb_log_us = 0;
         if (now - last_sys_hb_log_us > 1'000'000) {
             last_sys_hb_log_us = now;
-            ESP_LOGW("rt", "SYS heartbeat timeout ? motion prohibited (brake ownership pending)");
+            ESP_LOGW("rt", "SYS heartbeat timeout — motion prohibited");
         }
         r.zero_setpoints = true;
         r.estop_reason = rt::kEstopReasonHeartbeat;
@@ -230,6 +228,10 @@ inline rt::SafetyResult run_safety_checks(int64_t now, bool startup_grace,
     }
 
     // 6. Obstacle-triggered ESTOP detection (arch §7.6, gap #9)
+    // [FEATURE FROZEN]: Low-level obstacle ESTOP is frozen in the main control loop by passing
+    // UINT32_MAX. Host Autoware stack owns obstacle perception, decelerations, and emergency stops.
+    // Retained here for testbench evaluation and future reconsideration if dedicated RT-connected
+    // safety sensors are added.
     // Obstacle within stop distance while moving forward at non-trivial speed — freeze steering
     // and trigger obstacle brake. Only moving forward toward the obstacle trips this ESTOP;
     // reversing away from a front obstacle is permitted.
