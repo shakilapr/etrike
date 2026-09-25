@@ -613,9 +613,14 @@ static void emit_rt_diag() {
         emit_low_rt_drive(motor_speed_mmps, gear_in);
 
         // 50 Hz: Actuator commands (SES + SEB)
+        // Silent stop: only emit active actuator commands when host is driving
         if (tick % 2u == 0u) {
-            emit_low_ses(ses_angle_raw, motor_speed_mmps, ses_armed);
-            emit_low_seb(seb_stroke_raw, host_active);
+            if (host_active || g_rearm_ses_ticks > 0) {
+                emit_low_ses(ses_angle_raw, motor_speed_mmps, ses_armed);
+            }
+            if (host_active) {
+                emit_low_seb(seb_stroke_raw, host_active);
+            }
         }
 
         // 10 Hz: Actuator supervisor commands (SYS_MODE, SYS_PWR, SYS_SAFETY)
