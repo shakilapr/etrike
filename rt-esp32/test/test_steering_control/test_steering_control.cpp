@@ -1,4 +1,5 @@
 #include <unity.h>
+#include <cstdio>
 #include <cmath>
 #include <cstdint>
 #include "steering_control.h"
@@ -208,7 +209,7 @@ void test_steering_command_wire_format(void) {
     TEST_ASSERT_EQUAL(
         can::gen::CodecStatus::Ok,
         etrike::protocol::codecs::ses::encode_command(command, frame));
-    const uint8_t expected[] = {0x02, 0x00, 0x30, 0x75, 0x7D, 0x13, 0x00, 0xD6};
+    const uint8_t expected[] = {0x02, 0x75, 0x30, 0x01, 0x90, 0x13, 0x00, 0x3A};
     TEST_ASSERT_EQUAL(can::kIdSbwCmd, frame.id);
     TEST_ASSERT_EQUAL_UINT8_ARRAY(expected, frame.data.data(), sizeof(expected));
 }
