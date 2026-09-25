@@ -7,16 +7,6 @@
 
 namespace rt {
 
-inline etrike::protocol::codecs::seb::Command make_seb_takeover_req() {
-    using etrike::protocol::codecs::seb::ControlMode;
-    etrike::protocol::codecs::seb::Command seb{};
-    seb.alignment_enable = true;
-    seb.control_mode = ControlMode::Stroke;
-    seb.auto_brake   = 1;    // Emergency trigger
-    seb.stroke_request_raw = 1140; // 27mm max stroke: (27+30)/0.05
-    return seb;
-}
-
 inline etrike::protocol::codecs::seb::Command make_seb_auto_req(int32_t kpa) {
     using etrike::protocol::codecs::seb::ControlMode;
     etrike::protocol::codecs::seb::Command seb{};

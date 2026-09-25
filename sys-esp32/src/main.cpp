@@ -665,40 +665,18 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
         }
 
         // F4: 0x206 staleness check (Gap #15)
-        // Warn if no MTR feedback for >200ms (MTR comms lost).
-        // Startup grace: skip if never received (g_last_mtr_fbk_tick == 0).
-        // Issue #7: MTR feedback loss is a B-class traction inhibit owned by
-        // kInhibitMtrFbkLoss (NOT the brake-fault state). It forces power
-        // authority OFF in task_mode until MTR feedback is confirmed healthy.
+        // 0x206 is setpoint-echo telemetry without physical speed sensing;
+        // traction loss / runaway supervision will be handled when encoders are fitted.
+        // RT and SYS do not cut traction power authority or inhibit AUTO on 0x206 timeout.
         if (!g_bypass_mtr_absent) {
             uint32_t last_fbk = g_last_mtr_fbk_tick.load(std::memory_order_relaxed);
             bool stale = last_fbk > 0
                 && (xTaskGetTickCount() - last_fbk) >= pdMS_TO_TICKS(sys::kMtrFbkStaleMs);
             if (stale) {
-                sys::set_inhibit(sys::kInhibitMtrFbkLoss);
-                g_setpoint_speed_mmps.store(0, std::memory_order_relaxed);
-                g_setpoint_gear.store(0, std::memory_order_relaxed);
                 static TickType_t last_warn = 0;
-                if (last_warn == 0 || (xTaskGetTickCount() - last_warn) >= pdMS_TO_TICKS(1000)) {
-                    ESP_LOGE(TAG, "0x206 MTR_MOTOR_FBK stale — removing power authority (inhibit)");
+                if (last_warn == 0 || (xTaskGetTickCount() - last_warn) >= pdMS_TO_TICKS(5000)) {
+                    ESP_LOGW(TAG, "0x206 MTR_MOTOR_FBK stale (>%d ms)", sys::kMtrFbkStaleMs);
                     last_warn = xTaskGetTickCount();
-                }
-            }
-            // Confirmed recovery: kMtrFbkRecoverFrames consecutive fresh 0x206
-            // observations at this 20 Hz cadence release the inhibit bit. This
-            // is not a single-frame recovery.
-            static int mtr_fbk_recover_count = 0;
-            if (sys::g_inhibit_reasons.load() & sys::kInhibitMtrFbkLoss) {
-                if (!stale) {
-                    if (++mtr_fbk_recover_count >= sys::kMtrFbkRecoverFrames) {
-                        sys::clear_inhibit(sys::kInhibitMtrFbkLoss);
-                        mtr_fbk_recover_count = 0;
-                        ESP_LOGI(TAG, "MTR feedback recovered — inhibit cleared");
-                    }
-                } else {
-                    // Still stale: any partial recovery progress is reset so a
-                    // release requires a full fresh run of N observations.
-                    mtr_fbk_recover_count = 0;
                 }
             }
         }
@@ -854,7 +832,8 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
         if (mode == can::Mode::Auto
             && brake_age > pdMS_TO_TICKS(sys::kBrakeSetpointStaleMs)) {
             // Never reuse an old RT brake value after its real-time deadline.
-            brake_kpa = shared::kMaxBrakeKpa;
+            // Request assisted stopping pressure rather than instant 5000 kPa mechanical clamp.
+            brake_kpa = shared::kAssistStopKpa;
         }
 
         can::custom::seb::Command seb_cmd;
@@ -1000,23 +979,8 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
         gpio_set_level(static_cast<gpio_num_t>(sys::kBulbReady), ready ? 1 : 0);
         gpio_set_level(static_cast<gpio_num_t>(sys::kBulbEstop), estop ? 1 : 0);
         gpio_set_level(static_cast<gpio_num_t>(sys::kBulbBypass), g_bench_solo_mode ? 1 : 0);
-#endif
-
-        vTaskDelayUntil(&last, period);
-    }
-}
-
-// ── Power task (prio 2, 5 Hz) ─────────────────────────────────────
-
-[[noreturn]] static void task_power(void*) {
-    TickType_t period = pdMS_TO_TICKS(200);  // 5 Hz
-    TickType_t last   = xTaskGetTickCount();
-    while (1) {
-        // Keep 12V accessory relay energized even during ESTOP so that indicator
-        // bulbs (kBulbEstop, mode indicators, warning lights) remain visible.
-        [[maybe_unused]] bool on = true;
-#ifndef TESTING
-        gpio_set_level(static_cast<gpio_num_t>(sys::kPower12vRelay), on ? 1 : 0);
+        // Keep 12V accessory relay energized even during ESTOP so indicator bulbs remain visible
+        gpio_set_level(static_cast<gpio_num_t>(sys::kPower12vRelay), 1);
 #endif
 
         vTaskDelayUntil(&last, period);
@@ -1233,7 +1197,7 @@ static can::gen::SysNodeStatus build_sys_node_status() {
 
 static TaskHandle_t h_can_rx, h_safety, h_dispatch, h_mode;
 static TaskHandle_t h_gear, h_brake, h_lights;
-static TaskHandle_t h_indicator, h_power, h_can_tx, h_can_control, h_diag, h_hb;
+static TaskHandle_t h_indicator, h_can_tx, h_can_control, h_diag, h_hb;
 
 // Put every connected SYS GPIO in a deterministic, non-actuating state before
 // starting CAN or tasks. GPIO reset defaults leave button inputs floating.
@@ -1269,6 +1233,9 @@ static void init_board_gpio() {
     outputs.pull_down_en = GPIO_PULLDOWN_DISABLE;
     outputs.intr_type = GPIO_INTR_DISABLE;
     ESP_ERROR_CHECK(gpio_config(&outputs));
+
+    // Energize 12V accessory relay so that indicators and warning lamps have power
+    ESP_ERROR_CHECK(gpio_set_level(static_cast<gpio_num_t>(sys::kPower12vRelay), 1));
 
     gpio_config_t estop = {};
     estop.pin_bit_mask = 1ULL << sys::kEstopGpio;
@@ -1383,12 +1350,11 @@ extern "C" void app_main() {
     xTaskCreate(task_brake,     "brake",     3584, nullptr, 3, &h_brake);
     xTaskCreate(task_lights,    "lights",    2560, nullptr, 3, &h_lights);
     xTaskCreate(task_indicator, "indicator", 2560, nullptr, 2, &h_indicator);
-    xTaskCreate(task_power,     "power",     2560, nullptr, 2, &h_power);
     xTaskCreate(task_can_tx,    "can_tx",    3584, nullptr, 2, &h_can_tx);
     xTaskCreate(task_can_control,"can_ctrl",  2560, nullptr, 2, &h_can_control);
     xTaskCreate(task_diag,      "diag",      3584, nullptr, 1, &h_diag);
     xTaskCreate(task_hb,        "hb",        2560, nullptr, 1, &h_hb);
 
-    ESP_LOGI(TAG, "Ready — 13 tasks running (vehicle, MTR owns motor). Mode=%s", g_mode_mgr.name());
+    ESP_LOGI(TAG, "Ready — 12 tasks running (vehicle, MTR owns motor). Mode=%s", g_mode_mgr.name());
     vTaskDelete(nullptr);
 }
