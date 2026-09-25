@@ -235,6 +235,8 @@ inline rt::SafetyResult run_safety_checks(int64_t now, bool startup_grace,
     // reversing away from a front obstacle is permitted.
     if (obstacle_mm <= shared::kObstacleStopMM
         && g_mtr_motor_command_speed_mmps.load() > shared::kLowSpeedThreshMmps) {
+        r.zero_setpoints = true;
+        r.brake_kpa = shared::kMaxBrakeKpa;
         r.disable_steering = true;
         r.obstacle_triggered = true;
         r.estop_reason = rt::kEstopReasonObstacle;
