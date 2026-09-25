@@ -331,8 +331,8 @@ export function getSpeedPipeline(messages: MessageState[]) {
   const motorFbk = findMsg(messages, 'MTR_MOTOR_FBK')
   const wheelSts = findMsg(messages, 'RT_WHEEL_SPEED_STS')
 
-  const hostSpeed = signalNum(hostDrive, 'speed_mmps')
-  const hostGear = signalText(hostDrive, 'gear')
+  const hostSpeed = frameRecent(hostDrive) ? signalNum(hostDrive, 'speed_mmps') : null
+  const hostGear = frameRecent(hostDrive) ? signalText(hostDrive, 'gear') : null
 
   const rtSpeed =
     signalNum(rtDrive, 'motor_speed_mmps') ?? signalNum(rtDrive, 'speed_mmps')
@@ -371,7 +371,7 @@ export function getSteeringPipeline(messages: MessageState[]) {
   const sesStatus = findMsg(messages, 'SES_STATUS')
   const steerDiag = findMsg(messages, 'STEER_DIAG')
 
-  const hostYawRate = signalNum(hostDrive, 'yaw_rate_mrad_s')
+  const hostYawRate = frameRecent(hostDrive) ? signalNum(hostDrive, 'yaw_rate_mrad_s') : null
   const hostAngleRaw = signalNum(hostSteer, 'steer_angle_0_1deg')
   const hostSteerDeg = hostAngleRaw != null ? hostAngleRaw * 0.1 : null
 
