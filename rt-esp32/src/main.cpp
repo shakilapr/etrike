@@ -1420,6 +1420,7 @@ static uint8_t task_health_snapshot() {
 #endif
             if (g_steering.state() == rt::SteerState::ESTOP_RAMP_TO_ZERO
                 || g_steering.state() == rt::SteerState::ESTOP_HOLD_THEN_SILENT
+                || g_steering.state() == rt::SteerState::STEER_SILENT_STOP
                 || m_current_mode == uint8_t(can::Mode::Estop))
                 hf |= rt::kHbHealthBitEstopActive;
             if (m_current_mode == uint8_t(can::Mode::Auto))
