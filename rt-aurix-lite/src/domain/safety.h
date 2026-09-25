@@ -68,6 +68,7 @@ public:
 private:
     bool   m_follow_err_active = false;
     TimeUs m_follow_err_start_us = 0;
+    std::int16_t m_prev_steer_angle_0_1deg = -32768;
     bool   m_host_lost = false;
     bool   m_mtr_lost = false;
 };

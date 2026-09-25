@@ -79,13 +79,27 @@ SafetyResult SafetySupervisor::evaluate(TimeUs now_us, bool startup_grace,
 
     // 3. Steering follow-error (gated on ACTIVE and no existing zero).
     if (!r.zero_setpoints && steer_active && steer_fb.valid) {
-        std::int32_t err = std::abs(static_cast<std::int32_t>(steer_cmd_0_1deg)
-                                    - static_cast<std::int32_t>(steer_fb.angle_0_1deg));
+        std::int32_t diff = static_cast<std::int32_t>(steer_cmd_0_1deg)
+                          - static_cast<std::int32_t>(steer_fb.angle_0_1deg);
+        std::int32_t err = std::abs(diff);
         float threshold_deg = compute_following_error_threshold(
             static_cast<float>(std::abs(motor_fb.motor_command_speed_mmps)));
         std::int32_t threshold_0_1deg = static_cast<std::int32_t>(threshold_deg * 10.0f);
+
+        bool making_progress = false;
+        if (m_prev_steer_angle_0_1deg != -32768) {
+            std::int32_t delta = static_cast<std::int32_t>(steer_fb.angle_0_1deg) - static_cast<std::int32_t>(m_prev_steer_angle_0_1deg);
+            if ((diff > 0 && delta > 0) || (diff < 0 && delta < 0)) {
+                making_progress = true;
+            }
+        }
+        m_prev_steer_angle_0_1deg = steer_fb.angle_0_1deg;
+
         if (err > threshold_0_1deg) {
-            if (!m_follow_err_active) {
+            if (making_progress) {
+                m_follow_err_active = false;
+                m_follow_err_start_us = 0;
+            } else if (!m_follow_err_active) {
                 m_follow_err_active = true;
                 m_follow_err_start_us = now_us;
             } else if (now_us - m_follow_err_start_us > kFollowErrUs) {
@@ -102,6 +116,7 @@ SafetyResult SafetySupervisor::evaluate(TimeUs now_us, bool startup_grace,
     } else {
         m_follow_err_active = false;
         m_follow_err_start_us = 0;
+        m_prev_steer_angle_0_1deg = -32768;
     }
 
     // 4. Obstacle-triggered ESTOP.
