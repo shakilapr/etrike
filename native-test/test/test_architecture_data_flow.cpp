@@ -10,8 +10,8 @@
 #include "protocol/generated/cpp/etrike_protocol.hpp"
 
 // RM signal decoder & MTR motor manager logic
-#include "rm-esp32/src/config.h"
-#include "rm-esp32/src/rc_decoder.h"
+#include "rm-esp32-legacy/src/config.h"
+#include "rm-esp32-legacy/src/rc_decoder.h"
 #include "mtr-stm32/src/config.h"
 #include "mtr-stm32/src/relay_controller.h"
 #include "mtr-stm32/src/dac_controller.h"

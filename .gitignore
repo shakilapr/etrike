@@ -69,6 +69,8 @@ CMakeLists.txt
 !simulation/full_system/CMakeLists.txt
 !rm-esp32/CMakeLists.txt
 !rm-esp32/src/CMakeLists.txt
+!rm-esp32-legacy/CMakeLists.txt
+!rm-esp32-legacy/src/CMakeLists.txt
 !mtr-stm32/CMakeLists.txt
 
 # ── Coverage & profiling ─────────────────────────────────────────────

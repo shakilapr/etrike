@@ -2,8 +2,8 @@
 #include <cstdio>
 #include <cmath>
 #include "protocol/compat/can.hpp"
-#include "rm-esp32/src/config.h"
-#include "rm-esp32/src/rc_decoder.h"
+#include "rm-esp32-legacy/src/config.h"
+#include "rm-esp32-legacy/src/rc_decoder.h"
 
 namespace {
 

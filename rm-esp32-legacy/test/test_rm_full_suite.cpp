@@ -5,8 +5,8 @@
 #include <algorithm>
 #include "protocol/compat/can.hpp"
 #include "shared_config.h"
-#include "rm-esp32/src/config.h"
-#include "rm-esp32/src/rc_decoder.h"
+#include "rm-esp32-legacy/src/config.h"
+#include "rm-esp32-legacy/src/rc_decoder.h"
 
 // Receiver suite entry (defined in test_rm_receiver.cpp). Combined into this single
 // test binary so there is exactly one `main` across the test/ sources.

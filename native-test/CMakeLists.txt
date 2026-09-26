@@ -322,7 +322,7 @@ target_include_directories(architecture_data_flow PRIVATE
     ${ETRIKE_ROOT}
     ${ETRIKE_ROOT}/shared
     ${ETRIKE_ROOT}/mtr-stm32/src
-    ${ETRIKE_ROOT}/rm-esp32/src
+    ${ETRIKE_ROOT}/rm-esp32-legacy/src
 )
 
 # ── CTest ────────────────────────────────────────────────────────────
