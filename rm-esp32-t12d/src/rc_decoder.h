@@ -157,13 +157,13 @@ inline RcSnapshot decode_rc_pulses(const uint32_t pulse_us[kNumSbusChannels],
         // CH8: SWD 2-Position Switch -> Drive Enable (UP = Safe/Disabled, DOWN = Enable Request/Armed)
         snap.drive_enable_req = (pulse_us[kChDriveEnable] >= kSwitchThresholdUs);
 
-        // CH7: SWC 3-Position Switch -> Gear Selector (UP = Reverse, MID = Neutral, DOWN = Drive)
+        // CH7: SWC 3-Position Switch -> Gear Selector (UP = Drive, MID = Neutral, DOWN = Reverse)
         if (snap.park_hold_req) {
             snap.gear = can::Gear::N;
-        } else if (pulse_us[kChGear] <= kGearRevMaxUs) {
-            snap.gear = can::Gear::R;
-        } else if (pulse_us[kChGear] >= kGearDriveMinUs) {
+        } else if (pulse_us[kChGear] <= kGearDriveMaxUs) {
             snap.gear = can::Gear::D;
+        } else if (pulse_us[kChGear] >= kGearRevMinUs) {
+            snap.gear = can::Gear::R;
         } else {
             snap.gear = can::Gear::N;
         }

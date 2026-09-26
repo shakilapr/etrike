@@ -49,7 +49,7 @@ constexpr uint8_t kChBrake         = 1;   // CH2: Right Stick Vertical (Service 
 constexpr uint8_t kChThrottle      = 2;   // CH3: Left Stick Vertical (Throttle: 0 to 100%)
 constexpr uint8_t kChOperatingMode = 4;   // CH5: SWA 3-Position Switch (Target: UP=BARE, MID=SYS, DOWN=RT)
 constexpr uint8_t kChParkHold      = 5;   // CH6: SWB 3-Position Switch (Park Hold: UP=HOLD, MID/DOWN=OFF)
-constexpr uint8_t kChGear          = 6;   // CH7: SWC 3-Position Switch (Gear: UP=R, MID=N, DOWN=D)
+constexpr uint8_t kChGear          = 6;   // CH7: SWC 3-Position Switch (Gear: UP=D, MID=N, DOWN=R)
 constexpr uint8_t kChDriveEnable   = 7;   // CH8: SWD 2-Position Switch (Drive Enable: UP=OFF, DOWN=ON)
 constexpr uint8_t kChAuxVra        = 8;   // CH9: VRA Knob (Aux Implement Analog: 0.0 to 1.0)
 constexpr uint8_t kChAuxVrb        = 9;   // CH10: VRB Knob (Aux Implement Analog: 0.0 to 1.0)
@@ -83,9 +83,9 @@ constexpr uint32_t kModeRtMinUs         = 1700;
 // SWB 3-Position Park Brake Threshold (UP = HOLD [<= 1300us], MID/DOWN = OFF [> 1300us])
 constexpr uint32_t kParkHoldMaxUs       = 1300;
 
-// SWC 3-Position Gear Thresholds (UP = Reverse, MID = Neutral, DOWN = Drive)
-constexpr uint32_t kGearRevMaxUs        = 1300;
-constexpr uint32_t kGearDriveMinUs      = 1700;
+// SWC 3-Position Gear Thresholds (UP = Drive, MID = Neutral, DOWN = Reverse)
+constexpr uint32_t kGearDriveMaxUs      = 1300;
+constexpr uint32_t kGearRevMinUs        = 1700;
 
 // SWD 2-Position Drive Enable Switch Threshold (UP = OFF [< 1500us], DOWN = ON [>= 1500us])
 constexpr uint32_t kSwitchThresholdUs   = 1500;

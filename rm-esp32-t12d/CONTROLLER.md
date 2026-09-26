@@ -13,9 +13,9 @@ Vehicle driving controls, switch mapping, safety interlocks, and CAN signals for
              (3-pos) (3-pos)           (3-pos) (2-pos)
                 │       │                 │       │
           TARGET SELECT PARK / HOLD   GEAR SELECT  DRIVE ENABLE
-          UP:   BARE    UP:   HOLD     UP:   REV   UP:   OFF
+          UP:   BARE    UP:   HOLD     UP:   DRV   UP:   OFF
           MID:  SYS     MID:  RELEASE  MID:  NEU   DOWN: ON (ARM)
-          DOWN: RT      DOWN: RELEASE  DOWN: DRV
+          DOWN: RT      DOWN: RELEASE  DOWN: REV
 
                       [VRA]             [VRB]
                      (dial)            (dial)
@@ -50,7 +50,7 @@ Vehicle driving controls, switch mapping, safety interlocks, and CAN signals for
 | **Left Stick (X)** | 2-Axis Gimbal | Lower Left | **CH4** | **Reserved / Spare** | Horizontal (Left / Right) | $1000 \dots 2000\,\mu\text{s}$ | Unused | — |
 | **SWA Switch** | 3-Position Toggle | Top Far-Left | **CH5** | **Target Selection** | UP / MID / DOWN | $1000$ / $1500$ / $2000\,\mu\text{s}$ | `BARE` / `SYS` / `RT` | Target Bus Cluster Selection |
 | **SWB Switch** | 3-Position Toggle | Top Inner-Left | **CH6** | **Electric Park Brake (Hold)** | UP / MID / DOWN | $1000$ / $1500$ / $2000\,\mu\text{s}$ | UP: `PRK:HOLD` ($15\,\text{mm}$) / MID,DOWN: `PRK:OFF` ($0\,\text{mm}$) | `0x7B9` `VCU_SEB_REQ` / `0x301` `HOST_BRAKE_REQ` |
-| **SWC Switch** | 3-Position Toggle | Top Inner-Right | **CH7** | **Transmission Gear Selector** | UP / MID / DOWN | $1000$ / $1500$ / $2000\,\mu\text{s}$ | `[R]` Reverse / `[N]` Neutral / `[D]` Drive | `0x204` `RT_DRIVE_CMD` / `0x300` `HOST_DRIVE_CMD` |
+| **SWC Switch** | 3-Position Toggle | Top Inner-Right | **CH7** | **Transmission Gear Selector** | UP / MID / DOWN | $1000$ / $1500$ / $2000\,\mu\text{s}$ | `[D]` Drive / `[N]` Neutral / `[R]` Reverse | `0x204` `RT_DRIVE_CMD` / `0x300` `HOST_DRIVE_CMD` |
 | **SWD Switch** | 2-Position Toggle | Top Far-Right | **CH8** | **Drive Enable Request** | UP / DOWN | $\approx 1000$ / $\approx 2000\,\mu\text{s}$ | `ARM:OFF` (Disabled) / `ARM:ON` (Enable Request) | `0x113` `SYS_PWR_CMD` / `0x112` `HMI_PWR_REQ` |
 | **VRA Knob** | Rotary Potentiometer | Top Center-Left | **CH9** | **Dynamic Speed Governor** | Dial Rotation | $1000 \dots 2000\,\mu\text{s}$ | $0\% \dots 100\%$ (scales Drive & Reverse max velocity) | Telemetry / Powertrain |
 | **VRB Knob** | Rotary Potentiometer | Top Center-Right | **CH10** | **Aux Analog Knob 2** | Dial Rotation | $1000 \dots 2000\,\mu\text{s}$ | $0.0 \dots 1.0$ | Telemetry / Aux |
@@ -102,9 +102,9 @@ Vehicle driving controls, switch mapping, safety interlocks, and CAN signals for
     - **Reverse (`[R]`)**: Scaled proportionally from $0\,\text{mm/s}$ down to $-500\,\text{mm/s}$ ($-1.8\,\text{km/h}$).
   - Serial monitor outputs `GOV: XX%` whenever governor position changes by $\ge 5\%$.
 - **SWC — Transmission Gear**:
-  - **UP**: Reverse (`[R]`), max speed $-500\,\text{mm/s} \times \text{GovScale}$.
+  - **UP**: Drive (`[D]`), max speed $+3000\,\text{mm/s} \times \text{GovScale}$.
   - **MID**: Neutral (`[N]`), motor torque locked to $0\,\text{mm/s}$.
-  - **DOWN**: Drive (`[D]`), max speed $+3000\,\text{mm/s} \times \text{GovScale}$.
+  - **DOWN**: Reverse (`[R]`), max speed $-500\,\text{mm/s} \times \text{GovScale}$.
 - **Brake-Over-Throttle Interlock**: Whenever total brake stroke is **$> 5.0\,\text{mm}$**, motor throttle is instantly clamped to $0\,\text{mm/s}$.
 
 ---

@@ -39,7 +39,7 @@ Across all three modes:
 │                             OPERATOR CONTROLS (RadioLink T12D)                             │
 │   Right Stick: Steer (X) / Service Brake (Y)    │   Left Stick: Throttle (Y)                │
 │   SWA (Target Mode: UP=BARE, MID=SYS, DOWN=RT)  │   SWB (Park / Hold: UP=HOLD, MID/DN=REL)  │
-│   SWC (Gear: UP=R, MID=N, DOWN=D)               │   SWD (Drive Enable: UP=OFF, DOWN=ON)     │
+│   SWC (Gear: UP=D, MID=N, DOWN=R)               │   SWD (Drive Enable: UP=OFF, DOWN=ON)     │
 │   VRA (Dynamic Speed Governor 0..100%)          │   VRB (Aux Analog Knob 2)                 │
 │   VRC (Aux Pull-Down Brake 1)                   │   VRD (Aux Pull-Down Brake 2)             │
 └─────────────────────────────────────────────┬───────────────────────────────────────────────┘
@@ -159,9 +159,9 @@ All messages and signal formats are bound directly to canonical generated defini
   - `UP` ($\le 1300\,\mu\text{s}$): Park Engaged (`park_hold_req = true`, $15.0\text{ mm}$ holding stroke, Neutral gear, $0\text{ mm/s}$).
   - `MID` / `DOWN` ($> 1300\,\mu\text{s}$): Park Released (`park_hold_req = false`, $0\text{ mm}$ stroke).
 - **SWC Gear Selector (CH7, 3-Position)**:
-  - `UP` ($\le 1300\,\mu\text{s}$): Reverse (`Gear::R`).
+  - `UP` ($\le 1300\,\mu\text{s}$): Drive (`Gear::D`).
   - `MID` ($1300\dots 1700\,\mu\text{s}$): Neutral (`Gear::N`).
-  - `DOWN` ($\ge 1700\,\mu\text{s}$): Drive (`Gear::D`).
+  - `DOWN` ($\ge 1700\,\mu\text{s}$): Reverse (`Gear::R`).
   - **State Preservation**: Physical switch selection is preserved in `snap.gear` regardless of park hold status. `drive_cmd.gear` emits `snap.gear` whenever drive is active (`ARM:ON`), defaulting to `Gear::N` when disarmed or parked.
 - **SWD Drive Enable (CH8, 2-Position)**:
   - `UP` ($< 1500\,\mu\text{s}$): Disabled (`drive_enable_req = false`).

@@ -255,8 +255,8 @@ void test_throttle_and_gear_combinations() {
 
     uint32_t now_ms = 1000;
 
-    // 1. Drive (SWC DOWN = 2000us) + Full Throttle (1950us) -> +3000 mm/s
-    frame.channels[rm::kChGear]     = rm::pulse_us_to_sbus(2000);
+    // 1. Drive (SWC UP = 1000us) + Full Throttle (1950us) -> +3000 mm/s
+    frame.channels[rm::kChGear]     = rm::pulse_us_to_sbus(1000);
     frame.channels[rm::kChThrottle] = rm::pulse_us_to_sbus(1950);
     auto snap = rm::decode_sbus_frame(frame, now_ms, now_ms);
     ASSERT_TRUE(snap.gear == can::Gear::D);
@@ -275,8 +275,8 @@ void test_throttle_and_gear_combinations() {
     ASSERT_NEAR(snap.throttle_norm, 0.0f, 0.001f);
     ASSERT_EQ(snap.target_speed_mmps, 0);
 
-    // 4. Reverse (SWC UP = 1000us) + Full Throttle (1950us) -> -500 mm/s
-    frame.channels[rm::kChGear]     = rm::pulse_us_to_sbus(1000);
+    // 4. Reverse (SWC DOWN = 2000us) + Full Throttle (1950us) -> -500 mm/s
+    frame.channels[rm::kChGear]     = rm::pulse_us_to_sbus(2000);
     frame.channels[rm::kChThrottle] = rm::pulse_us_to_sbus(1950);
     snap = rm::decode_sbus_frame(frame, now_ms, now_ms);
     ASSERT_TRUE(snap.gear == can::Gear::R);
@@ -296,7 +296,7 @@ void test_service_and_backup_braking() {
     for (int i = 0; i < 16; ++i) frame.channels[i] = 992;
     frame.channels[rm::kChDriveEnable] = rm::pulse_us_to_sbus(2000);
     frame.channels[rm::kChParkHold]    = rm::pulse_us_to_sbus(1500); // SWB MID (Released)
-    frame.channels[rm::kChGear]        = rm::pulse_us_to_sbus(2000); // Drive
+    frame.channels[rm::kChGear]        = rm::pulse_us_to_sbus(1000); // Drive
     frame.channels[rm::kChThrottle]    = rm::pulse_us_to_sbus(1950); // Full throttle
     frame.channels[rm::kChOperatingMode] = rm::pulse_us_to_sbus(1000); // SWA UP (BARE)
 
@@ -372,7 +372,7 @@ void test_park_hold_semantic_request() {
     rm::SbusFrame frame{};
     for (int i = 0; i < 16; ++i) frame.channels[i] = 992;
     frame.channels[rm::kChDriveEnable] = rm::pulse_us_to_sbus(2000); // SWD DOWN (Enabled)
-    frame.channels[rm::kChGear]        = rm::pulse_us_to_sbus(2000); // Drive
+    frame.channels[rm::kChGear]        = rm::pulse_us_to_sbus(1000); // Drive
     frame.channels[rm::kChThrottle]    = rm::pulse_us_to_sbus(1950); // Full throttle
     frame.channels[rm::kChOperatingMode] = rm::pulse_us_to_sbus(1000); // SWA UP (BARE)
     frame.channels[rm::kChAuxVra]      = rm::pulse_us_to_sbus(2000); // VRA 100% Speed Governor
@@ -408,7 +408,7 @@ void test_drive_enable_direct_switch() {
     rm::SbusFrame frame{};
     for (int i = 0; i < 16; ++i) frame.channels[i] = 992;
     frame.channels[rm::kChParkHold]    = rm::pulse_us_to_sbus(1500); // SWB MID (Park Released)
-    frame.channels[rm::kChGear]        = rm::pulse_us_to_sbus(2000);
+    frame.channels[rm::kChGear]        = rm::pulse_us_to_sbus(1000);
     frame.channels[rm::kChOperatingMode] = rm::pulse_us_to_sbus(1000);
 
     uint32_t now_ms = 1000;
@@ -654,7 +654,7 @@ void test_vra_speed_governor_scaling() {
     uint32_t now_ms = 1000;
 
     // 1. Full Throttle in Drive (D) with VRA at 100% (2000us) -> full +3000 mm/s
-    frame.channels[rm::kChGear]     = rm::pulse_us_to_sbus(2000); // Drive
+    frame.channels[rm::kChGear]     = rm::pulse_us_to_sbus(1000); // Drive
     frame.channels[rm::kChThrottle] = rm::pulse_us_to_sbus(1950); // Full Throttle
     frame.channels[rm::kChAuxVra]   = rm::pulse_us_to_sbus(2000); // 100% Governor
     auto snap = rm::decode_sbus_frame(frame, now_ms, now_ms);
@@ -680,7 +680,7 @@ void test_vra_speed_governor_scaling() {
     ASSERT_EQ(snap.target_speed_mmps, 0);
 
     // 5. Full Throttle in Reverse (R) with VRA at 100% (2000us) -> -500 mm/s
-    frame.channels[rm::kChGear]     = rm::pulse_us_to_sbus(1000); // Reverse
+    frame.channels[rm::kChGear]     = rm::pulse_us_to_sbus(2000); // Reverse
     frame.channels[rm::kChThrottle] = rm::pulse_us_to_sbus(1950); // Full Throttle
     frame.channels[rm::kChAuxVra]   = rm::pulse_us_to_sbus(2000); // 100% Governor
     snap = rm::decode_sbus_frame(frame, now_ms, now_ms);

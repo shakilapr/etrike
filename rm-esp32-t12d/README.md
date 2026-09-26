@@ -63,7 +63,7 @@ In the E-Trike distributed control system, `rm-esp32-t12d` functions strictly as
 | **CH4** | **Left Stick X** | **Aux Implement X** | Proportional: $0.0\dots 1.0$ | Aux / Telemetry |
 | **CH5** | **SWA Switch** | **Operating Mode** | 3-Position: UP = `BARE`, MID = `SYS`, DOWN = `RT` | Target CAN Cluster Selection |
 | **CH6** | **SWB Switch** | **Park / Brake Hold** | 3-Position: UP = Park Hold ($15\text{ mm}$, Neutral), MID/DOWN = Released ($0\text{ mm}$) | `0x7B9` / `0x301` |
-| **CH7** | **SWC Switch** | **Gear Selector** | 3-Position: UP = Reverse (`R`), MID = Neutral (`N`), DOWN = Drive (`D`) | `0x204 RT_DRIVE_CMD` / `0x300 HOST_DRIVE_CMD` |
+| **CH7** | **SWC Switch** | **Gear Selector** | 3-Position: UP = Drive (`D`), MID = Neutral (`N`), DOWN = Reverse (`R`) | `0x204 RT_DRIVE_CMD` / `0x300 HOST_DRIVE_CMD` |
 | **CH8** | **SWD Switch** | **Drive Enable** | 2-Position: UP = Disabled (OFF), DOWN = Enable Request (ON) | `0x113 SYS_PWR_CMD` / `0x112 HMI_PWR_REQ` |
 | **CH9** | **VRA Knob** | **Speed Governor** | Rotary Potentiometer: $0.0\dots 1.0$ (Scales max ceiling for D and R from 0% to 100%) | Motor Command Governor |
 | **CH10**| **VRB Knob** | **Aux Analog 2** | Rotary Potentiometer: $0.0\dots 1.0$ | Telemetry / Aux |
@@ -131,7 +131,7 @@ Only **three connections** are required between the R16F receiver and the ESP32:
    - CH4: Left Stick X (Aux Implement X)
    - CH5: SWA (Operating Mode: UP=BARE, MID=SYS, DOWN=RT)
    - CH6: SWB (Park Hold: UP=HOLD, MID/DOWN=OFF)
-   - CH7: SWC (Transmission Gear: UP=R, MID=N, DOWN=D)
+   - CH7: SWC (Transmission Gear: UP=D, MID=N, DOWN=R)
    - CH8: SWD (Drive Enable: UP=OFF, DOWN=ON)
    - CH9: VRA (Speed Governor: 0% to 100%)
    - CH10: VRB (Aux Analog 2)
