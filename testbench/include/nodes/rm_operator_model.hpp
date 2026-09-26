@@ -1,6 +1,6 @@
 #pragma once
-// RmOperatorModel - wraps the real rm-esp32-t12d CAN emitter (rm::CanEmitter) so
-// the rm-esp32-t12d gateway can be exercised as an operator/source node inside
+// RmOperatorModel - wraps the real rm-esp32 CAN emitter (rm::CanEmitter) so
+// the rm-esp32 gateway can be exercised as an operator/source node inside
 // the testbench (replacing or alongside HostModel). It builds an rm::RcSnapshot
 // from scripted operator inputs and emits the full per-mode CAN cluster onto the
 // configured bus using the firmware's actual encode path.
@@ -9,9 +9,9 @@
 #include <string>
 #include "ecu_node.hpp"
 #include "protocol/compat/can.hpp"
-#include "rm-esp32-t12d/src/config.h"
-#include "rm-esp32-t12d/src/rc_decoder.h"
-#include "rm-esp32-t12d/src/can_emitter.h"
+#include "rm-esp32/src/config.h"
+#include "rm-esp32/src/rc_decoder.h"
+#include "rm-esp32/src/can_emitter.h"
 
 namespace testbench {
 

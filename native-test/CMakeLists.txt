@@ -209,7 +209,7 @@ target_include_directories(rm_gateway_ingest PRIVATE
     ${ETRIKE_ROOT}
     ${ETRIKE_ROOT}/shared
     ${ETRIKE_ROOT}/rt-esp32/src
-    ${ETRIKE_ROOT}/rm-esp32-t12d/src
+    ${ETRIKE_ROOT}/rm-esp32/src
 )
 
 add_executable(rt_phase2_motion

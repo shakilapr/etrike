@@ -22,9 +22,9 @@
 #include "protocol/codecs/seb.hpp"
 #include "can_rx_router.h"
 
-#include "rm-esp32-t12d/src/config.h"
-#include "rm-esp32-t12d/src/rc_decoder.h"
-#include "rm-esp32-t12d/src/can_emitter.h"
+#include "rm-esp32/src/config.h"
+#include "rm-esp32/src/rc_decoder.h"
+#include "rm-esp32/src/can_emitter.h"
 
 static int pass = 0;
 static int fail = 0;

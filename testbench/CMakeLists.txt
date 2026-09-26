@@ -45,7 +45,7 @@ target_include_directories(etrike-system-test PRIVATE
     ${ETRIKE_ROOT}/sys-esp32/src
     ${ETRIKE_ROOT}/rt-esp32/src
     ${ETRIKE_ROOT}/mtr-stm32/src
-    ${ETRIKE_ROOT}/rm-esp32-t12d/src
+    ${ETRIKE_ROOT}/rm-esp32/src
 )
 
 target_compile_definitions(etrike-system-test PRIVATE
