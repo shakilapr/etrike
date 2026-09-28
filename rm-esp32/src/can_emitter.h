@@ -122,16 +122,17 @@ private:
 
             float target_steer_deg = snap.signal_valid ? snap.steering_deg : 0.0f;
 
-            // 1. Exponential Moving Average filter on target angle (50 Hz, alpha = 0.25)
-            // Eliminates SBUS discrete stair-steps and pulse jitter
-            filtered_steer_deg_ += 0.25f * (target_steer_deg - filtered_steer_deg_);
+            // 1. Exponential Moving Average filter on target angle (50 Hz, alpha = 0.15)
+            // Eliminates SBUS discrete stair-steps and pulse jitter smoothly
+            filtered_steer_deg_ += 0.15f * (target_steer_deg - filtered_steer_deg_);
 
             int16_t angle_raw = static_cast<int16_t>(std::round(filtered_steer_deg_ * 10.0f)) + static_cast<int16_t>(kSbwAngleOffset);
             angle_raw = std::clamp(angle_raw, kMinSteerRaw, kMaxSteerRaw);
             ses_cmd.target_angle_raw  = angle_raw;
 
-            // Constant low slew rate for smooth turning per specification (Section 9.A & 9.C)
-            constexpr uint16_t kSmoothSlewRateDps = 200; // 200 deg/s
+            // Hardware minimum angular speed per SES specification (126 deg/s)
+            // Ensures smooth, controlled turning across the vehicle's +/-45 deg mechanical range
+            constexpr uint16_t kSmoothSlewRateDps = 126; // 126 deg/s (ECU minimum supported velocity)
             ses_cmd.target_speed_raw = kSmoothSlewRateDps;
 
             ses_cmd.rolling_counter   = roll_ses_;
@@ -238,16 +239,17 @@ private:
 
             float target_steer_deg = snap.signal_valid ? snap.steering_deg : 0.0f;
 
-            // 1. Exponential Moving Average filter on target angle (50 Hz, alpha = 0.25)
-            // Eliminates SBUS discrete stair-steps and pulse jitter
-            filtered_steer_deg_ += 0.25f * (target_steer_deg - filtered_steer_deg_);
+            // 1. Exponential Moving Average filter on target angle (50 Hz, alpha = 0.15)
+            // Eliminates SBUS discrete stair-steps and pulse jitter smoothly
+            filtered_steer_deg_ += 0.15f * (target_steer_deg - filtered_steer_deg_);
 
             int16_t angle_raw = static_cast<int16_t>(std::round(filtered_steer_deg_ * 10.0f)) + static_cast<int16_t>(kSbwAngleOffset);
             angle_raw = std::clamp(angle_raw, kMinSteerRaw, kMaxSteerRaw);
             ses_cmd.target_angle_raw  = angle_raw;
 
-            // Constant low slew rate for smooth turning per specification (Section 9.A & 9.C)
-            constexpr uint16_t kSmoothSlewRateDps = 200; // 200 deg/s
+            // Hardware minimum angular speed per SES specification (126 deg/s)
+            // Ensures smooth, controlled turning across the vehicle's +/-45 deg mechanical range
+            constexpr uint16_t kSmoothSlewRateDps = 126; // 126 deg/s (ECU minimum supported velocity)
             ses_cmd.target_speed_raw = kSmoothSlewRateDps;
 
             ses_cmd.rolling_counter   = roll_ses_;
