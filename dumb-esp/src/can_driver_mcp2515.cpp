@@ -404,16 +404,19 @@ bool Mcp2515Driver::receive(can::Frame& out, uint32_t timeout_ms) {
 
         if (canintf & 0xA0) {
             uint8_t eflg = read_reg(kRegEflg);
-            if (eflg & 0x80) {
+            if (eflg & 0x20) { // Bit 5: TXBO = Bus-Off (TEC > 255)
                 const bool was_bus_off = m_bus_off.exchange(true, std::memory_order_acq_rel);
                 if (!was_bus_off) {
                     m_bus_off_started_us.store(esp_timer_get_time(), std::memory_order_relaxed);
                     ESP_LOGW(kTag, "MCP2515 entered bus-off (TEC=%d REC=%d)",
                              read_reg(kRegTec), read_reg(kRegRec));
                 }
-            } else if (eflg & 0x40) {
+            } else if (eflg & 0x18) { // Bits 4 & 3: TXEP or RXEP = Error-Passive
                 ESP_LOGW(kTag, "MCP2515 error-passive (TEC=%d REC=%d)",
                          read_reg(kRegTec), read_reg(kRegRec));
+            }
+            if (eflg & 0xC0) { // Bits 7 & 6: RX1OVR & RX0OVR (Buffer Overflow)
+                modify_reg(kRegEflg, 0xC0, 0x00); // Clear overflow flags in EFLG
             }
             modify_reg(kRegCanIntF, 0xA0, 0x00);
         }
