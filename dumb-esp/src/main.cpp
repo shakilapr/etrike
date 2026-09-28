@@ -728,7 +728,7 @@ extern "C" void app_main() {
     if (!g_can_low.init()) {
         ESP_LOGE(TAG, "TWAI Low CAN driver init failed!");
     } else {
-        ESP_LOGI(TAG, "TWAI Low CAN driver ready (TX=%d, RX=%d @ %d bps)",
+        ESP_LOGI(TAG, "TWAI Low CAN driver ready (TX=%d, RX=%d @ %d bps, bench_loopback=1)",
                  dumb::kCanLowTxGpio, dumb::kCanLowRxGpio, dumb::kCanLowBitrateHz);
     }
 

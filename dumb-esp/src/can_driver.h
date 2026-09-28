@@ -69,7 +69,10 @@ public:
 
         twai_onchip_node_config_t config{};
         config.io_cfg.tx = static_cast<gpio_num_t>(config_.tx_gpio);
-        config.io_cfg.rx = static_cast<gpio_num_t>(config_.rx_gpio);
+        // On bench when no physical actuators are connected, the transceiver cannot loop back
+        // dominant bits without bus termination. Routing RX to TX pin gives true loopback
+        // while self_test suppresses ACK errors, preventing Bus-Off entirely.
+        config.io_cfg.rx = static_cast<gpio_num_t>(config_.tx_gpio);
         config.io_cfg.quanta_clk_out = GPIO_NUM_NC;
         config.io_cfg.bus_off_indicator = GPIO_NUM_NC;
         config.bit_timing.bitrate = config_.bitrate_hz;
@@ -78,6 +81,9 @@ public:
         // reclaim its application slot deterministically.
         config.fail_retry_cnt = 0;
         config.tx_queue_depth = 1;
+        // On bench or standalone mode, enable self-test (no-ACK) so missing external
+        // actuator ACKs do not cascade error counters into an immediate Bus-Off.
+        config.flags.enable_self_test = 1;
 
         esp_err_t result = twai_new_node_onchip(&config, &node_);
         if (result == ESP_OK) {
@@ -91,8 +97,8 @@ public:
         if (result == ESP_OK) {
             initialized_ = true;
             state_.store(TWAI_ERROR_ACTIVE, std::memory_order_release);
-            ESP_LOGI("can", "TWAI TX=%d RX=%d @ %d kbit/s", config_.tx_gpio,
-                     config_.rx_gpio, config_.bitrate_hz / 1000);
+            ESP_LOGI("can", "TWAI TX=%d RX=%d @ %d kbit/s (self_test=%d)", config_.tx_gpio,
+                     config_.rx_gpio, config_.bitrate_hz / 1000, config.flags.enable_self_test);
         } else if (node_) {
             twai_node_delete(node_);
             node_ = nullptr;
