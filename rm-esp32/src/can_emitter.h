@@ -100,8 +100,7 @@ private:
         if (tick_10ms % 2 == 0) {
             can::custom::ses::Command ses_cmd{};
             ses_cmd.alignment_enable = false;
-            // Control enable requires a clean 0 -> 1 rising edge to engage Angle Control Mode
-            ses_cmd.control_enable   = (rearm_ses_ticks_ == 0) && drive_active;
+            ses_cmd.control_enable   = (snap.aux_vrb > 0.5f); // VRB knob (CH10): 0..0.5=Assist(0), 0.5..1.0=Angle(1)
             int16_t angle_raw = static_cast<int16_t>(kSbwAngleOffset);
             if (snap.signal_valid) {
                 angle_raw = static_cast<int16_t>(std::round(snap.steering_deg * 10.0f)) + static_cast<int16_t>(kSbwAngleOffset);
@@ -111,13 +110,11 @@ private:
             ses_cmd.target_speed_raw  = 328; // Standard nominal slew rate (within 400 deg/s rating)
             ses_cmd.rolling_counter   = roll_ses_;
             roll_ses_ = (roll_ses_ + 1) & 0x0F;
-            // Note 11: Vehicle speed >= 5 km/h during active drive prevents motor shutdown at 0 deg
-            ses_cmd.vehicle_speed_raw = drive_active ? 10 : 0;
+            ses_cmd.vehicle_speed_raw = (ses_cmd.control_enable || drive_active) ? 20 : 0;
 
             can::Frame ses_fr;
             if (can::custom::ses::encode_command(ses_cmd, ses_fr) == can::gen::CodecStatus::Ok) {
-                // Hardware protocol requires 8-bit additive sum checksum over bytes 0..6
-                ses_fr.data[7] = calc_sum8(ses_fr.data.data(), 7);
+                // encode_command correctly computes XOR8-FF checksum over bytes 0..6 per protocol spec
                 send(ses_fr);
             }
         }
@@ -211,8 +208,7 @@ private:
         if (tick_10ms % 2 == 0) {
             can::custom::ses::Command ses_cmd{};
             ses_cmd.alignment_enable = false;
-            // Control enable requires a clean 0 -> 1 rising edge to engage Angle Control Mode
-            ses_cmd.control_enable   = (rearm_ses_ticks_ == 0) && drive_active;
+            ses_cmd.control_enable   = (snap.aux_vrb > 0.5f); // VRB knob (CH10): 0..0.5=Assist(0), 0.5..1.0=Angle(1)
             int16_t angle_raw = static_cast<int16_t>(kSbwAngleOffset);
             if (snap.signal_valid) {
                 angle_raw = static_cast<int16_t>(std::round(snap.steering_deg * 10.0f)) + static_cast<int16_t>(kSbwAngleOffset);
@@ -222,13 +218,11 @@ private:
             ses_cmd.target_speed_raw  = 328;
             ses_cmd.rolling_counter   = roll_ses_;
             roll_ses_ = (roll_ses_ + 1) & 0x0F;
-            // Note 11: Vehicle speed >= 5 km/h during active drive prevents motor shutdown at 0 deg
-            ses_cmd.vehicle_speed_raw = drive_active ? 10 : 0;
+            ses_cmd.vehicle_speed_raw = (ses_cmd.control_enable || drive_active) ? 20 : 0;
 
             can::Frame ses_fr;
             if (can::custom::ses::encode_command(ses_cmd, ses_fr) == can::gen::CodecStatus::Ok) {
-                // Hardware protocol requires 8-bit additive sum checksum over bytes 0..6
-                ses_fr.data[7] = calc_sum8(ses_fr.data.data(), 7);
+                // encode_command correctly computes XOR8-FF checksum over bytes 0..6 per protocol spec
                 send(ses_fr);
             }
         }

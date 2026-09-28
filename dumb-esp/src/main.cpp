@@ -432,15 +432,15 @@ static void emit_rt_heartbeat() {
     fr.data[0] = g_roll_rt_hb++;
     fr.data[1] = 0xFDu; // bit0=heartbeat_ok, bit1=estop(0), bit2=mode_auto, bit3=can_ok, bit4-7=tasks_ok
     g_can_high.send(fr, 2);
-    g_can_low.send(fr, 2);
+    g_can_low.send(fr, 20);
 }
 
 // 0x7FE SYS_HEARTBEAT — SYS keepalive (2 Hz, Low bus ONLY per protocol contract)
 static void emit_sys_heartbeat() {
-    Frame fr = Frame::standard(can::kIdSysHeartbeat, 2);
+    Frame fr = Frame::standard(0x7FEu, 2);
     fr.data[0] = g_roll_sys_hb++;
     fr.data[1] = 0xFDu; // bit0=heartbeat_ok, bit1=estop(0), bit2=mode_auto, bit3=can_ok, bit4-7=tasks_ok
-    g_can_low.send(fr, 2);
+    g_can_low.send(fr, 20);
 }
 
 // 0x600 SYS_DIAG_RPT — Host diagnostic keepalive (1 Hz)
@@ -624,11 +624,30 @@ static void emit_rt_diag() {
             }
         }
 
-        // 10 Hz: Actuator supervisor commands (SYS_MODE, SYS_PWR, SYS_SAFETY)
-        if (tick % 10u == 0u) {
+        // 10 Hz: Phase Slot 1 (SYS Mode & Power)
+        if (tick % 10u == 1u) {
             emit_low_sys_mode();
             emit_low_sys_pwr();
+        }
+
+        // 10 Hz: Phase Slot 3 (SYS Safety & Throttle)
+        if (tick % 10u == 3u) {
             emit_low_sys_safety(lights_in);
+            emit_high_sys_safety(lights_in);
+            emit_sys_throttle(telemetry_speed);
+        }
+
+        // 10 Hz: Phase Slot 5 (Heartbeats for RT-L 0x7FD and SYS 0x7FE)
+        if (tick % 10u == 5u) {
+            emit_sys_heartbeat();
+            emit_rt_heartbeat();
+        }
+
+        // 10 Hz: Phase Slot 7 (RT State & Node Status)
+        if (tick % 10u == 7u) {
+            emit_rt_state(gear_in == 3 /*R*/, host_active);
+            emit_rt_node_status();
+            emit_sys_node_status();
         }
 
         // ═════════════════════════════════════════════════════════════
@@ -642,23 +661,8 @@ static void emit_rt_diag() {
             emit_high_steer_diag(telemetry_steer_raw);
         }
 
-        // 10 Hz: RT_STATE_RPT, SYS_SAFETY_STS, SYS_THROTTLE_STS, NODE_STATUS, SYS_HEARTBEAT
-        if (tick % 10u == 0u) {
-            emit_rt_state(gear_in == 3 /*R*/, host_active);
-            emit_high_sys_safety(lights_in);
-            emit_sys_throttle(telemetry_speed);
-            emit_rt_node_status();
-            emit_sys_node_status();
-            emit_sys_heartbeat(); // 10 Hz (100 ms) per protocol contract!
-        }
-
-        // 2 Hz: RT Heartbeat (500 ms)
-        if (tick % 50u == 0u) {
-            emit_rt_heartbeat();
-        }
-
         // 1 Hz: Diagnostics report
-        if (tick % 100u == 0u) {
+        if (tick % 100u == 9u) {
             emit_sys_diag(brake_kpa > 100);
             emit_rt_diag();
         }

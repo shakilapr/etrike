@@ -89,7 +89,7 @@ public:
         // callback on Bus-Off. Keep one driver-owned frame so recovery can
         // reclaim its application slot deterministically.
         config.fail_retry_cnt = 0;
-        config.tx_queue_depth = 1;
+        config.tx_queue_depth = 16;
 
         esp_err_t result = twai_new_node_onchip(&config, &node_);
         if (result == ESP_OK) {
@@ -233,7 +233,7 @@ public:
     }
 
 private:
-    static constexpr uint8_t kTxSlots = 1;
+    static constexpr uint8_t kTxSlots = 16;
     static int64_t recovery_backoff_us_(uint32_t streak) {
         const uint32_t shift = streak > 4 ? 4 : (streak > 0 ? streak - 1 : 0);
         const int64_t delay = 500'000LL << shift;
