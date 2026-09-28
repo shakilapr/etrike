@@ -130,16 +130,9 @@ private:
             angle_raw = std::clamp(angle_raw, kMinSteerRaw, kMaxSteerRaw);
             ses_cmd.target_angle_raw  = angle_raw;
 
-            // 2. Dynamic Slew Rate (Option B):
-            // Slew velocity scales proportionally with how fast the stick moves (deg/s over 20ms)
-            float delta_deg = std::abs(target_steer_deg - prev_steer_deg_);
-            prev_steer_deg_ = target_steer_deg;
-            float raw_stick_spd = delta_deg / 0.020f;
-            steer_spd_filtered_ += 0.35f * (raw_stick_spd - steer_spd_filtered_);
-
-            // Clamped strictly within official SES hardware limits (126 to 500 deg/s)
-            uint16_t dynamic_speed = static_cast<uint16_t>(std::clamp(steer_spd_filtered_, 126.0f, 500.0f));
-            ses_cmd.target_speed_raw  = dynamic_speed;
+            // Constant low slew rate for smooth turning per specification (Section 9.A & 9.C)
+            constexpr uint16_t kSmoothSlewRateDps = 200; // 200 deg/s
+            ses_cmd.target_speed_raw = kSmoothSlewRateDps;
 
             ses_cmd.rolling_counter   = roll_ses_;
             roll_ses_ = (roll_ses_ + 1) & 0x0F;
@@ -253,16 +246,9 @@ private:
             angle_raw = std::clamp(angle_raw, kMinSteerRaw, kMaxSteerRaw);
             ses_cmd.target_angle_raw  = angle_raw;
 
-            // 2. Dynamic Slew Rate (Option B):
-            // Slew velocity scales proportionally with how fast the stick moves (deg/s over 20ms)
-            float delta_deg = std::abs(target_steer_deg - prev_steer_deg_);
-            prev_steer_deg_ = target_steer_deg;
-            float raw_stick_spd = delta_deg / 0.020f;
-            steer_spd_filtered_ += 0.35f * (raw_stick_spd - steer_spd_filtered_);
-
-            // Clamped strictly within official SES hardware limits (126 to 500 deg/s)
-            uint16_t dynamic_speed = static_cast<uint16_t>(std::clamp(steer_spd_filtered_, 126.0f, 500.0f));
-            ses_cmd.target_speed_raw  = dynamic_speed;
+            // Constant low slew rate for smooth turning per specification (Section 9.A & 9.C)
+            constexpr uint16_t kSmoothSlewRateDps = 200; // 200 deg/s
+            ses_cmd.target_speed_raw = kSmoothSlewRateDps;
 
             ses_cmd.rolling_counter   = roll_ses_;
             roll_ses_ = (roll_ses_ + 1) & 0x0F;
