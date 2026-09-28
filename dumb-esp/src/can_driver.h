@@ -35,6 +35,7 @@ public:
         int tx_gpio;
         int rx_gpio;
         int bitrate_hz;
+        bool bench_loopback{false};
     };
 
     explicit CanDriver(const Config& config) : config_(config) {}
@@ -69,10 +70,18 @@ public:
 
         twai_onchip_node_config_t config{};
         config.io_cfg.tx = static_cast<gpio_num_t>(config_.tx_gpio);
-        // On bench when no physical actuators are connected, the transceiver cannot loop back
-        // dominant bits without bus termination. Routing RX to TX pin gives true loopback
-        // while self_test suppresses ACK errors, preventing Bus-Off entirely.
-        config.io_cfg.rx = static_cast<gpio_num_t>(config_.tx_gpio);
+        if (config_.bench_loopback) {
+            // Standalone bench mode without physical actuators: loop back RX to TX pin
+            // and enable self_test (no-ACK) so missing external ACKs and unterminated
+            // bench transceiver lines do not trigger bit errors or Bus-Off.
+            config.io_cfg.rx = static_cast<gpio_num_t>(config_.tx_gpio);
+            config.flags.enable_self_test = 1;
+        } else {
+            // Normal vehicle mode with physical actuators: receive real actuator frames
+            // on RX pin (GPIO 4) and use normal CAN arbitration and ACKs.
+            config.io_cfg.rx = static_cast<gpio_num_t>(config_.rx_gpio);
+            config.flags.enable_self_test = 0;
+        }
         config.io_cfg.quanta_clk_out = GPIO_NUM_NC;
         config.io_cfg.bus_off_indicator = GPIO_NUM_NC;
         config.bit_timing.bitrate = config_.bitrate_hz;
@@ -81,9 +90,6 @@ public:
         // reclaim its application slot deterministically.
         config.fail_retry_cnt = 0;
         config.tx_queue_depth = 1;
-        // On bench or standalone mode, enable self-test (no-ACK) so missing external
-        // actuator ACKs do not cascade error counters into an immediate Bus-Off.
-        config.flags.enable_self_test = 1;
 
         esp_err_t result = twai_new_node_onchip(&config, &node_);
         if (result == ESP_OK) {

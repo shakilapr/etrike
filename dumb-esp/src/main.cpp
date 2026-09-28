@@ -59,6 +59,7 @@ static can::CanDriver g_can_low{can::CanDriver::Config{
     dumb::kCanLowTxGpio,
     dumb::kCanLowRxGpio,
     dumb::kCanLowBitrateHz,
+    dumb::kCanLowBenchSelfTest,
 }};
 
 // High CAN (MCP2515 on SPI -> Jetson Host)
