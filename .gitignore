@@ -233,3 +233,7 @@ rt-aurix-lite/test/
 
 # ── Research Papers ──────────────────────────────────────────────────
 /tex/research/
+
+# ── Test & Bench Logs ───────────────────────────────────────────────
+logs/
+**/logs/
