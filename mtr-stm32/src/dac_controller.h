@@ -34,8 +34,16 @@ public:
 
         current_code_ = 0xFFFF;
         cached_address_ = 0;
-        write_dac_raw(0); // Power up at 0.0 V
-        current_code_ = 0;
+        zero_refresh_counter_ = 0;
+        eeprom_burned_ = false;
+
+        // Automatically provision MCP4725 non-volatile EEPROM with 0.0 V at boot.
+        // Once burned, hardware natively powers up at 0.0 V before MCU code executes.
+        if (write_dac_eeprom(0)) {
+            current_code_ = 0;
+        } else if (write_dac_raw(0)) {
+            current_code_ = 0;
+        }
     }
 
     // Write safe clamped throttle:
@@ -43,32 +51,69 @@ public:
     // When active: clamps code to [kDacMinCode (655), kDacMaxCode (1966)] (~0.8V to ~2.4V)
     void set_throttle(uint16_t code, bool enabled) {
         uint16_t target = (!enabled || code == 0) ? 0 : std::clamp(code, kDacMinCode, kDacMaxCode);
+        if (target == 0) {
+            force_zero();
+            return;
+        }
+        zero_refresh_counter_ = 0;
         if (target == current_code_) {
             return;
         }
-        write_dac_raw(target);
-        current_code_ = target;
+        if (write_dac_raw(target)) {
+            current_code_ = target;
+        }
     }
 
-    // Force zero voltage output (ESTOP / Watchdog timeout)
+    // Force zero voltage output (ESTOP / Watchdog timeout / Idle state)
+    // Ensures DAC is actively written to 0.0 V even if initial power-on write failed
+    // (e.g. late power-on of MTR/DAC) and periodically refreshed in default state.
     void force_zero() {
+        if (!eeprom_burned_) {
+            // First time DAC is detected/connected, burn 0.0 V into EEPROM so that
+            // future hardware power-ups immediately default to 0.0 V (survives module replacement).
+            if (write_dac_eeprom(0)) {
+                current_code_ = 0;
+                zero_refresh_counter_ = 0;
+                return;
+            }
+        }
+
         if (current_code_ == 0) {
+            // Periodic refresh every ~250 ms (50 calls * 5ms) to guarantee 0.0 V is maintained
+            // even after hardware brownout, hot-plug, or reset during idle/default state
+            if (++zero_refresh_counter_ >= kZeroRefreshInterval) {
+                zero_refresh_counter_ = 0;
+                write_dac_raw(0);
+            }
             return;
         }
-        write_dac_raw(0);
-        current_code_ = 0;
+        if (write_dac_raw(0)) {
+            current_code_ = 0;
+            zero_refresh_counter_ = 0;
+        }
     }
 
     uint16_t current_code() const { return current_code_; }
     uint8_t cached_address() const { return cached_address_; }
+    bool eeprom_burned() const { return eeprom_burned_; }
+
+    // Burn voltage into MCP4725 non-volatile EEPROM and wait for write cycle (t_prog <= 50 ms)
+    bool write_dac_eeprom(uint16_t value) {
+        bool ok = write_dac_raw(value, true /* write_eeprom */);
+        if (ok) {
+            HAL_Delay(50); // MCP4725 internal EEPROM programming time
+            eeprom_burned_ = true;
+        }
+        return ok;
+    }
 
     // Direct MCP4725 write routine with address caching and robust payload transmission
-    bool write_dac_raw(uint16_t value) {
+    bool write_dac_raw(uint16_t value, bool write_eeprom = false) {
         if (value > 4095) value = 4095;
 
         // If cached address is known, attempt write directly
         if (cached_address_ != 0) {
-            if (try_write_address_(cached_address_, value)) {
+            if (try_write_address_(cached_address_, value, write_eeprom)) {
                 return true;
             }
             cached_address_ = 0; // Invalidate cache on NACK
@@ -82,7 +127,7 @@ public:
         };
 
         for (uint8_t addr : kCandidateAddresses) {
-            if (try_write_address_(addr, value)) {
+            if (try_write_address_(addr, value, write_eeprom)) {
                 cached_address_ = addr;
                 return true;
             }
@@ -154,13 +199,13 @@ private:
         return ack;
     }
 
-    bool try_write_address_(uint8_t addr, uint16_t value) {
+    bool try_write_address_(uint8_t addr, uint16_t value, bool write_eeprom = false) {
         i2c_start_();
         uint8_t ack = i2c_write_byte_(addr);
 
-        // Always clock out the 3 MCP4725 payload bytes (0x40 write command, MSB, LSB)
-        // regardless of marginal ISO1540 Side 1 VOL (~0.7V) ACK reading.
-        (void)i2c_write_byte_(0x40);
+        // Clock out command byte: 0x60 for DAC Register + EEPROM, or 0x40 for DAC Register only
+        uint8_t cmd = write_eeprom ? 0x60 : 0x40;
+        (void)i2c_write_byte_(cmd);
         (void)i2c_write_byte_(static_cast<uint8_t>((value >> 4) & 0xFF));
         (void)i2c_write_byte_(static_cast<uint8_t>((value << 4) & 0xF0));
         i2c_stop_();
@@ -168,8 +213,11 @@ private:
         return (ack != 0);
     }
 
-    uint16_t current_code_{0};
+    static constexpr uint8_t kZeroRefreshInterval = 50; // 50 * 5 ms = 250 ms periodic refresh
+    uint8_t zero_refresh_counter_{0};
+    uint16_t current_code_{0xFFFF};
     uint8_t cached_address_{0};
+    bool eeprom_burned_{false};
 };
 
 }  // namespace mtr

@@ -69,6 +69,7 @@ inline uint16_t g_last_dac_written = 0;
 inline bool     g_i2c_in_start = false;
 inline bool     g_i2c_ack_state = false;
 inline bool     g_i2c_nack_address = false;
+inline bool     g_last_dac_is_eeprom = false;
 
 inline void reset() {
     g_gpio_a_pins = 0;
@@ -79,6 +80,7 @@ inline void reset() {
     g_i2c_bit_count = 0;
     g_i2c_byte_idx = 0;
     g_last_dac_written = 0;
+    g_last_dac_is_eeprom = false;
     g_i2c_in_start = false;
     g_i2c_ack_state = false;
     g_i2c_nack_address = false;
@@ -114,12 +116,14 @@ inline void HAL_GPIO_WritePin(GPIO_TypeDef* port, uint16_t pin_mask, int state) 
         // I2C STOP condition: SDA goes LOW -> HIGH while SCL is HIGH
         if (!prev_sda && new_sda && new_scl) {
             hal_mock::g_i2c_in_start = false;
-            // Decode MCP4725 fast-write command if 4 bytes were received
-            // Format: Byte 0 = Address, Byte 1 = Command (0x40), Byte 2 = Data[11:4], Byte 3 = Data[3:0]<<4
-            if (hal_mock::g_i2c_byte_idx >= 4 && hal_mock::g_i2c_bytes[1] == 0x40) {
+            // Decode MCP4725 write command (0x40 volatile or 0x60 EEPROM) if 4 bytes were received and address matched
+            if (!hal_mock::g_i2c_nack_address && hal_mock::g_i2c_byte_idx >= 4 &&
+                hal_mock::g_i2c_bytes[0] == hal_mock::g_i2c_target_addr &&
+                (hal_mock::g_i2c_bytes[1] == 0x40 || hal_mock::g_i2c_bytes[1] == 0x60)) {
                 uint16_t high = hal_mock::g_i2c_bytes[2];
                 uint16_t low = hal_mock::g_i2c_bytes[3];
                 hal_mock::g_last_dac_written = (high << 4) | (low >> 4);
+                hal_mock::g_last_dac_is_eeprom = (hal_mock::g_i2c_bytes[1] == 0x60);
             }
         }
 

@@ -309,6 +309,53 @@ void test_dac_controller_software_i2c_and_clamps() {
     hal_mock::g_i2c_nack_address = false;
 }
 
+void test_dac_controller_default_state_zero_and_late_power_on() {
+    std::printf("[TEST GROUP] MCP4725 Default State Zero & Late Power-On Handling...\n");
+    hal_mock::reset();
+
+    // 1. Simulate DAC unpowered / disconnected at boot
+    hal_mock::g_i2c_nack_address = true;
+    hal_mock::g_last_dac_written = 2048; // simulate DAC hardware default (unwritten EEPROM midscale)
+
+    mtr::DacController dac;
+    dac.init();
+    // Because DAC was unpowered, initial write failed; current_code_ is NOT confirmed 0
+    ASSERT_EQ(dac.current_code(), 0xFFFF);
+    ASSERT_EQ(hal_mock::g_last_dac_written, 2048);
+
+    // In default state, motor manager repeatedly calls force_zero()
+    // Still unpowered:
+    dac.force_zero();
+    ASSERT_EQ(dac.current_code(), 0xFFFF);
+    ASSERT_EQ(hal_mock::g_last_dac_written, 2048);
+
+    // 2. Late power-on: DAC is now wired / powered on
+    hal_mock::g_i2c_nack_address = false;
+    hal_mock::g_i2c_target_addr = 0x60 << 1;
+
+    // Next tick in default state calls force_zero()
+    dac.force_zero();
+    // Must immediately connect, burn 0.0 V into non-volatile EEPROM (command 0x60), and update current_code_ to 0
+    ASSERT_EQ(dac.current_code(), 0);
+    ASSERT_EQ(hal_mock::g_last_dac_written, 0);
+    ASSERT_TRUE(hal_mock::g_last_dac_is_eeprom);
+    ASSERT_TRUE(dac.eeprom_burned());
+
+    // 3. Periodic refresh test in default state:
+    // Suppose DAC experiences a brownout/reset while idling in default state and reloads EEPROM default
+    hal_mock::g_last_dac_written = 2048;
+    hal_mock::g_last_dac_is_eeprom = false;
+    // For 49 ticks, force_zero() skips to avoid bus spamming
+    for (int i = 0; i < 49; ++i) {
+        dac.force_zero();
+    }
+    ASSERT_EQ(hal_mock::g_last_dac_written, 2048);
+    // On the 50th tick (250 ms), periodic zero refresh fires and forces DAC back to 0.0 V (volatile 0x40)!
+    dac.force_zero();
+    ASSERT_EQ(hal_mock::g_last_dac_written, 0);
+    ASSERT_FALSE(hal_mock::g_last_dac_is_eeprom); // Periodic refresh uses fast volatile write, not EEPROM
+}
+
 // ═══════════════════════════════════════════════════════════════════════
 // 3. Motor Manager: ESTOP & Recovery Transitions
 // ═══════════════════════════════════════════════════════════════════════
@@ -1280,6 +1327,7 @@ int main() {
 
     RUN_TEST(test_relay_controller_mutual_exclusion);
     RUN_TEST(test_dac_controller_software_i2c_and_clamps);
+    RUN_TEST(test_dac_controller_default_state_zero_and_late_power_on);
     RUN_TEST(test_motor_manager_estop_and_recovery);
     RUN_TEST(test_motor_manager_direction_shift_dwell);
     RUN_TEST(test_motor_manager_watchdog_timeout);
