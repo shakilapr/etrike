@@ -237,3 +237,5 @@ rt-aurix-lite/test/
 # ── Test & Bench Logs ───────────────────────────────────────────────
 logs/
 **/logs/
+logs/**
+**/logs/**
