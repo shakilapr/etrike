@@ -40,6 +40,7 @@ static std::atomic<float>    g_ses_fbk_angle{0.0f};
 static std::atomic<uint8_t>  g_ses_mode{0};
 static std::atomic<bool>     g_ses_aligned{false};
 static std::atomic<uint8_t>  g_ses_error{0};
+static std::atomic<uint16_t> g_ses_raw_angle{0};
 static std::atomic<bool>     g_ses_seen{false};
 
 // Actuator Feedback State (0x721 SEB_STATUS / 0x731 SEB_ErrInfo)
@@ -80,6 +81,7 @@ static bool send_can_frame(can::Frame& fr) {
                 g_ses_mode.store(mode, std::memory_order_relaxed);
                 g_ses_aligned.store(aligned, std::memory_order_relaxed);
                 g_ses_error.store(err, std::memory_order_relaxed);
+                g_ses_raw_angle.store(raw_angle, std::memory_order_relaxed);
                 g_ses_seen.store(true, std::memory_order_relaxed);
 
                 g_emitter.on_ses_status_rx(mode, now_ms);
@@ -235,6 +237,7 @@ static bool send_can_frame(can::Frame& fr) {
             float ses_angle = g_ses_fbk_angle.load(std::memory_order_relaxed);
             int ses_aln = g_ses_aligned.load(std::memory_order_relaxed) ? 1 : 0;
             int ses_err = g_ses_error.load(std::memory_order_relaxed);
+            uint16_t ses_raw = g_ses_raw_angle.load(std::memory_order_relaxed);
 
             const char* seb_str = !g_seb_seen.load(std::memory_order_relaxed) ? "WAIT" :
                                   (g_seb_enabled.load(std::memory_order_relaxed) ? "EN" : "DIS");
@@ -242,11 +245,12 @@ static bool send_can_frame(can::Frame& fr) {
             float seb_prs = g_seb_fbk_pressure.load(std::memory_order_relaxed);
             int seb_err = g_seb_error.load(std::memory_order_relaxed);
 
-            ESP_LOGI("tx", "STR:%+5.1f [SES:%s A:%d FBK:%+5.1f° E:%d] BRK:%4.1f [SEB:%s STRK:%4.1f P:%.2f E:%d] THR:%3.0f%% GOV:%3.0f%% MTR:%+5ld[%s]  ARM:%-3s PRK:%-4s  MOD:%-4s C:%s [%u] RF:%s",
+            ESP_LOGI("tx", "STR:%+5.1f [SES:%s A:%d FBK:%+5.1f° RAW:%u E:%d] BRK:%4.1f [SEB:%s STRK:%4.1f P:%.2f E:%d] THR:%3.0f%% GOV:%3.0f%% MTR:%+5ld[%s]  ARM:%-3s PRK:%-4s  MOD:%-4s C:%s [%u] RF:%s",
                      snap.steering_deg,
                      ses_mode_str,
                      ses_aln,
                      ses_angle,
+                     static_cast<unsigned>(ses_raw),
                      ses_err,
                      snap.brake_stroke_mm,
                      seb_str,

@@ -86,6 +86,9 @@ public:
         alive_ctr_rt_ = 0;
         alive_ctr_host_ = 0;
         rearm_pwr_ticks_ = 2;
+        filtered_steer_deg_ = 0.0f;
+        prev_steer_deg_ = 0.0f;
+        steer_spd_filtered_ = 126.0f;
     }
 
 private:
@@ -93,6 +96,9 @@ private:
     uint32_t last_0x201_ms_{0};       // Timestamp of last received 0x201 SES_STATUS
     uint8_t  ses_mode_status_{0};     // 0 = Manual/Assist, 1 = Auto/Angle Control
     bool     ses_online_{false};
+    float    filtered_steer_deg_{0.0f};   // Low-pass filtered target angle
+    float    prev_steer_deg_{0.0f};       // Previous angle setpoint for velocity calculation
+    float    steer_spd_filtered_{126.0f}; // Dynamic slew velocity (deg/s)
     // ── Mode 1: BARE (Direct Actuator Control on Low-CAN) ────────────
     template <typename SendFn>
     void emit_bare(const RcSnapshot& snap, bool drive_active, uint32_t tick_10ms, SendFn&& send) {
@@ -101,13 +107,28 @@ private:
             can::custom::ses::Command ses_cmd{};
             ses_cmd.alignment_enable = false;
             ses_cmd.control_enable   = (snap.aux_vrb > 0.5f); // VRB knob (CH10): 0..0.5=Assist(0), 0.5..1.0=Angle(1)
-            int16_t angle_raw = static_cast<int16_t>(kSbwAngleOffset);
-            if (snap.signal_valid) {
-                angle_raw = static_cast<int16_t>(std::round(snap.steering_deg * 10.0f)) + static_cast<int16_t>(kSbwAngleOffset);
-                angle_raw = std::clamp(angle_raw, kMinSteerRaw, kMaxSteerRaw);
-            }
+
+            float target_steer_deg = snap.signal_valid ? snap.steering_deg : 0.0f;
+
+            // 1. Exponential Moving Average filter on target angle (50 Hz, alpha = 0.25)
+            // Eliminates SBUS discrete stair-steps and pulse jitter
+            filtered_steer_deg_ += 0.25f * (target_steer_deg - filtered_steer_deg_);
+
+            int16_t angle_raw = static_cast<int16_t>(std::round(filtered_steer_deg_ * 10.0f)) + static_cast<int16_t>(kSbwAngleOffset);
+            angle_raw = std::clamp(angle_raw, kMinSteerRaw, kMaxSteerRaw);
             ses_cmd.target_angle_raw  = angle_raw;
-            ses_cmd.target_speed_raw  = 328; // Standard nominal slew rate (within 400 deg/s rating)
+
+            // 2. Dynamic Slew Rate (Option B):
+            // Slew velocity scales proportionally with how fast the stick moves (deg/s over 20ms)
+            float delta_deg = std::abs(target_steer_deg - prev_steer_deg_);
+            prev_steer_deg_ = target_steer_deg;
+            float raw_stick_spd = delta_deg / 0.020f;
+            steer_spd_filtered_ += 0.35f * (raw_stick_spd - steer_spd_filtered_);
+
+            // Clamped strictly within official SES hardware limits (126 to 500 deg/s)
+            uint16_t dynamic_speed = static_cast<uint16_t>(std::clamp(steer_spd_filtered_, 126.0f, 500.0f));
+            ses_cmd.target_speed_raw  = dynamic_speed;
+
             ses_cmd.rolling_counter   = roll_ses_;
             roll_ses_ = (roll_ses_ + 1) & 0x0F;
             ses_cmd.vehicle_speed_raw = (ses_cmd.control_enable || drive_active) ? 20 : 0;
@@ -209,13 +230,28 @@ private:
             can::custom::ses::Command ses_cmd{};
             ses_cmd.alignment_enable = false;
             ses_cmd.control_enable   = (snap.aux_vrb > 0.5f); // VRB knob (CH10): 0..0.5=Assist(0), 0.5..1.0=Angle(1)
-            int16_t angle_raw = static_cast<int16_t>(kSbwAngleOffset);
-            if (snap.signal_valid) {
-                angle_raw = static_cast<int16_t>(std::round(snap.steering_deg * 10.0f)) + static_cast<int16_t>(kSbwAngleOffset);
-                angle_raw = std::clamp(angle_raw, kMinSteerRaw, kMaxSteerRaw);
-            }
+
+            float target_steer_deg = snap.signal_valid ? snap.steering_deg : 0.0f;
+
+            // 1. Exponential Moving Average filter on target angle (50 Hz, alpha = 0.25)
+            // Eliminates SBUS discrete stair-steps and pulse jitter
+            filtered_steer_deg_ += 0.25f * (target_steer_deg - filtered_steer_deg_);
+
+            int16_t angle_raw = static_cast<int16_t>(std::round(filtered_steer_deg_ * 10.0f)) + static_cast<int16_t>(kSbwAngleOffset);
+            angle_raw = std::clamp(angle_raw, kMinSteerRaw, kMaxSteerRaw);
             ses_cmd.target_angle_raw  = angle_raw;
-            ses_cmd.target_speed_raw  = 328;
+
+            // 2. Dynamic Slew Rate (Option B):
+            // Slew velocity scales proportionally with how fast the stick moves (deg/s over 20ms)
+            float delta_deg = std::abs(target_steer_deg - prev_steer_deg_);
+            prev_steer_deg_ = target_steer_deg;
+            float raw_stick_spd = delta_deg / 0.020f;
+            steer_spd_filtered_ += 0.35f * (raw_stick_spd - steer_spd_filtered_);
+
+            // Clamped strictly within official SES hardware limits (126 to 500 deg/s)
+            uint16_t dynamic_speed = static_cast<uint16_t>(std::clamp(steer_spd_filtered_, 126.0f, 500.0f));
+            ses_cmd.target_speed_raw  = dynamic_speed;
+
             ses_cmd.rolling_counter   = roll_ses_;
             roll_ses_ = (roll_ses_ + 1) & 0x0F;
             ses_cmd.vehicle_speed_raw = (ses_cmd.control_enable || drive_active) ? 20 : 0;
