@@ -84,7 +84,7 @@ static bool send_can_frame(can::Frame& fr) {
                 g_ses_raw_angle.store(raw_angle, std::memory_order_relaxed);
                 g_ses_seen.store(true, std::memory_order_relaxed);
 
-                g_emitter.on_ses_status_rx(mode, now_ms);
+                g_emitter.on_ses_status_rx(mode, angle_deg, now_ms);
             } else if (rx_fr.id == 0x721) { // 0x721 SEB_STATUS
                 // SEB Status: Byte 0: b0=Align, b1=CtrlEn, b2..3=Mode, b6..7=Error
                 bool aligned = (rx_fr.data[0] & 0x01) != 0;

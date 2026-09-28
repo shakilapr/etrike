@@ -24,13 +24,18 @@ public:
     }
 
     // Called from CAN RX when 0x201 SES_STATUS is received
-    void on_ses_status_rx(uint8_t control_mode_status, uint32_t now_ms) noexcept {
+    void on_ses_status_rx(uint8_t control_mode_status, float actual_angle_deg, uint32_t now_ms) noexcept {
         if (!ses_online_) {
             // Reconnected! Trigger 200ms disarm pulse to force a fresh rising edge
             rearm_ses_ticks_ = 20;
+            // Pre-seed filter to actual physical angle to prevent sudden snap
+            if (!ses_armed_) {
+                filtered_steer_deg_ = actual_angle_deg;
+            }
         }
         ses_online_ = true;
         ses_mode_status_ = control_mode_status;
+        ses_actual_angle_ = actual_angle_deg;
         last_0x201_ms_ = now_ms;
     }
 
@@ -57,6 +62,27 @@ public:
         // Auto-detect link loss: if no 0x201 for >250ms, mark offline
         if (now_ms > 0 && last_0x201_ms_ > 0 && (now_ms - last_0x201_ms_ > 250)) {
             ses_online_ = false;
+            ses_armed_ = false;
+            ses_online_start_ms_ = 0;
+        }
+
+        // Automatic Ignition / Startup Delay:
+        // When SES first appears online, wait 2.5 seconds (2500ms) in manual/assist mode
+        // (control_enable = 0) so the actuator ECU completes self-tests and zero-datum
+        // checks. Track actual feedback angle so initial error is 0.
+        if (ses_online_) {
+            if (ses_online_start_ms_ == 0) {
+                ses_online_start_ms_ = now_ms;
+                filtered_steer_deg_ = ses_actual_angle_;
+            } else if (!ses_armed_) {
+                filtered_steer_deg_ = ses_actual_angle_; // Keep tracking physical angle
+                if (now_ms - ses_online_start_ms_ >= 2500) {
+                    ses_armed_ = true; // Automatically arm after 2.5s ignition settling
+                }
+            }
+        } else {
+            ses_online_start_ms_ = 0;
+            ses_armed_ = false;
         }
 
         // Auto re-arm if actuator fell out of Auto mode (e.g. power cycle/reconnect) while drive active
@@ -84,6 +110,9 @@ public:
     void reset_counters() noexcept {
         rearm_ses_ticks_ = 0;
         ses_online_ = false;
+        ses_armed_ = false;
+        ses_online_start_ms_ = 0;
+        ses_actual_angle_ = 0.0f;
         last_0x201_ms_ = 0;
         ses_mode_status_ = 0;
         roll_ses_ = 0;
@@ -105,8 +134,11 @@ public:
 private:
     uint32_t rearm_ses_ticks_{0};   // Countdown ticks for Control_Enable rising edge (200ms)
     uint32_t last_0x201_ms_{0};       // Timestamp of last received 0x201 SES_STATUS
+    uint32_t ses_online_start_ms_{0}; // Timestamp when SES was first seen online
     uint8_t  ses_mode_status_{0};     // 0 = Manual/Assist, 1 = Auto/Angle Control
     bool     ses_online_{false};
+    bool     ses_armed_{false};       // True when 2.5s post-ignition delay completes
+    float    ses_actual_angle_{0.0f}; // Actual angle from 0x201 feedback
     float    filtered_steer_deg_{0.0f};   // Low-pass filtered target angle
     float    prev_steer_deg_{0.0f};       // Previous angle setpoint for velocity calculation
     float    steer_spd_filtered_{126.0f}; // Dynamic slew velocity (deg/s)
@@ -118,13 +150,19 @@ private:
         if (tick_10ms % 2 == 0) {
             can::custom::ses::Command ses_cmd{};
             ses_cmd.alignment_enable = false;
-            ses_cmd.control_enable   = (snap.aux_vrb > 0.5f); // VRB knob (CH10): 0..0.5=Assist(0), 0.5..1.0=Angle(1)
+            // Free VRB: Control Enable is armed automatically after 2.5s post-boot delay,
+            // or disarmed when link is lost.
+            ses_cmd.control_enable   = ses_armed_ && (rearm_ses_ticks_ == 0);
 
             float target_steer_deg = snap.signal_valid ? snap.steering_deg : 0.0f;
 
-            // 1. Exponential Moving Average filter on target angle (50 Hz, alpha = 0.15)
-            // Eliminates SBUS discrete stair-steps and pulse jitter smoothly
-            filtered_steer_deg_ += 0.15f * (target_steer_deg - filtered_steer_deg_);
+            if (ses_armed_) {
+                // Slew-track operator input once armed
+                filtered_steer_deg_ += 0.25f * (target_steer_deg - filtered_steer_deg_);
+            } else {
+                // While disarmed/settling, hold at physical feedback angle
+                filtered_steer_deg_ = ses_actual_angle_;
+            }
 
             int16_t angle_raw = static_cast<int16_t>(std::round(filtered_steer_deg_ * 10.0f)) + static_cast<int16_t>(kSbwAngleOffset);
             angle_raw = std::clamp(angle_raw, kMinSteerRaw, kMaxSteerRaw);
@@ -235,13 +273,19 @@ private:
         if (tick_10ms % 2 == 0) {
             can::custom::ses::Command ses_cmd{};
             ses_cmd.alignment_enable = false;
-            ses_cmd.control_enable   = (snap.aux_vrb > 0.5f); // VRB knob (CH10): 0..0.5=Assist(0), 0.5..1.0=Angle(1)
+            // Free VRB: Control Enable is armed automatically after 2.5s post-boot delay,
+            // or disarmed when link is lost.
+            ses_cmd.control_enable   = ses_armed_ && (rearm_ses_ticks_ == 0);
 
             float target_steer_deg = snap.signal_valid ? snap.steering_deg : 0.0f;
 
-            // 1. Exponential Moving Average filter on target angle (50 Hz, alpha = 0.15)
-            // Eliminates SBUS discrete stair-steps and pulse jitter smoothly
-            filtered_steer_deg_ += 0.15f * (target_steer_deg - filtered_steer_deg_);
+            if (ses_armed_) {
+                // Slew-track operator input once armed
+                filtered_steer_deg_ += 0.25f * (target_steer_deg - filtered_steer_deg_);
+            } else {
+                // While disarmed/settling, hold at physical feedback angle
+                filtered_steer_deg_ = ses_actual_angle_;
+            }
 
             int16_t angle_raw = static_cast<int16_t>(std::round(filtered_steer_deg_ * 10.0f)) + static_cast<int16_t>(kSbwAngleOffset);
             angle_raw = std::clamp(angle_raw, kMinSteerRaw, kMaxSteerRaw);
