@@ -42,7 +42,17 @@ public:
     // Sender callback type: returns true if frame successfully queued
     template <typename SendFn>
     void emit_cluster(const RcSnapshot& snap, uint32_t tick_10ms, uint32_t now_ms, SendFn&& send) {
-        const bool drive_active = snap.signal_valid && snap.drive_enable_req && !snap.park_hold_req;
+        const bool raw_drive_active = snap.signal_valid && snap.drive_enable_req && !snap.park_hold_req;
+
+        // Startup & Arming Zero-Throttle Safety Interlock:
+        // When arming or starting from remote, throttle is strictly locked at 0 (forcing DAC to 0.0V)
+        // until the throttle stick is physically observed at zero (idle <= 2%).
+        if (!raw_drive_active) {
+            throttle_zero_latched_ = false;
+        } else if (snap.throttle_norm <= 0.02f) {
+            throttle_zero_latched_ = true;
+        }
+        const bool drive_active = raw_drive_active && throttle_zero_latched_;
 
         // Auto-detect link loss: if no 0x201 for >250ms, mark offline
         if (now_ms > 0 && last_0x201_ms_ > 0 && (now_ms - last_0x201_ms_ > 250)) {
@@ -89,6 +99,7 @@ public:
         filtered_steer_deg_ = 0.0f;
         prev_steer_deg_ = 0.0f;
         steer_spd_filtered_ = 126.0f;
+        throttle_zero_latched_ = false;
     }
 
 private:
@@ -99,6 +110,7 @@ private:
     float    filtered_steer_deg_{0.0f};   // Low-pass filtered target angle
     float    prev_steer_deg_{0.0f};       // Previous angle setpoint for velocity calculation
     float    steer_spd_filtered_{126.0f}; // Dynamic slew velocity (deg/s)
+    bool     throttle_zero_latched_{false}; // Zero-throttle gate on startup/arming
     // ── Mode 1: BARE (Direct Actuator Control on Low-CAN) ────────────
     template <typename SendFn>
     void emit_bare(const RcSnapshot& snap, bool drive_active, uint32_t tick_10ms, SendFn&& send) {
