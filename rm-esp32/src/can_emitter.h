@@ -147,11 +147,14 @@ private:
     template <typename SendFn>
     void emit_bare(const RcSnapshot& snap, bool drive_active, uint32_t tick_10ms, SendFn&& send) {
         // 1. Steering: 0x169 VCU_SES_REQ (50 Hz / 20 ms per SES spec)
+        //    Raw wire-frame encoding (Byte5=0x00, Byte7=0x00, zero-security bypass).
+        //    Verified on physical hardware: actuator accepts frames without rolling
+        //    counter or checksum when security flags in Byte5 are both 0.
         if (tick_10ms % 2 == 0) {
             can::custom::ses::Command ses_cmd{};
             ses_cmd.alignment_enable = false;
-            // Free VRB: Control Enable is armed automatically after 2.5s post-boot delay,
-            // or disarmed when link is lost.
+            // Control Enable is armed automatically after 2.5s post-boot delay
+            // (ses_armed_ set by on_ses_status_rx), or disarmed on link loss.
             ses_cmd.control_enable   = ses_armed_ && (rearm_ses_ticks_ == 0);
 
             float target_steer_deg = snap.signal_valid ? snap.steering_deg : 0.0f;
@@ -166,22 +169,15 @@ private:
 
             int16_t angle_raw = static_cast<int16_t>(std::round(filtered_steer_deg_ * 10.0f)) + static_cast<int16_t>(kSbwAngleOffset);
             angle_raw = std::clamp(angle_raw, kMinSteerRaw, kMaxSteerRaw);
-            ses_cmd.target_angle_raw  = angle_raw;
+            ses_cmd.target_angle_raw = angle_raw;
 
-            // Hardware minimum angular speed per SES specification (126 deg/s)
-            // Ensures smooth, controlled turning across the vehicle's +/-45 deg mechanical range
-            constexpr uint16_t kSmoothSlewRateDps = 126; // 126 deg/s (ECU minimum supported velocity)
-            ses_cmd.target_speed_raw = kSmoothSlewRateDps;
+            // 126 deg/s — hardware minimum; matches bare-metal bench framing (0x007E)
+            ses_cmd.target_speed_raw = 126u;
 
-            ses_cmd.rolling_counter   = roll_ses_;
-            roll_ses_ = (roll_ses_ + 1) & 0x0F;
-            ses_cmd.vehicle_speed_raw = (ses_cmd.control_enable || drive_active) ? 20 : 0;
-
+            // Raw wire frame: Byte5=0x00 (no counter/checksum), Byte6=0x00, Byte7=0x00
             can::Frame ses_fr;
-            if (can::custom::ses::encode_command(ses_cmd, ses_fr) == can::gen::CodecStatus::Ok) {
-                // encode_command correctly computes XOR8-FF checksum over bytes 0..6 per protocol spec
-                send(ses_fr);
-            }
+            can::custom::ses::encode_command_raw(ses_cmd, ses_fr);
+            send(ses_fr);
         }
 
         // 2. Braking: 0x7B9 VCU_SEB_REQ (50 Hz / 20 ms per SEB specification)
@@ -270,11 +266,12 @@ private:
     template <typename SendFn>
     void emit_sys(const RcSnapshot& snap, bool drive_active, uint32_t tick_10ms, SendFn&& send) {
         // Direct actuator setpoints (50 Hz / 20 ms per SES spec)
+        // Raw wire-frame encoding (Byte5=0x00, Byte7=0x00, zero-security bypass).
         if (tick_10ms % 2 == 0) {
             can::custom::ses::Command ses_cmd{};
             ses_cmd.alignment_enable = false;
-            // Free VRB: Control Enable is armed automatically after 2.5s post-boot delay,
-            // or disarmed when link is lost.
+            // Control Enable is armed automatically after 2.5s post-boot delay
+            // (ses_armed_ set by on_ses_status_rx), or disarmed on link loss.
             ses_cmd.control_enable   = ses_armed_ && (rearm_ses_ticks_ == 0);
 
             float target_steer_deg = snap.signal_valid ? snap.steering_deg : 0.0f;
@@ -289,22 +286,15 @@ private:
 
             int16_t angle_raw = static_cast<int16_t>(std::round(filtered_steer_deg_ * 10.0f)) + static_cast<int16_t>(kSbwAngleOffset);
             angle_raw = std::clamp(angle_raw, kMinSteerRaw, kMaxSteerRaw);
-            ses_cmd.target_angle_raw  = angle_raw;
+            ses_cmd.target_angle_raw = angle_raw;
 
-            // Hardware minimum angular speed per SES specification (126 deg/s)
-            // Ensures smooth, controlled turning across the vehicle's +/-45 deg mechanical range
-            constexpr uint16_t kSmoothSlewRateDps = 126; // 126 deg/s (ECU minimum supported velocity)
-            ses_cmd.target_speed_raw = kSmoothSlewRateDps;
+            // 126 deg/s — hardware minimum; matches bare-metal bench framing (0x007E)
+            ses_cmd.target_speed_raw = 126u;
 
-            ses_cmd.rolling_counter   = roll_ses_;
-            roll_ses_ = (roll_ses_ + 1) & 0x0F;
-            ses_cmd.vehicle_speed_raw = (ses_cmd.control_enable || drive_active) ? 20 : 0;
-
+            // Raw wire frame: Byte5=0x00 (no counter/checksum), Byte6=0x00, Byte7=0x00
             can::Frame ses_fr;
-            if (can::custom::ses::encode_command(ses_cmd, ses_fr) == can::gen::CodecStatus::Ok) {
-                // encode_command correctly computes XOR8-FF checksum over bytes 0..6 per protocol spec
-                send(ses_fr);
-            }
+            can::custom::ses::encode_command_raw(ses_cmd, ses_fr);
+            send(ses_fr);
         }
 
         // Braking: 0x205 RT_BRAKE_CMD (RT brake *intent* in kPa). In SYS mode the

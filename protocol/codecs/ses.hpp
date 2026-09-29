@@ -42,6 +42,27 @@ inline CodecStatus encode_command(const Command& value, Frame& out) noexcept {
     return CodecStatus::Ok;
 }
 
+/// Raw wire-frame encoder (zero-security bypass mode).
+/// Byte 5 = 0x00  — rolling counter disabled, checksum disabled.
+/// Byte 6 = 0x00  — vehicle speed field set to 0 km/h.
+/// Byte 7 = 0x00  — no checksum.
+/// Verified on physical hardware (V5 bench suite): the actuator accepts
+/// this framing without counter or checksum validation. Use for direct
+/// remote-controller or bench operation where the security layer is bypassed.
+/// No range validation on target_speed_raw: caller must ensure it is in [125, 525].
+inline CodecStatus encode_command_raw(const Command& value, Frame& out) noexcept {
+    Frame frame = Frame::standard(kCommandId, kDlc);
+    frame.data[0] = static_cast<std::uint8_t>((value.alignment_enable ? 0x01u : 0u) |
+                                              (value.control_enable ? 0x02u : 0u));
+    write_be_i16(&frame.data[1], value.target_angle_raw);
+    write_be_u16(&frame.data[3], value.target_speed_raw);
+    frame.data[5] = 0x00u; // Zero-security: rolling counter + checksum both disabled
+    frame.data[6] = 0x00u; // Vehicle speed: 0 km/h
+    frame.data[7] = 0x00u; // No checksum
+    out = frame;
+    return CodecStatus::Ok;
+}
+
 inline CodecStatus decode_command(FrameView frame, Command& out) noexcept {
     const CodecStatus status = detail::validate_frame(frame, kCommandId, false, kDlc);
     if (status != CodecStatus::Ok) return status;
