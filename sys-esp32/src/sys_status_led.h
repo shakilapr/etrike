@@ -4,6 +4,7 @@
 // Reference: docs/hardware/rgb-status-led-visual-language.md
 
 #include "status_led.h"
+#include "system_ready.h"
 
 namespace sys {
 
@@ -21,6 +22,9 @@ struct SysLedInputs {
     bool drive_cmd_nonzero    = false;  // P6: Autonomous speed command (0x204) > 0
     bool manual_active_input  = false;  // P6: Rider throttle > 0 or brake lever pressed
     bool brake_lever_override = false;  // P6: Rider brake lever overriding AUTO motion
+    // P5.5: Observational system-readiness level (system_ready.h). Blocked is the
+    // default and renders as no override, so an unwired caller keeps old behavior.
+    SystemReadyLevel system_ready_level = SystemReadyLevel::Blocked;
 };
 
 constexpr shared::led::VisualPattern evaluate_sys_led(const SysLedInputs& in) {
@@ -73,6 +77,17 @@ constexpr shared::led::VisualPattern evaluate_sys_led(const SysLedInputs& in) {
     // P5: Cold Boot Grace
     if (in.boot_grace_active) {
         return {DomainColor::White, BaseCadence::Breathe, OverlayPip::None};
+    }
+
+    // P5.5: System-readiness cadence (observational). When the command path is
+    // up but a downstream peer is missing, render GREEN cadence so the operator
+    // sees "not fully ready" without a hard fault. Full readiness falls through
+    // to the normal mode color below (AUTO=Green / MANUAL=Purple).
+    if (in.system_ready_level == SystemReadyLevel::MtrAbsent) {
+        return {DomainColor::Green, BaseCadence::FastBlink, OverlayPip::None};
+    }
+    if (in.system_ready_level == SystemReadyLevel::HostAbsent) {
+        return {DomainColor::Green, BaseCadence::Breathe, OverlayPip::None};
     }
 
     // P6: Normal Operating Modes (MANUAL = Purple, AUTO = Green)

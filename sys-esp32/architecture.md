@@ -60,7 +60,7 @@ All GPIOs are initialized in `init_board_gpio()` before tasks start:
 | `kLightBrake` | 21 | Output | Push-Pull | 12V brake light relay driver (relay active-LOW → GPIO LOW = lamp ON; no ULN2803A) |
 | `kBulbAuto` | 10 | Output | Push-Pull | Dash indicator: AUTO mode active |
 | `kBulbManual` | 39 | Output | Push-Pull | Dash indicator: MANUAL mode active |
-| `kBulbReady` | 17 | Output | Push-Pull | Green ready LED (Normal mode, RT alive, no fault) |
+| `kBulbReady` | 17 | Output | Push-Pull | Green system-READY LED — ON whenever the whole Host→RT→SYS→{MTR,SEB} path is up and error-free (any non-Blocked `SystemReadyLevel`), OFF on a real fault. See §System READY. |
 | `kBulbEstop` | 18 | Output | Push-Pull | Red ESTOP indicator LED |
 | `kBulbBypass` | 14 | Output | Push-Pull | Amber developer bypass indicator LED |
 | `kPower12vRelay` | 40 | Output | Push-Pull | 12V auxiliary power relay (energized in all modes, including ESTOP, so indicator lamps stay powered) |
@@ -152,7 +152,9 @@ Low CAN Bus (500 kbit/s, 11-bit Standard ID)
 │ 0x206     │ MTR_MOTOR_FBK        │ RX      │ 20 ms    │ DLC 4. Speed cmd echo + fault flags      │
 │ 0x210     │ RT_STATE_RPT         │ RX      │ 100 ms   │ DLC 6. RT safety state for takeover      │
 │ 0x302     │ HOST_LIGHT_CMD       │ RX      │ Event    │ DLC 1. Turn, brake, headlight bits       │
-│ 0x500     │ SYS_NODE_STATUS      │ TX      │ 200 ms   │ DLC 8. Node state, block mask, degraded  │
+│ 0x500     │ SYS_NODE_STATUS      │ TX      │ 200 ms   │ DLC 8. System-ready, node state, block   │
+│ 0x501     │ RT_NODE_STATUS       │ RX      │ 20 ms    │ DLC 8. RT ready/degraded (covers SES)    │
+│ 0x502     │ MTR_NODE_STATUS      │ RX      │ 20 ms    │ DLC 8. MTR ready/output/ignition proof   │
 │ 0x600     │ SYS_DIAG_RPT         │ TX      │ 1000 ms  │ DLC 8. Heap, TEC/REC, RX overflow        │
 │ 0x6FB     │ SEB_TEST             │ RX      │ 10 ms    │ DLC 8. Motor current & ECU temperature   │
 │ 0x721     │ SEB_STATUS           │ RX      │ 10 ms    │ DLC 8. Stroke raw, error status, roll    │
@@ -166,7 +168,33 @@ Low CAN Bus (500 kbit/s, 11-bit Standard ID)
 
 ---
 
-## 6. Multi-Task Watchdog & Alive Counters
+## 6. System READY (observational)
+
+`SystemReadyLevel` (see `src/system_ready.h`) reports whether the whole
+Host → RT → SYS → {MTR, SEB} command path is up and error-free — i.e. "if the
+Host commands ignition/gear/speed, it will actually go". It is **purely
+observational**: it never feeds `resolve_authority()`, `inhibit_state`, ESTOP, or
+any outgoing frame, so a display signal can never change actuation authority.
+
+| Level | Condition | Green `kBulbReady` | WS2812 |
+|-------|-----------|--------------------|--------|
+| `Blocked` | SYS ESTOP/inhibit, or RT absent, or a required peer (MTR/SEB) absent | OFF | existing fault cascade (Red/Cyan/Yellow) |
+| `MtrAbsent` | system up, only MTR missing (bench bypass waives it) | ON | Green **FastBlink** |
+| `HostAbsent` | system up, no valid Host `0x111/0x112` request stream | ON | Green **Breathe** |
+| `Full` | all present, healthy, Host commanding | ON | normal mode colour (AUTO=Green) |
+
+Evidence: SYS-local latch/inhibit, RT `0x7FD` + `0x501` (RT's `ready`/`degraded`
+folds in SES/steering health), MTR `0x502`, SEB `0x721` (fresh ← `kNodeStatusFreshMs`,
+rolling advancing, `error_status < 3`), and the Host request-stream validity flags.
+Bypass-aware: `g_bypass_mtr_absent` / `g_bypass_seb_sync` set `mtr_required` /
+`seb_required` false so an intentionally-absent bench actuator degrades the level
+instead of reporting a hard fault. RT is always required. The level is debounced
+by `kSystemReadyHoldMs` before it changes, and is exported as `0x500.ready`
+(Full only) plus `0x500.command_received` / `.command_nonzero`.
+
+---
+
+## 7. Multi-Task Watchdog & Alive Counters
 
 `task_diag` monitors 8 per-task atomic counters updated in each task's loop:
 - `g_alive_safety`

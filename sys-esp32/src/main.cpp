@@ -41,6 +41,7 @@ bool g_bypass_mtr_absent = false;
 #include "light_control.h"
 #include "indicator_control.h"
 #include "sys_status_led.h"
+#include "system_ready.h"
 // #include "wdt_toggle.h"
 
 
@@ -153,6 +154,17 @@ static std::atomic<uint8_t>  g_wheel_sensor_state{0};  // 0 NI,1 ACQ,2 VALID,3 F
 static std::atomic<uint32_t> g_last_wheel_speed_tick{0};
 static std::atomic<uint8_t>  g_mtr_gear_state{0};     // gear state from 0x206 MTR_MOTOR_FBK (C6b)
 
+// Peer node-status (observational READY inputs): 0x501 RT / 0x502 MTR.
+static std::atomic<bool>     g_rt_node_ready{false};
+static std::atomic<bool>     g_rt_node_degraded{false};
+static std::atomic<uint32_t> g_last_rt_node_tick{0};
+static std::atomic<bool>     g_mtr_node_ready{false};
+static std::atomic<bool>     g_mtr_node_degraded{false};
+static std::atomic<uint32_t> g_last_mtr_node_tick{0};
+// Debounced system READY level (see system_ready.h); observational only.
+static std::atomic<uint8_t>  g_sys_ready_level{
+    static_cast<uint8_t>(sys::SystemReadyLevel::Blocked)};
+
 // 0x204 staleness tracking (arch §8.6: 200ms timeout → zero speed + neutral)
 static std::atomic<uint32_t> g_last_setpoint_tick{0};
 static std::atomic<uint32_t> g_last_brake_setpoint_tick{0};
@@ -246,6 +258,50 @@ static std::atomic<bool>     g_brake_fault_active{false};
 // been explicitly reset out of ESTOP via the physical reset path.
 static bool sys_estop_latched() {
     return sys::ModeManager::estop_latched(g_mode_mgr.mode(), g_safety.estop_active());
+}
+
+// ── System READY level (OBSERVATIONAL ONLY) ─────────────────────────────
+// Gathers live evidence for system_ready.h. It must never be wired into
+// resolve_authority(), inhibit_state, ESTOP, or any TX path — it exists only to
+// drive the green lamp, the WS2812 cadence, and 0x500.ready.
+static sys::SystemReadyInputs sys_system_ready_inputs() {
+    const TickType_t now = xTaskGetTickCount();
+    auto fresh = [now](const std::atomic<uint32_t>& t) {
+        const uint32_t last = t.load(std::memory_order_relaxed);
+        return last != 0 && (now - last) <= pdMS_TO_TICKS(sys::kNodeStatusFreshMs);
+    };
+
+    sys::SystemReadyInputs in;
+    in.estop_or_inhibit = sys_estop_latched() || sys::any_inhibit();
+
+    // RT is the command conduit (heartbeat 0x7FD + node status 0x501, which
+    // folds in SES/steering health via RT's ready/degraded bits).
+    in.rt_ok = g_safety.heartbeat_ok()
+            && fresh(g_last_rt_node_tick)
+            && g_rt_node_ready.load(std::memory_order_relaxed)
+            && !g_rt_node_degraded.load(std::memory_order_relaxed);
+
+    // MTR node status 0x502 proves ignition + output.
+    in.mtr_ok = fresh(g_last_mtr_node_tick)
+             && g_mtr_node_ready.load(std::memory_order_relaxed)
+             && !g_mtr_node_degraded.load(std::memory_order_relaxed);
+
+    // SEB has no node-status frame: infer from 0x721 freshness + rolling + L3.
+    in.seb_ok = g_seb_seen.load(std::memory_order_relaxed)
+             && fresh(g_last_seb_status_tick)
+             && g_seb_rolling.load(std::memory_order_relaxed)
+             && g_seb_error_status.load(std::memory_order_relaxed) < 3;
+
+    in.host_ok = g_mode_request_valid.load(std::memory_order_relaxed)
+              && g_power_request_valid.load(std::memory_order_relaxed);
+
+    in.mtr_required = !g_bypass_mtr_absent;
+    in.seb_required = !g_bypass_seb_sync;
+    return in;
+}
+
+static sys::SystemReadyLevel sys_system_ready_level() {
+    return sys::evaluate_system_ready(sys_system_ready_inputs());
 }
 
 // Queues
@@ -583,6 +639,22 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
             can::gen::RtHeartbeat heartbeat{};
             if (can::gen::decode_rt_heartbeat(fr.view(), heartbeat) == can::gen::CodecStatus::Ok)
                 g_safety.feed_heartbeat_rt(heartbeat.alive_ctr);
+            break;
+        }
+        case can::gen::RtNodeStatus::kId: {  // 0x501 — observational READY input
+            can::gen::RtNodeStatus st{};
+            if (can::gen::decode_rt_node_status(fr.view(), st) != can::gen::CodecStatus::Ok) break;
+            g_rt_node_ready.store(st.ready, std::memory_order_relaxed);
+            g_rt_node_degraded.store(st.degraded, std::memory_order_relaxed);
+            g_last_rt_node_tick.store(xTaskGetTickCount(), std::memory_order_relaxed);
+            break;
+        }
+        case can::gen::MtrNodeStatus::kId: {  // 0x502 — observational READY input
+            can::gen::MtrNodeStatus st{};
+            if (can::gen::decode_mtr_node_status(fr.view(), st) != can::gen::CodecStatus::Ok) break;
+            g_mtr_node_ready.store(st.ready, std::memory_order_relaxed);
+            g_mtr_node_degraded.store(st.degraded, std::memory_order_relaxed);
+            g_last_mtr_node_tick.store(xTaskGetTickCount(), std::memory_order_relaxed);
             break;
         }
         }
@@ -981,11 +1053,28 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
         set_relay(sys::kBulbManual, out.manual_bulb);
 #endif
 
-        // Green "ready" bulb: AUTO or MANUAL, RT alive, no brake/traction fault
+        // ── Observational system READY ──────────────────────────────────
+        // Green lamp is ON whenever the command path is up (any non-Blocked
+        // level) and OFF on a real fault. Only the WS2812 encodes the level
+        // cadence (Full=solid, Host-absent=breathe, MTR-absent=fast blink).
+        // This NEVER affects authority, ESTOP, or any outgoing command.
         can::Mode mode = g_mode_mgr.mode();
-        [[maybe_unused]] bool ready = (mode == can::Mode::Auto || mode == can::Mode::Manual)
-                  && g_safety.heartbeat_ok()
-                  && !sys::traction_fault_present();
+        const uint32_t now_ms = static_cast<uint32_t>(pdTICKS_TO_MS(xTaskGetTickCount()));
+        {
+            const sys::SystemReadyLevel raw = sys_system_ready_level();
+            static sys::SystemReadyLevel seen    = raw;
+            static sys::SystemReadyLevel held    = raw;
+            static uint32_t              seen_at = now_ms;
+            if (raw != seen) { seen = raw; seen_at = now_ms; }
+            if (seen != held
+                && (now_ms - seen_at) >= static_cast<uint32_t>(sys::kSystemReadyHoldMs)) {
+                held = seen;
+            }
+            g_sys_ready_level.store(static_cast<uint8_t>(held), std::memory_order_relaxed);
+        }
+        [[maybe_unused]] bool ready =
+            g_sys_ready_level.load(std::memory_order_relaxed)
+                != static_cast<uint8_t>(sys::SystemReadyLevel::Blocked);
         // Red "ESTOP" bulb: dedicated, independent of brake lamp
         [[maybe_unused]] bool estop = (mode == can::Mode::Estop);
 
@@ -999,8 +1088,9 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
 
         // Status LED Evaluation (25 Hz)
         {
-            const uint32_t now_ms = static_cast<uint32_t>(pdTICKS_TO_MS(xTaskGetTickCount()));
             sys::SysLedInputs led_in{};
+            led_in.system_ready_level   = static_cast<sys::SystemReadyLevel>(
+                g_sys_ready_level.load(std::memory_order_relaxed));
             led_in.twai_bus_off         = g_can.recovery_needed();
             led_in.estop_active         = sys_estop_latched() || (mode == can::Mode::Estop);
             led_in.local_estop_cause    = g_safety.estop_active() || (sys::g_latched_fault_reasons.load(std::memory_order_relaxed) != 0);
@@ -1056,7 +1146,13 @@ static can::gen::SysNodeStatus build_sys_node_status() {
         (inhibit_bits & 0xFFu) | ((latched_bits & 0xFFu) << 8));
     ns.estop_active = estop;
     ns.estop_latched = estop;
-    ns.ready = !estop && !inhibit && g_safety.heartbeat_ok();
+    // `ready` reflects the observational SYSTEM readiness (whole Host→RT→SYS→
+    // {MTR,SEB} path up and error-free), not just this node. See system_ready.h.
+    const uint8_t ready_level = g_sys_ready_level.load(std::memory_order_relaxed);
+    ns.ready = (ready_level == static_cast<uint8_t>(sys::SystemReadyLevel::Full));
+    ns.command_received = g_mode_request_valid.load(std::memory_order_relaxed)
+                       && g_power_request_valid.load(std::memory_order_relaxed);
+    ns.command_nonzero = g_setpoint_speed_mmps.load(std::memory_order_relaxed) != 0;
     ns.output_enabled = !estop && !inhibit;
     ns.degraded = g_brake_fault_active.load(std::memory_order_relaxed)
                || sys::traction_fault_present();

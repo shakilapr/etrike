@@ -119,6 +119,12 @@ constexpr int kSebStartupAcquireMs    = 1000;  // startup deadline to detect SEB
 // (it is now a latching run/enable control).
 constexpr int kEstopLongPressMs       = 5000;  // held 5s → validated reset
 
+// ── system READY indication (observational only) ─────────────────────
+// READY reports whether the whole Host→RT→SYS→{MTR,SEB} command path is up and
+// error-free. It never gates authority/ESTOP/commands (see system_ready.h).
+constexpr int kNodeStatusFreshMs  = 300;  // 0x501/0x502/0x721 considered live within this window
+constexpr int kSystemReadyHoldMs  = 200;  // new level must persist this long before it is shown
+
 // ── MTR ESTOP ACK (gap #15) ──────────────────────────────────────────
 constexpr int kMtrEstopAckTimeoutMs   =  100;  // ESTOP_ACTIVE bit in 0x206 within 100ms
 constexpr int kMtrEstopAckMaxRetries  =    3;  // retries before escalating to latched fault

@@ -17,6 +17,8 @@ All lights controlled by SYS ESP32-S3. Design covers all modes: MANUAL, AUTO, ES
 | 7 | AUTO mode bulb | 10 | OUT — relay → 12V bulb | Non-safety |
 | 8 | MANUAL mode bulb | 39 | OUT — relay → 12V bulb | Non-safety |
 | 9 | ESTOP mode bulb | 18 | OUT — relay → 12V bulb | Safety-critical |
+| 10 | READY system bulb | 17 | OUT — relay → 12V bulb | Non-safety (observational) |
+| 11 | Developer bypass bulb | 14 | OUT — relay → 12V bulb | Non-safety |
 
 GPIOs 8 and 9 are available for reverse and position lights. Need relay modules (same type as turn lamps).
 
@@ -146,6 +148,25 @@ Optional CAN override: if `g_light_state.position_lights` (new bit in `0x302`) i
 | ESTOP | OFF | OFF | ON |
 
 Both OFF = ESTOP (visually distinct from both MANUAL and AUTO). Bulbs are driven through the active-LOW relay module directly from the GPIO (no ULN2803A): GPIO LOW = lamp ON. The 12V accessory relay (GPIO40) stays energized so the bulbs remain powered in every mode.
+
+### 7.1 System READY bulb — GPIO17
+
+Green bulb, observational only (never gates authority/ESTOP/commands). ON when the
+whole Host → RT → SYS → {MTR, SEB} command path is up and error-free, OFF on a real
+fault. Because the bulb is a relay it is ON/OFF only; the onboard WS2812 carries the
+cadence that distinguishes the levels (see `sys-esp32/src/system_ready.h` and
+`sys-esp32/architecture.md` §6):
+
+| Readiness | Green bulb (GPIO17) | WS2812 |
+|-----------|---------------------|--------|
+| Blocked (ESTOP/inhibit, RT absent, required peer absent) | OFF | fault cascade |
+| MTR absent (bench) | ON | Green fast blink |
+| Host request stream absent | ON | Green breathe |
+| Full | ON | normal mode colour |
+
+Bypass-aware: with the developer override active, `g_bypass_mtr_absent` /
+`g_bypass_seb_sync` make an intentionally-absent bench actuator read as "MTR absent"
+(fast blink) rather than a fault. RT is always required.
 
 ---
 
