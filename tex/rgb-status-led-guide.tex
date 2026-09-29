@@ -1,0 +1,373 @@
+% ===========================================================================
+%  E-Trike Onboard WS2812 RGB Status LED: Complete Visual Language Reference
+%  Target Hardware: sys-esp32 (GPIO 48) & rt-esp32 (GPIO 48)
+%  Strict NDA Compliance: Strictly functional names (SES, SEB, MTR, SYS, RT, Host)
+%  Compile: pdflatex -interaction=nonstopmode rgb-status-led-guide.tex
+% ===========================================================================
+\documentclass[10pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage[top=10mm,bottom=10mm,left=10mm,right=10mm,headheight=14pt,footskip=14pt]{geometry}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{tabularx}
+\usepackage[table]{xcolor}
+\usepackage{tikz}
+\usetikzlibrary{shapes,arrows.meta,positioning,calc}
+\usepackage[most]{tcolorbox}
+\usepackage{fancyhdr}
+\usepackage{lastpage}
+\usepackage{hyperref}
+
+% ── Color Definitions ────────────────────────────────────────────────────────
+\definecolor{ledRed}{RGB}{230, 20, 20}
+\definecolor{ledOrange}{RGB}{245, 60, 0}
+\definecolor{ledCyan}{RGB}{0, 180, 240}
+\definecolor{ledYellow}{RGB}{240, 150, 0}
+\definecolor{ledPurple}{RGB}{145, 20, 245}
+\definecolor{ledGreen}{RGB}{10, 185, 30}
+\definecolor{ledWhite}{RGB}{245, 245, 245}
+\definecolor{ledBlue}{RGB}{10, 80, 245}
+\definecolor{ledAmber}{RGB}{250, 110, 0}
+\definecolor{ledDark}{RGB}{35, 35, 35}
+\definecolor{rowAlt}{RGB}{248, 250, 252}
+
+% ── Page Header & Footer ───────────────────────────────────────────────────
+\pagestyle{fancy}
+\fancyhf{}
+\renewcommand{\headrulewidth}{0.6pt}
+\renewcommand{\footrulewidth}{0.4pt}
+\fancyhead[L]{\textbf{E-TRIKE ONBOARD RGB STATUS LED GUIDE} $\cdot$ WS2812 VISUAL CODES}
+\fancyhead[R]{\textbf{REV 0.8.0-ALPHA}}
+\fancyfoot[L]{Complete Color \& Cadence Reference Sheet $\cdot$ \texttt{sys-esp32} \& \texttt{rt-esp32} (GPIO 48)}
+\fancyfoot[R]{Page \thepage\ of \pageref{LastPage}}
+
+\hypersetup{
+  colorlinks=false,
+  pdfborder={0 0 0},
+  pdftitle={Onboard WS2812 RGB Status LED Visual Language},
+  pdfauthor={E-Trike Controls and Safety},
+}
+
+% ── Swatch & Badge Helpers ─────────────────────────────────────────────────
+\newcommand{\swatch}[1]{%
+  \begin{tikzpicture}[baseline=-0.6ex]
+    \draw[fill=#1, draw=black!70, line width=0.5pt, rounded corners=1.5pt] (0,0) rectangle (0.38cm, 0.24cm);
+  \end{tikzpicture}%
+}
+
+\newcommand{\pipswatch}[2]{%
+  \begin{tikzpicture}[baseline=-0.6ex]
+    \draw[fill=#1, draw=black!70, line width=0.5pt, rounded corners=1.5pt] (0,0) rectangle (0.44cm, 0.24cm);
+    \draw[fill=#2, draw=black!85, line width=0.4pt, rounded corners=0.8pt] (0.22cm, 0.03cm) rectangle (0.40cm, 0.21cm);
+  \end{tikzpicture}%
+}
+
+\newcommand{\stepswatch}[2]{%
+  \begin{tikzpicture}[baseline=-0.6ex]
+    \draw[fill=#1, draw=black!70, line width=0.5pt, rounded corners=1.5pt] (0,0) rectangle (0.22cm, 0.24cm);
+    \draw[fill=#2, draw=black!70, line width=0.5pt, rounded corners=1.5pt] (0.22cm, 0) rectangle (0.44cm, 0.24cm);
+  \end{tikzpicture}%
+}
+
+% ── TColorBox Styles ───────────────────────────────────────────────────────
+\tcbset{
+  sectionbox/.style={
+    enhanced,
+    colback=white,
+    colframe=black!80,
+    boxrule=0.6pt,
+    arc=2pt,
+    left=5pt, right=5pt, top=3pt, bottom=3pt,
+    fonttitle=\bfseries\footnotesize\color{white},
+    coltitle=white,
+    colbacktitle=black!85,
+    attach boxed title to top left={yshift*=-2mm, xshift=5pt},
+    boxed title style={arc=1.5pt, boxrule=0.4pt, top=1pt, bottom=1pt, left=3pt, right=3pt}
+  }
+}
+
+\begin{document}
+
+% ─────────────────────────────────────────────────────────────────────────────
+%  PAGE 1: Core Vocabulary (7 Domain Colors + 6 Temporal Patterns)
+% ─────────────────────────────────────────────────────────────────────────────
+
+\begin{center}
+  {\Large\textbf{ONBOARD WS2812 RGB STATUS LED: VISUAL LANGUAGE}}\\[1.2mm]
+  {\small\textbf{Exhaustive Reference Card of All Colors, Temporal Cadences, Pips \& Diagnostic Meanings}}\\[0.8mm]
+  {\footnotesize Standardized for \textbf{SYS Safety Master} (\texttt{sys-esp32}) \& \textbf{RT Gateway / Motion Master} (\texttt{rt-esp32}) $\cdot$ Onboard GPIO 48}
+\end{center}
+
+\vspace{-1.5mm}
+
+\begin{tcolorbox}[sectionbox, title=1. Visual Grammar: Domain Color $\times$ Temporal Modulation]
+The onboard WS2812 diode emits \textbf{one color at any instant}. Multi-state messages are signaled by \textbf{temporally replacing the base color} with a short diagnostic overlay pip ($200\,\text{ms}$):
+\begin{center}
+\textbf{What You See} $=$ \textbf{Domain Base Color} (Where / Subsystem) $\times$ \textbf{Temporal Modulation} (Cadence \& Pip / What Is Happening)
+\end{center}
+Both controllers share identical color palettes and pip semantics. Magenta is completely eliminated to ensure zero optical confusion with Purple.
+\end{tcolorbox}
+
+\vspace{-1mm}
+
+\begin{tcolorbox}[sectionbox, title=2. The 7 Domain Colors (Where is the Issue?)]
+\renewcommand{\arraystretch}{1.1}
+\footnotesize
+\begin{tabularx}{\linewidth}{>{\centering\arraybackslash}p{0.7cm} p{1.6cm} p{2.2cm} p{1.8cm} X}
+\toprule
+\textbf{Badge} & \textbf{Domain Hue} & \textbf{Calibrated RGB} & \textbf{Active Dies} & \textbf{Subsystem Domain / What It Designates} \\
+\midrule
+\swatch{ledRed} & \textbf{RED} & $(255, 0, 0)$ & R & \textbf{Safety / ESTOP:} Emergency stop latched, mushroom open, critical system trip. \\
+\swatch{ledOrange} & \textbf{ORANGE} & $(255, 35, 0)$ & R + low G & \textbf{Physical Interface:} TWAI Primary CAN Bus-Off, SPI Secondary CAN controller failure. \\
+\swatch{ledCyan} & \textbf{CYAN} & $(0, 180, 255)$ & G + B & \textbf{Actuator Units:} SES (Steering), SEB (Braking), MTR (Propulsion motor). \\
+\swatch{ledYellow} & \textbf{YELLOW} & $(255, 130, 0)$ & R + G & \textbf{Peer Controllers:} Jetson Host, RT controller, SYS safety supervisor. \\
+\swatch{ledPurple} & \textbf{PURPLE} & $(140, 0, 255)$ & R + B & \textbf{MANUAL Mode:} Human rider control; 72V traction relay armed. \\
+\swatch{ledGreen} & \textbf{GREEN} & $(0, 255, 0)$ & G & \textbf{AUTO Mode:} Autonomous motion executing or armed in standby. \\
+\swatch{ledWhite} & \textbf{WHITE} & $(255, 255, 255)$ & R + G + B & \textbf{Boot / Bootstrap:} Peripheral power-on and upstream authority acquisition. \\
+\bottomrule
+\end{tabularx}
+\vspace{0.8mm}
+{\scriptsize \textit{Calibration:} Brightness capped to 25\% ($max = 64$) for workbench comfort. Breathing uses quadratic gamma ($I = x^2 / 256$) with 12\% floor.}
+\end{tcolorbox}
+
+\vspace{-1mm}
+
+\begin{tcolorbox}[sectionbox, title=3. Temporal Grammar: 4 Base Cadences \& 4 Diagnostic Overlays]
+\renewcommand{\arraystretch}{1.08}
+\footnotesize
+\textbf{A. Base Cadences (Underlying Subsystem Activity)}
+\vspace{0.5mm}
+
+\begin{tabularx}{\linewidth}{>{\centering\arraybackslash}p{0.7cm} p{2.5cm} p{3.8cm} X}
+\toprule
+\textbf{Pattern} & \textbf{Cadence Name} & \textbf{Waveform Timing} & \textbf{Operational Meaning} \\
+\midrule
+\swatch{ledRed} & \textbf{Solid} & Continuous ($100\%$ duty) & Latched safety fault, physical lockout, or active nominal driving. \\
+\stepswatch{ledRed}{ledYellow} & \textbf{Remote ESTOP} & $600\,\text{ms RED} \rightarrow 200\,\text{ms YELLOW}$ ($1.25\,\text{Hz}$) & Remote peer tripped ESTOP; local hardware and sensors intact. \\
+\swatch{ledOrange} & \textbf{Fast Blink} & $150\,\text{ms ON} / 150\,\text{ms OFF}$ ($3.33\,\text{Hz}$) & Physical transceiver, bus link, or SPI hardware failure (Bus-Off). \\
+\swatch{ledGreen} & \textbf{Breathing} & $1800\,\text{ms}$ cycle ($900\,\text{ms}$ up, $900\,\text{ms}$ down) & Normal idle standby, waiting, or nominal unasserted state. \\
+\bottomrule
+\end{tabularx}
+
+\vspace{1mm}
+\textbf{B. Temporal Overlay Pips (Universal Diagnostic Modulations, Period = 1200\,ms)}
+\vspace{0.5mm}
+
+\begin{tabularx}{\linewidth}{>{\centering\arraybackslash}p{0.7cm} p{2.5cm} p{1.6cm} p{1.8cm} X}
+\toprule
+\textbf{Pip} & \textbf{Overlay Name} & \textbf{Duration} & \textbf{Gap Period} & \textbf{Universal Diagnostic Meaning (What It Says)} \\
+\midrule
+\swatch{ledRed} & \textbf{RED PIP} & $200\,\text{ms}$ & $1000\,\text{ms}$ & \textbf{Fault / Unsafe:} Unit reporting internal error code or control enable rejected. \\
+\swatch{ledAmber} & \textbf{AMBER PIP} & $200\,\text{ms}$ & $1000\,\text{ms}$ & \textbf{Blocked / Modified / Conflict:} Commanded motion modified, clamped, or blocked. \\
+\swatch{ledBlue} & \textbf{BLUE PIP} & $200\,\text{ms}$ & $1000\,\text{ms}$ & \textbf{Authority Missing:} Waiting on upstream heartbeat or authority stream. \\
+\swatch{ledWhite} & \textbf{WHITE TICK} & $120\,\text{ms}$ & $880\,\text{ms}$ & \textbf{Live Packet Activity:} Fresh nominal drive packets actively executing. \\
+\bottomrule
+\end{tabularx}
+\end{tcolorbox}
+
+\vspace{-1mm}
+
+\begin{tcolorbox}[sectionbox, title=4. Universal Compositional Semantics (SYS \& RT)]
+\renewcommand{\arraystretch}{1.05}
+\footnotesize
+\begin{tabularx}{\linewidth}{>{\centering\arraybackslash}p{0.8cm} p{3.6cm} X}
+\toprule
+\textbf{Badge} & \textbf{Color Combination} & \textbf{Universal Interpretation Across SYS and RT} \\
+\midrule
+\pipswatch{ledCyan}{ledRed} & \textbf{Cyan + Red Pip} & \textbf{Actuator Internal Error:} Actuator reporting internal hardware error or rejected control enable. \\
+\pipswatch{ledCyan}{ledAmber} & \textbf{Cyan + Amber Pip} & \textbf{Actuator Inhibit Blocking:} Actuator feedback missing or safety inhibit is actively blocking motion. \\
+\pipswatch{ledPurple}{ledAmber} & \textbf{Purple + Amber Pip} & \textbf{Mode Conflict:} Vehicle in MANUAL, but receiving autonomous motion commands from network. \\
+\pipswatch{ledGreen}{ledAmber} & \textbf{Green + Amber Pip} & \textbf{Active Safety Intervention:} Autonomous drive active, but angle clamp or slew limiter is modifying target. \\
+\pipswatch{ledYellow}{ledBlue} & \textbf{Yellow + Blue Pip} & \textbf{Peer Missing During Drive:} Network controller heartbeat timed out while motion was requested. \\
+\pipswatch{ledWhite}{ledBlue} & \textbf{White + Blue Pip} & \textbf{Awaiting Authority:} Node booted, actively waiting for upstream authority broadcast (\texttt{0x011}/\texttt{0x110}). \\
+\bottomrule
+\end{tabularx}
+\end{tcolorbox}
+
+\newpage
+
+% ─────────────────────────────────────────────────────────────────────────────
+%  PAGE 2: SYS Controller (sys-esp32) State & Priority Cascade
+% ─────────────────────────────────────────────────────────────────────────────
+
+\begin{center}
+  {\Large\textbf{SYS CONTROLLER (\texttt{sys-esp32}): COMPLETE COLOR CODE SPECIFICATION}}\\[1.2mm]
+  {\small\textbf{Deterministic Priority Cascade (Evaluated at 25\,Hz / 40\,ms in \texttt{task\_indicator})}}\\[0.8mm]
+  {\footnotesize Safety Authority Master $\cdot$ 72V Traction Power Relay $\cdot$ SEB Brake-by-Wire Normal Master $\cdot$ GPIO 48}
+\end{center}
+
+\vspace{-1.5mm}
+
+\renewcommand{\arraystretch}{1.08}
+\footnotesize
+\begin{tabularx}{\textwidth}{>{\centering\arraybackslash}p{0.7cm} >{\centering\arraybackslash}p{0.9cm} p{3.2cm} X X}
+\toprule
+\textbf{Prio} & \textbf{Badge} & \textbf{Visual Code} & \textbf{What It Says (Diagnostic Meaning)} & \textbf{Trigger Condition \& CAN Bus Context} \\
+\midrule
+\textbf{P0} & \swatch{ledDark} & \textbf{OFF} & \textbf{Unpowered / System Panic} & No 3.3V power, MCU in reset, or CPU panic halt. \\
+\midrule
+\textbf{P1} & \swatch{ledOrange} & \textbf{Orange Fast Blink} \newline ($150/150\,\text{ms}$) & \textbf{Physical Low CAN Bus-Off} & TWAI controller entered Bus-Off ($\text{TEC} \ge 256$). Physical bus short, open, or transceiver unpowered. \\
+\midrule
+\textbf{P2.0} & \swatch{ledRed} & \textbf{Red Solid} & \textbf{Local Hard ESTOP Tripped} & Physical mushroom button open (GPIO 1), task watchdog stall, or physical EGAS mismatch ($>500\,\text{mm/s}$). \\
+\midrule
+\textbf{P2.1} & \pipswatch{ledRed}{ledWhite} & \textbf{Red Solid + White Tick} \newline ($120\,\text{ms}$ tick) & \textbf{Local ESTOP + MTR ACK Retry} & ESTOP is latched; SYS is actively retrying verification of \texttt{ESTOP\_ACTIVE} acknowledgement in \texttt{0x206}. \\
+\midrule
+\textbf{P2.2} & \stepswatch{ledRed}{ledYellow} & \textbf{Red $\leftrightarrow$ Yellow Step} \newline ($600\,\text{ms} / 200\,\text{ms}$) & \textbf{Remote ESTOP Active} & Received \texttt{0x001 SAFETY\_ESTOP} from RT or Host. Local SYS sensors and mushroom button are healthy. \\
+\midrule
+\textbf{P3.0} & \pipswatch{ledCyan}{ledRed} & \textbf{Cyan Breathe + Red Pip} \newline ($200\,\text{ms}$ pip) & \textbf{Latched Actuator Fault} & Confirmed persistent brake following error, SEB Level 3 error (\texttt{kLatchedSebL3}), or MTR motor fault flags. \\
+\midrule
+\textbf{P3.1} & \pipswatch{ledCyan}{ledAmber} & \textbf{Cyan Breathe + Amber Pip} \newline ($200\,\text{ms}$ pip) & \textbf{Actuator Inhibit Blocking Drive} & MTR \texttt{0x206} or SEB \texttt{0x721} feedback missing while RT \texttt{0x204} is commanding speed $>0$. \\
+\midrule
+\textbf{P3.2} & \swatch{ledCyan} & \textbf{Cyan Breathe} \newline ($1800\,\text{ms}$) & \textbf{Actuator Inhibit (Standstill)} & MTR \texttt{0x206} or SEB \texttt{0x721} feedback lost at standstill ($v=0$). 72V traction relay disarmed. \\
+\midrule
+\textbf{P4.0} & \pipswatch{ledYellow}{ledBlue} & \textbf{Yellow Breathe + Blue Pip} \newline ($200\,\text{ms}$ pip) & \textbf{RT Missing + Motion Demanded} & RT \texttt{0x7FD} heartbeat timed out while rider throttle or speed setpoint is requesting motion. \\
+\midrule
+\textbf{P4.1} & \pipswatch{ledYellow}{ledAmber} & \textbf{Yellow Breathe + Amber Pip} \newline ($200\,\text{ms}$ pip) & \textbf{Stale RT Drive Command Stream} & RT heartbeat is alive, but \texttt{0x204 RT\_DRIVE\_CMD} stream is stale ($>200\,\text{ms}$) or frozen. \\
+\midrule
+\textbf{P4.2} & \swatch{ledYellow} & \textbf{Yellow Breathe} \newline ($1800\,\text{ms}$) & \textbf{RT Heartbeat Missing (Idle)} & RT \texttt{0x7FD} heartbeat lost at standstill ($v=0$). System held safely in standby. \\
+\midrule
+\textbf{P5.0} & \swatch{ledWhite} & \textbf{White Breathe} \newline ($1800\,\text{ms}$) & \textbf{Cold Start Boot Grace} & Initial power-on grace window ($< 3000\,\text{ms}$). Microcontroller initialized, awaiting peers. \\
+\midrule
+\textbf{P6.0} & \pipswatch{ledPurple}{ledAmber} & \textbf{Purple Breathe + Amber Pip} \newline ($200\,\text{ms}$ pip) & \textbf{Manual + Auto Command Conflict} & Mode is MANUAL, but RT/Host is transmitting non-zero drive commands over \texttt{0x204}. \\
+\midrule
+\textbf{P6.1} & \pipswatch{ledPurple}{ledWhite} & \textbf{Purple Solid + White Tick} \newline ($120\,\text{ms}$ tick) & \textbf{Manual Driving / Braking} & Rider twisting physical throttle grip or pulling mechanical brake lever (GPIO 2). \\
+\midrule
+\textbf{P6.2} & \swatch{ledPurple} & \textbf{Purple Breathe} \newline ($1800\,\text{ms}$) & \textbf{Manual Mode Standstill} & Rider in control, vehicle stationary, 72V traction armed, zero faults asserted. \\
+\midrule
+\textbf{P6.3} & \pipswatch{ledGreen}{ledAmber} & \textbf{Green Solid + Amber Pip} \newline ($200\,\text{ms}$ pip) & \textbf{Auto + Driver Brake Override} & Vehicle in AUTO mode, but rider brake lever is pulled, overriding autonomous braking intent. \\
+\midrule
+\textbf{P6.4} & \pipswatch{ledGreen}{ledWhite} & \textbf{Green Solid + White Tick} \newline ($120\,\text{ms}$ tick) & \textbf{Auto Actively Driving} & Vehicle in AUTO mode; executing fresh non-zero \texttt{0x204} drive commands ($v > 0$). \\
+\midrule
+\textbf{P6.5} & \swatch{ledGreen} & \textbf{Green Breathe} \newline ($1800\,\text{ms}$) & \textbf{Auto Mode Standstill} & Vehicle in AUTO mode; nominal health, speed $= 0$, awaiting autonomous path commands. \\
+\bottomrule
+\end{tabularx}
+
+\newpage
+
+% ─────────────────────────────────────────────────────────────────────────────
+%  PAGE 3: RT Controller (rt-esp32) State & Priority Cascade
+% ─────────────────────────────────────────────────────────────────────────────
+
+\begin{center}
+  {\Large\textbf{RT CONTROLLER (\texttt{rt-esp32}): COMPLETE COLOR CODE SPECIFICATION}}\\[1.2mm]
+  {\small\textbf{Deterministic Priority Cascade (Evaluated at 25\,Hz / 40\,ms in \texttt{control\_task})}}\\[0.8mm]
+  {\footnotesize Motion Master $\cdot$ Kinematics Resolver $\cdot$ Steer-by-Wire (SES) Master $\cdot$ Dual-Bus CAN Gateway $\cdot$ GPIO 48}
+\end{center}
+
+\vspace{-1.5mm}
+
+\renewcommand{\arraystretch}{1.08}
+\footnotesize
+\begin{tabularx}{\textwidth}{>{\centering\arraybackslash}p{0.7cm} >{\centering\arraybackslash}p{0.9cm} p{3.2cm} X X}
+\toprule
+\textbf{Prio} & \textbf{Badge} & \textbf{Visual Code} & \textbf{What It Says (Diagnostic Meaning)} & \textbf{Trigger Condition \& CAN Bus Context} \\
+\midrule
+\textbf{P0} & \swatch{ledDark} & \textbf{OFF} & \textbf{Unpowered / System Panic} & No 3.3V power, MCU in reset, or CPU panic halt. \\
+\midrule
+\textbf{P1} & \swatch{ledOrange} & \textbf{Orange Fast Blink} \newline ($150/150\,\text{ms}$) & \textbf{Physical CAN / SPI Failure} & Low CAN TWAI Bus-Off ($\text{TEC} \ge 256$) OR High CAN SPI controller failure, bus-off, or buffer exhaustion. \\
+\midrule
+\textbf{P2.0} & \swatch{ledRed} & \textbf{Red Solid} & \textbf{Local RT ESTOP Tripped} & Steering following error ($>2^\circ$), MTR timeout in AUTO, stale \texttt{0x300} ($>500\,\text{ms}$), or obstacle halt. \\
+\midrule
+\textbf{P2.1} & \pipswatch{ledRed}{ledBlue} & \textbf{Red Solid + Blue Pip} \newline ($200\,\text{ms}$ pip) & \textbf{Emergency SEB Takeover} & SYS \texttt{0x7B9} brake frame vanished ($>300\,\text{ms}$); RT actively broadcasting emergency \texttt{0x7B9} fallback. \\
+\midrule
+\textbf{P2.2} & \stepswatch{ledRed}{ledYellow} & \textbf{Red $\leftrightarrow$ Yellow Step} \newline ($600\,\text{ms} / 200\,\text{ms}$) & \textbf{Remote ESTOP Active} & Received \texttt{0x001 SAFETY\_ESTOP} or SYS \texttt{0x011}/\texttt{0x110} reports active ESTOP. Local RT healthy. \\
+\midrule
+\textbf{P3.0} & \pipswatch{ledCyan}{ledRed} & \textbf{Cyan Breathe + Red Pip} \newline ($200\,\text{ms}$ pip) & \textbf{Actuator Internal Fault} & SES steering reporting internal error (\texttt{0x201}), SES L3 fault (\texttt{0x202}), or control enable rejected. \\
+\midrule
+\textbf{P3.1} & \pipswatch{ledCyan}{ledAmber} & \textbf{Cyan Breathe + Amber Pip} \newline ($200\,\text{ms}$ pip) & \textbf{Actuator Missing + Drive Req} & SES \texttt{0x201} or MTR \texttt{0x206} feedback missing while Host \texttt{0x300} requests non-zero drive. \\
+\midrule
+\textbf{P3.2} & \swatch{ledCyan} & \textbf{Cyan Breathe} \newline ($1800\,\text{ms}$) & \textbf{Actuator Missing (Standstill)} & SES \texttt{0x201} or MTR \texttt{0x206} feedback unacquired/silent at standstill ($v=0$). \\
+\midrule
+\textbf{P4.0} & \pipswatch{ledWhite}{ledBlue} & \textbf{White Breathe + Blue Pip} \newline ($200\,\text{ms}$ pip) & \textbf{Awaiting SYS Authority} & Boot complete, but SYS safety stream (\texttt{0x011}) or mode stream (\texttt{0x110}) not yet validated. \\
+\midrule
+\textbf{P4.1} & \swatch{ledWhite} & \textbf{White Breathe} \newline ($1800\,\text{ms}$) & \textbf{Cold Start Boot Grace} & Startup window active ($< 3000\,\text{ms}$) with zero CAN peers heard yet. \\
+\midrule
+\textbf{P5.0} & \pipswatch{ledYellow}{ledBlue} & \textbf{Yellow Breathe + Blue Pip} \newline ($200\,\text{ms}$ pip) & \textbf{Peer Missing + Motion Demanded} & SYS \texttt{0x7FE} or Host \texttt{0x7FC} heartbeat timed out while Host \texttt{0x300} commanded non-zero speed. \\
+\midrule
+\textbf{P5.1} & \swatch{ledYellow} & \textbf{Yellow Breathe} \newline ($1800\,\text{ms}$) & \textbf{Peer Missing (Standstill)} & Jetson Host \texttt{0x7FC} or SYS \texttt{0x7FE} heartbeat lost at standstill ($v=0$). \\
+\midrule
+\textbf{P6.0} & \pipswatch{ledPurple}{ledAmber} & \textbf{Purple Breathe + Amber Pip} \newline ($200\,\text{ms}$ pip) & \textbf{Manual + Host Drive Conflict} & Mode is MANUAL, but Jetson is commanding non-zero drive over \texttt{0x300}. Motion zeroed. \\
+\midrule
+\textbf{P6.1} & \swatch{ledPurple} & \textbf{Purple Breathe} \newline ($1800\,\text{ms}$) & \textbf{Manual Mode Standby} & Mode is MANUAL. RT actuator command outputs (\texttt{0x204}, \texttt{0x169}) are silent. \\
+\midrule
+\textbf{P6.2} & \pipswatch{ledGreen}{ledAmber} & \textbf{Green Breathe + Amber Pip} \newline ($200\,\text{ms}$ pip) & \textbf{Spin-in-Place Lockout} & Mode is AUTO at standstill ($v=0$), but Host commanded yaw rate $\omega \ne 0$ (anti-rollover interlock). \\
+\midrule
+\textbf{P6.3} & \pipswatch{ledGreen}{ledAmber} & \textbf{Green Solid + Amber Pip} \newline ($200\,\text{ms}$ pip) & \textbf{Auto Driving + Safety Clamped} & Mode is AUTO driving, but speed-dependent angle clamp or slew rate limiter is actively modifying target. \\
+\midrule
+\textbf{P6.4} & \pipswatch{ledGreen}{ledWhite} & \textbf{Green Solid + White Tick} \newline ($120\,\text{ms}$ tick) & \textbf{Auto Actively Driving} & Mode is AUTO driving; executing nominal \texttt{0x300} trajectory commands at programmed speed. \\
+\midrule
+\textbf{P6.5} & \swatch{ledGreen} & \textbf{Green Breathe} \newline ($1800\,\text{ms}$) & \textbf{Auto Mode Standstill} & Mode is AUTO; all peers, authority, and actuators healthy, commanded speed $= 0$. \\
+\bottomrule
+\end{tabularx}
+
+\newpage
+
+% ─────────────────────────────────────────────────────────────────────────────
+%  PAGE 4: Rapid Field Triage & Dual-Controller Diagnostic Matrix
+% ─────────────────────────────────────────────────────────────────────────────
+
+\begin{center}
+  {\Large\textbf{RAPID FIELD TRIAGE \& DUAL-CONTROLLER DIAGNOSTIC MATRIX}}\\[1.2mm]
+  {\small\textbf{Quick Lookups for Field Operators, Bench Engineers \& Track Technicians}}\\[0.8mm]
+  {\footnotesize Correlating \texttt{sys-esp32} and \texttt{rt-esp32} LED States Simultaneously $\cdot$ Zero Tools Required}
+\end{center}
+
+\vspace{-1.5mm}
+
+\begin{tcolorbox}[sectionbox, title=1. Operator Field Triage (Quick Lookup by Observed Pattern on Any Controller)]
+\renewcommand{\arraystretch}{1.1}
+\footnotesize
+\begin{tabularx}{\linewidth}{p{4.2cm} X}
+\toprule
+\textbf{Observed LED Pattern} & \textbf{Immediate Diagnostic Action Required on Bench / Vehicle} \\
+\midrule
+\swatch{ledOrange} \textbf{Orange Fast Blink} & CAN bus physical layer offline. Inspect 120\,$\Omega$ termination resistors, 3.3V transceiver power, and CTX/CRX wires. \\
+\swatch{ledRed} \textbf{Red Solid} & Local safety trip. Query \texttt{0x210}/\texttt{0x500} node status for reason byte. Check mushroom button (GPIO 1) and brake lever. \\
+\stepswatch{ledRed}{ledYellow} \textbf{Red/Yellow Toggle} & Local node is healthy! Check the other controller: the remote peer is broadcasting \texttt{0x001 SAFETY\_ESTOP}. \\
+\pipswatch{ledCyan}{ledRed} \textbf{Cyan + Red Pip} & Actuator internal fault. Inspect SES error register (\texttt{0x202}), SEB status byte (\texttt{0x721}), or MTR fault flags. \\
+\swatch{ledCyan} \textbf{Cyan Breathe} & Actuator telemetry silent. Check 12V actuator auxiliary power and CAN drop cables for SES, SEB, or MTR. \\
+\swatch{ledYellow} \textbf{Yellow Breathe} & Heartbeat lost. Verify Jetson bridge (\texttt{0x7FC}), RT gateway (\texttt{0x7FD}), or SYS safety supervisor (\texttt{0x7FE}). \\
+\pipswatch{ledWhite}{ledBlue} \textbf{White + Blue Pip} & RT waiting for SYS authority. Ensure SYS is out of ESTOP and publishing valid \texttt{0x011} (CRC-8) and \texttt{0x110}. \\
+\pipswatch{ledPurple}{ledAmber} \textbf{Purple + Amber Pip} & Autonomous command arriving while vehicle in MANUAL. Transition mode via physical START button or Host \texttt{0x111}. \\
+\pipswatch{ledGreen}{ledWhite} \textbf{Green + White Tick} & \textbf{All systems nominal.} Vehicle is in AUTO mode actively driving along commanded path trajectory. \\
+\bottomrule
+\end{tabularx}
+\end{tcolorbox}
+
+\vspace{-1mm}
+
+\begin{tcolorbox}[sectionbox, title=2. Dual-Controller Simultaneous State Matrix (Reading Both Boards Together)]
+\renewcommand{\arraystretch}{1.08}
+\footnotesize
+\begin{tabularx}{\linewidth}{>{\centering\arraybackslash}p{1.2cm} >{\centering\arraybackslash}p{1.2cm} p{3.2cm} X}
+\toprule
+\textbf{SYS LED} & \textbf{RT LED} & \textbf{Overall Vehicle State} & \textbf{Field Meaning \& Diagnostic Interpretation} \\
+\midrule
+\swatch{ledGreen} & \swatch{ledGreen} & \textbf{AUTO Standstill} & Both nodes healthy, authority locked, actuators armed, waiting for trajectory. \\
+\pipswatch{ledGreen}{ledWhite} & \pipswatch{ledGreen}{ledWhite} & \textbf{AUTO Driving} & Nominal autonomous operation: RT resolving kinematics, SYS supervising safety. \\
+\swatch{ledPurple} & \swatch{ledPurple} & \textbf{MANUAL Standstill} & Human rider authority, 72V traction relay armed, actuators in passive standby. \\
+\pipswatch{ledPurple}{ledWhite} & \swatch{ledPurple} & \textbf{MANUAL Driving} & Rider twisting throttle / braking; SYS executing power, RT keeping telemetry. \\
+\swatch{ledRed} & \stepswatch{ledRed}{ledYellow} & \textbf{SYS Local ESTOP} & Physical mushroom button pressed on SYS or watchdog trip; RT reacted remotely. \\
+\stepswatch{ledRed}{ledYellow} & \swatch{ledRed} & \textbf{RT Local ESTOP} & RT tripped (e.g. steering error $>2^\circ$ or stale Host command); SYS reacted remotely. \\
+\swatch{ledOrange} & \swatch{ledYellow} & \textbf{SYS CAN Offline} & SYS entered Bus-Off; RT reports Yellow Breathe because SYS heartbeat is missing. \\
+\swatch{ledYellow} & \swatch{ledOrange} & \textbf{RT CAN Offline} & RT entered Bus-Off; SYS reports Yellow Breathe because RT heartbeat is missing. \\
+\swatch{ledCyan} & \swatch{ledCyan} & \textbf{Actuator Bus Dead} & Both controllers cannot see actuators: check 12V actuator fuse / main harness. \\
+\bottomrule
+\end{tabularx}
+\end{tcolorbox}
+
+\vspace{-1mm}
+
+\begin{tcolorbox}[sectionbox, title=3. Hardware \& Implementation Notes]
+\scriptsize
+\begin{itemize}\setlength{\itemsep}{0pt}\setlength{\parskip}{0pt}
+  \item \textbf{Physical Diode}: Addressable WS2812 RGB LED located on GPIO 48 of both \texttt{sys-esp32} and \texttt{rt-esp32} development boards.
+  \item \textbf{Timing \& Evaluation Rate}: Update loop executes deterministically at \textbf{25\,Hz (40\,ms cycle)} in \texttt{task\_indicator} (SYS) and \texttt{control\_task} (RT).
+  \item \textbf{Optical Isolation}: Breathing cadences use quadratic gamma curve $I = x^2 / 256$ to ensure smooth human-eye response. Solid/Blink cadences clamp to $25\%$ intensity to prevent glare in dimly lit lab environments.
+\end{itemize}
+\end{tcolorbox}
+
+\end{document}
