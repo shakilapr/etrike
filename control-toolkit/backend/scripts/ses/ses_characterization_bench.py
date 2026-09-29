@@ -562,6 +562,29 @@ class SesCharacterizer:
         results: dict[str, Any] = {}
 
         # 1. Neutral hold
+        # ----------------------------------------------------------------------
+        # Group 0: Neutral Center Hold (0.0°)
+        # Command Signal Bit Layout (0x169 VCU_SES_REQ):
+        #   Byte 0: Bit 0 (Alignment_Enable) = 0
+        #           Bit 1 (Control_Enable)   = 1 (Angle Control Mode)
+        #           Bits 2-7 (Reserved)      = 0b000000
+        #   Bytes 1-2: Target_Angle_Raw      = 0x7530 (30000 counts = (0.0° * 10) + 30000)
+        #   Bytes 3-4: Target_Speed_Raw      = 0x00C8 (200 deg/s)
+        #   Byte 5: Bit 0 (RollCnt_Enable)   = 1
+        #           Bit 1 (CheckSum_Enable)  = 1
+        #           Bits 2-3 (Reserved)      = 0b00
+        #           Bits 4-7 (RollCnt)       = 0..15 cyclic (+1 per 20 ms frame)
+        #   Byte 6: Vehicle_Speed_Raw        = 10 km/h (0x0A, >= 5 km/h prevents motor sleep)
+        #   Byte 7: Checksum                 = sum(Bytes 0..6) & 0xFF
+        # Expected Output Signal Data (0x201 SES_STATUS & 0x202 SES_ERRINFO):
+        #   0x201 Byte 0: Bit 0 (Angle_Aligned / SES_INF_Angle_Status) = 1 (Calibrated)
+        #                 Bits 1-2 (Control_Mode_Status)               = 0x1 (Angle Control)
+        #                 Bits 6-7 (Error_Status)                      = 0x0 (No Fault)
+        #   0x201 Bytes 1-2: Steering_Angle_Raw = 30000 ± 6 counts (-0.6° to +0.6°)
+        #   0x201 Bytes 3-4: Target_Speed_FB    = 0 deg/s (settled at target)
+        #   0x201 Byte 5: Driver_Torque         = 121 raw (0.0 Nm, offset -12.1 Nm, |torque| < 1.5 Nm)
+        #   0x202 Bytes 0-3: Error Flags        = All 0 (No undervolt, overtemp, or stall)
+        # ----------------------------------------------------------------------
         print("\n[*] Initializing neutral center hold (0.0°)...")
         self.h.set_target(0.0, slew_dps=200)
         time.sleep(2.0)
@@ -569,6 +592,31 @@ class SesCharacterizer:
             return {"aborted": True, "reason": self.h.emergency_reason}
 
         # 2. Static Grid & Repeatability Sweep
+        # ----------------------------------------------------------------------
+        # Group 1: Static Grid, Hysteresis & Repeatability Sweep
+        # Command Signal Bit Layout (0x169 VCU_SES_REQ):
+        #   Byte 0: Bit 0 (Alignment_Enable) = 0
+        #           Bit 1 (Control_Enable)   = 1 (Angle Control Mode)
+        #           Bits 2-7 (Reserved)      = 0b000000
+        #   Bytes 1-2: Target_Angle_Raw      = (angle_deg * 10) + 30000
+        #     -  0.0° -> 30000 (0x7530, B1=0x75, B2=0x30)
+        #     - +10.0° -> 30100 (0x7594, B1=0x75, B2=0x94)
+        #     - +20.0° -> 30200 (0x75F8, B1=0x75, B2=0xF8)
+        #     - -10.0° -> 29900 (0x74CC, B1=0x74, B2=0xCC)
+        #     - -20.0° -> 29800 (0x7468, B1=0x74, B2=0x68)
+        #   Bytes 3-4: Target_Speed_Raw      = 0x00C8 (200 deg/s)
+        #   Byte 5: Bit 0 (RollCnt_Enable)=1, Bit 1 (CheckSum_Enable)=1, Bits 4-7 (RollCnt)=0..15
+        #   Byte 6: Vehicle_Speed_Raw        = 10 km/h (0x0A)
+        #   Byte 7: Checksum                 = sum(Bytes 0..6) & 0xFF
+        # Expected Output Signal Data (0x201 SES_STATUS & 0x202 SES_ERRINFO):
+        #   0x201 Byte 0: Bit 0 (Angle_Aligned)   = 1
+        #                 Bits 1-2 (Control_Mode) = 1 (Angle Control)
+        #                 Bits 6-7 (Error_Status) = 0 (Normal)
+        #   0x201 Bytes 1-2: Steering_Angle_Raw   = (target_deg * 10) + 30000 ± 8 counts (error <= 0.8°)
+        #   0x201 Bytes 3-4: Target_Speed_FB      = 0 deg/s at steady-state hold
+        #   0x201 Byte 5: Driver_Torque           = |torque| < 1.5 Nm
+        #   0x202 Bytes 0-3: Error Flags          = All 0
+        # ----------------------------------------------------------------------
         print("\n[*] TEST GROUP 1: Static Grid, Hysteresis & Repeatability Sweep...")
         grid = [0.0, 10.0, 20.0, 10.0, 0.0, -10.0, -20.0, -10.0, 0.0]
         grid = [max(-self.h.max_safe_angle, min(self.h.max_safe_angle, a)) for a in grid]
@@ -578,6 +626,29 @@ class SesCharacterizer:
             return results
 
         # 3. Dynamic Step Responses & Slew Envelope Sweep (Safe Capped at 250 dps)
+        # ----------------------------------------------------------------------
+        # Group 2: Step Response & Slew Envelope Sweep (Safe Cap 250°/s)
+        # Command Signal Bit Layout (0x169 VCU_SES_REQ):
+        #   Byte 0: Bit 0 (Alignment_Enable) = 0
+        #           Bit 1 (Control_Enable)   = 1 (Angle Control Mode)
+        #           Bits 2-7 (Reserved)      = 0b000000
+        #   Bytes 1-2: Target_Angle_Raw      = 0x75F8 (30200 counts = (+20.0° * 10) + 30000)
+        #   Bytes 3-4: Target_Speed_Raw      = variable:
+        #     - 150°/s -> 0x0096 (B3=0x00, B4=0x96)
+        #     - 200°/s -> 0x00C8 (B3=0x00, B4=0xC8)
+        #     - 250°/s -> 0x00FA (B3=0x00, B4=0xFA, safe cap)
+        #   Byte 5: Bit 0 (RollCnt_Enable)=1, Bit 1 (CheckSum_Enable)=1, Bits 4-7 (RollCnt)=0..15
+        #   Byte 6: Vehicle_Speed_Raw        = 10 km/h (0x0A)
+        #   Byte 7: Checksum                 = sum(Bytes 0..6) & 0xFF
+        # Expected Output Signal Data (0x201 SES_STATUS & 0x202 SES_ERRINFO):
+        #   0x201 Byte 0: Bit 0 (Angle_Aligned)   = 1
+        #                 Bits 1-2 (Control_Mode) = 1 (Angle Control)
+        #                 Bits 6-7 (Error_Status) = 0 (Normal)
+        #   0x201 Bytes 1-2: Steering_Angle_Raw   = 30200 ± 5 counts (+19.5° to +20.5°)
+        #   0x201 Bytes 3-4: Target_Speed_FB      = peak speed tracks commanded slew ± 15%
+        #   0x201 Byte 5: Driver_Torque           = |torque| < 1.5 Nm
+        #   0x202 Bytes 0-3: Error Flags          = All 0 (no stall, no undervolt)
+        # ----------------------------------------------------------------------
         print("\n[*] TEST GROUP 2: Step Response & Slew Envelope Sweep (Safe Cap 250°/s)...")
         slew_rates = [150, 200, 250]
         step_target = min(20.0, self.h.max_safe_angle)
@@ -587,6 +658,27 @@ class SesCharacterizer:
             return results
 
         # 4. Small-Angle Micro-Step & Deadband Test
+        # ----------------------------------------------------------------------
+        # Group 3: Small-Angle Micro-Step & Deadband Analysis
+        # Command Signal Bit Layout (0x169 VCU_SES_REQ):
+        #   Byte 0: Bit 0 (Alignment_Enable) = 0
+        #           Bit 1 (Control_Enable)   = 1 (Angle Control Mode)
+        #           Bits 2-7 (Reserved)      = 0b000000
+        #   Bytes 1-2: Target_Angle_Raw      = (angle_deg * 10) + 30000:
+        #     - +0.5° -> 30005 (0x7535), +1.0° -> 30010 (0x753A), +1.5° -> 30015 (0x753F)
+        #     - -0.5° -> 29995 (0x752B), -1.0° -> 29990 (0x7526)
+        #   Bytes 3-4: Target_Speed_Raw      = 0x0096 (150 deg/s)
+        #   Byte 5: Bit 0 (RollCnt_Enable)=1, Bit 1 (CheckSum_Enable)=1, Bits 4-7 (RollCnt)=0..15
+        #   Byte 6: Vehicle_Speed_Raw        = 10 km/h (0x0A)
+        #   Byte 7: Checksum                 = sum(Bytes 0..6) & 0xFF
+        # Expected Output Signal Data (0x201 SES_STATUS & 0x202 SES_ERRINFO):
+        #   0x201 Byte 0: Bit 0 (Angle_Aligned)   = 1
+        #                 Bits 1-2 (Control_Mode) = 1 (Angle Control)
+        #                 Bits 6-7 (Error_Status) = 0
+        #   0x201 Bytes 1-2: Steering_Angle_Raw   = steps resolve without stiction limit cycle
+        #   0x201 Bytes 3-4: Target_Speed_FB      = velocity profile during micro-transits
+        #   0x202 Bytes 0-3: Error Flags          = All 0
+        # ----------------------------------------------------------------------
         print("\n[*] TEST GROUP 3: Micro-Step & Deadband Analysis...")
         micro_data = self._run_micro_steps([0.5, 1.0, 1.5, 0.0, -0.5, -1.0, 0.0], hold_time_s=1.2)
         results.update(micro_data)
@@ -594,6 +686,26 @@ class SesCharacterizer:
             return results
 
         # 5. Dynamic Sinusoidal Tracking (Autoware Bandwidth Simulation)
+        # ----------------------------------------------------------------------
+        # Group 4: Dynamic Sinusoidal Bandwidth Tracking
+        # Command Signal Bit Layout (0x169 VCU_SES_REQ):
+        #   Byte 0: Bit 0 (Alignment_Enable) = 0
+        #           Bit 1 (Control_Enable)   = 1 (Angle Control Mode)
+        #           Bits 2-7 (Reserved)      = 0b000000
+        #   Bytes 1-2: Target_Angle_Raw      = (15.0 * sin(2*pi*f*t) * 10) + 30000 (dynamic stream @ 50 Hz)
+        #   Bytes 3-4: Target_Speed_Raw      = dynamic: min(500, |A*2*pi*f| + 50) deg/s
+        #   Byte 5: Bit 0 (RollCnt_Enable)=1, Bit 1 (CheckSum_Enable)=1, Bits 4-7 (RollCnt)=0..15
+        #   Byte 6: Vehicle_Speed_Raw        = 10 km/h (0x0A)
+        #   Byte 7: Checksum                 = sum(Bytes 0..6) & 0xFF
+        # Expected Output Signal Data (0x201 SES_STATUS & 0x202 SES_ERRINFO):
+        #   0x201 Byte 0: Bit 0 (Angle_Aligned)   = 1
+        #                 Bits 1-2 (Control_Mode) = 1 (Angle Control)
+        #                 Bits 6-7 (Error_Status) = 0
+        #   0x201 Bytes 1-2: Steering_Angle_Raw   = sinusoidal trajectory with phase lag < 45° at 0.5 Hz
+        #   0x201 Bytes 3-4: Target_Speed_FB      = sinusoidal velocity profile
+        #   0x201 Byte 5: Driver_Torque           = |torque| < 1.5 Nm
+        #   0x202 Bytes 0-3: Error Flags          = All 0
+        # ----------------------------------------------------------------------
         print("\n[*] TEST GROUP 4: Sinusoidal Bandwidth Tracking...")
         sine_amp = min(15.0, self.h.max_safe_angle)
         sine_data = self._run_sine_tracking(amplitude_deg=sine_amp, frequencies_hz=[0.2, 0.5, 1.0])

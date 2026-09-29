@@ -896,6 +896,14 @@ class SesCharacterizerV4:
         print("\n--- GROUP I: CONFIGURATION DISCOVERY & HARDWARE IDENTIFICATION ---")
 
         # T89: Firmware & Hardware Version Readout
+        # ----------------------------------------------------------------------
+        # T89: Firmware & Hardware Version Readout
+        # Command Signal Bit Layout (0x169 VCU_SES_REQ):
+        #   Passive listening to 0x203 (SES_VERSION @ 1000 ms)
+        # Expected Output Signal Data (0x203 SES_VERSION):
+        #   Byte 0: SES_SW_Version = 0.01 * raw (e.g. 0x64 = v1.00)
+        #   Byte 1: SES_HW_Version = 0.1 * raw (e.g. 0x0D = v1.3)
+        # ----------------------------------------------------------------------
         t0 = time.monotonic()
         ver = self.h.get_version()
         while (time.monotonic() - t0 < 2.0) and not ver.received:
@@ -916,6 +924,13 @@ class SesCharacterizerV4:
             )
 
         # T90: Encoding Mode Detection
+        # ----------------------------------------------------------------------
+        # T90: Encoding Mode Detection
+        # Command Signal Bit Layout (0x169 VCU_SES_REQ):
+        #   Byte 0: Bit 0 (Align)=0, Bit 1 (Ctrl)=1; Bytes 1-2: neutral counts
+        # Expected Output Signal Data (0x201 SES_STATUS):
+        #   Bytes 1-2: Raw angle counts ~7000 (DBC -700° offset) or ~30000 (Legacy 3000° offset)
+        # ----------------------------------------------------------------------
         fb = self.h.get_feedback()
         enc = self.h.detected_encoding
         offset = self.h.center_offset
@@ -926,6 +941,13 @@ class SesCharacterizerV4:
         )
 
         # T91: Hardware Variant Speed Limit Probe
+        # ----------------------------------------------------------------------
+        # T91: Hardware Variant Speed Limit Probe
+        # Command Signal Bit Layout (0x169 VCU_SES_REQ):
+        #   Byte 0: Bit 0=0, Bit 1=1; Target = +5.0°; Slew = 150 dps (0x0096) then 250 dps (0x00FA)
+        # Expected Output Signal Data (0x201 SES_STATUS):
+        #   Bytes 3-4: Actuator scales peak velocity up to 250 dps safe bench cap
+        # ----------------------------------------------------------------------
         # Safely checks responsiveness across standard speeds up to safe cap (250 deg/s)
         self.h.set_target(5.0, slew_dps=150, test_id="T91_SPEED_PROBE")
         time.sleep(0.8)
@@ -940,6 +962,13 @@ class SesCharacterizerV4:
         )
 
         # T92: 0x6FA Availability Probe
+        # ----------------------------------------------------------------------
+        # T92: 0x6FA Availability Probe
+        # Command Signal Bit Layout:
+        #   Passive listening to 0x6FA (SES_TEST @ 10 ms)
+        # Expected Output Signal Data (0x6FA SES_TEST):
+        #   Closed by default per spec; if open: Current (B1-2), Temp (B3-4), Volt (B5-6)
+        # ----------------------------------------------------------------------
         t0 = time.monotonic()
         telem = self.h.get_telemetry()
         while (time.monotonic() - t0 < 1.5) and not telem.received:
@@ -960,6 +989,13 @@ class SesCharacterizerV4:
             )
 
         # T93: Baud Rate Verification
+        # ----------------------------------------------------------------------
+        # T93: Baud Rate Verification
+        # Command Signal Bit Layout:
+        #   Standard CAN 2.0B transmission @ 500 kbps
+        # Expected Output Signal Data (0x201 SES_STATUS):
+        #   Continuous status reception (>10 frames) with zero TEC/REC bus-off errors
+        # ----------------------------------------------------------------------
         fb = self.h.get_feedback()
         self.log_test_result(
             93, "Baud Rate & Bus Health Verification", self.h.feedback_count > 10,
@@ -968,6 +1004,13 @@ class SesCharacterizerV4:
         )
 
         # T94: Security Flag Echo Verification
+        # ----------------------------------------------------------------------
+        # T94: Security Flag Echo Verification
+        # Command Signal Bit Layout (0x169 VCU_SES_REQ):
+        #   Byte 5: Bit 0 (RollCnt_Enable)=1, Bit 1 (CheckSum_Enable)=1, Bits 4-7 (RollCnt)=0..15
+        # Expected Output Signal Data (0x201 SES_STATUS):
+        #   Byte 6: Bit 0 (RollCnt_En_Status)=1, Bit 1 (Chksum_En_Status)=1, Bits 4-7=RollCnt echo
+        # ----------------------------------------------------------------------
         fb = self.h.get_feedback()
         self.log_test_result(
             94, "Security Flag Echo Verification", fb.checksum_ok,
@@ -976,6 +1019,13 @@ class SesCharacterizerV4:
         )
 
         # T95: Rolling Counter Synchronization Check
+        # ----------------------------------------------------------------------
+        # T95: Rolling Counter Synchronization Check
+        # Command Signal Bit Layout (0x169 VCU_SES_REQ):
+        #   Byte 5 Bits 4-7 incrementing sequentially: c, (c+1)%16
+        # Expected Output Signal Data (0x201 SES_STATUS):
+        #   Byte 6 Bits 4-7: Alive counter cycling 0->15 every 10 ms frame
+        # ----------------------------------------------------------------------
         c0 = self.h.get_feedback().roll_cnt
         time.sleep(0.1)
         c1 = self.h.get_feedback().roll_cnt
@@ -993,6 +1043,13 @@ class SesCharacterizerV4:
         print("\n--- GROUP A: ALIGNMENT LIFECYCLE & INTERLOCKS ---")
 
         # T46: Boot Alignment Status
+        # ----------------------------------------------------------------------
+        # T46: Boot Alignment Status
+        # Command Signal Bit Layout (0x169 VCU_SES_REQ):
+        #   Byte 0: Bit 0 (Alignment_Enable) = 0, Bit 1 (Control_Enable) = 1
+        # Expected Output Signal Data (0x201 SES_STATUS):
+        #   Byte 0: Bit 0 (SES_INF_Angle_Status) = 1 (Calibrated) or 0 (Finding/Unaligned)
+        # ----------------------------------------------------------------------
         fb = self.h.get_feedback()
         self.log_test_result(
             46, "Boot Alignment Status Verification", True,
@@ -1001,6 +1058,13 @@ class SesCharacterizerV4:
         )
 
         # T47: Commanded Alignment Sequence Observe
+        # ----------------------------------------------------------------------
+        # T47: Commanded Alignment Sequence Observe
+        # Command Signal Bit Layout (0x169 VCU_SES_REQ):
+        #   Byte 0: Bit 0 (Alignment_Enable) = 1 (Centering enable), Bit 1 (Control_Enable) = 0
+        # Expected Output Signal Data (0x201 SES_STATUS):
+        #   Byte 0 Bit 0 transitions 0 -> 1 upon center-index calibration
+        # ----------------------------------------------------------------------
         # Only observe without asserting align bit to prevent unintended mechanical shift
         self.log_test_result(
             47, "Commanded Alignment Sequence Protocol Check", True,
@@ -1009,6 +1073,13 @@ class SesCharacterizerV4:
         )
 
         # T48: Command Angle While Unaligned Gate
+        # ----------------------------------------------------------------------
+        # T48: Command Angle While Unaligned Gate
+        # Command Signal Bit Layout (0x169 VCU_SES_REQ):
+        #   Gated command: Software prevents asserting Control_Enable=1 if is_aligned == 0
+        # Expected Output Signal Data (0x201 SES_STATUS):
+        #   Actuator remains in Assist Mode (Mode=0) until alignment is achieved
+        # ----------------------------------------------------------------------
         self.log_test_result(
             48, "Unaligned Autonomous Drive Interlock", True,
             "Software interlock confirmed: Angle control gated behind is_aligned == True",
@@ -1016,6 +1087,14 @@ class SesCharacterizerV4:
         )
 
         # T49: Mutual Exclusivity Protection (Align vs Control Enable)
+        # ----------------------------------------------------------------------
+        # T49: Mutual Exclusivity Protection (Align vs Control Enable)
+        # Command Signal Bit Layout (0x169 VCU_SES_REQ):
+        #   Byte 0: Bit 0 (Align)=1 AND Bit 1 (Ctrl)=1 strictly prohibited!
+        #   ⚠️ Official Spec Hazard: Setting both bits causes uncontrolled actuator spin
+        # Expected Output Signal Data:
+        #   Software encoder blocks bitmask 0x03, maintaining mutual exclusivity
+        # ----------------------------------------------------------------------
         # Verify software pack helper enforces mutual exclusivity
         test_payload = encode_ses_cmd_v4(0.0, 200, control_enable=True, align_enable=False, roll_cnt=0)
         has_conflict = (test_payload[0] & 0x03) == 0x03
@@ -1026,6 +1105,13 @@ class SesCharacterizerV4:
         )
 
         # T50: Alignment Robustness Mid-Motion
+        # ----------------------------------------------------------------------
+        # T50: Alignment Robustness Mid-Motion
+        # Command Signal Bit Layout (0x169 VCU_SES_REQ):
+        #   Byte 0: Bit 0=0, Bit 1=1; Target = +15.0° (30150 or 7150); Slew = 200 dps
+        # Expected Output Signal Data (0x201 SES_STATUS):
+        #   Byte 0 Bit 0 (SES_INF_Angle_Status) remains 1 under mechanical load
+        # ----------------------------------------------------------------------
         self.h.set_target(15.0, slew_dps=200, test_id="T50_ALIGN_LOAD")
         time.sleep(1.0)
         fb = self.h.get_feedback()
@@ -1036,6 +1122,13 @@ class SesCharacterizerV4:
         )
 
         # T51: Re-Alignment After Fault Clear Handshake
+        # ----------------------------------------------------------------------
+        # T51: Re-Alignment After Fault Clear Handshake
+        # Command Signal Bit Layout (0x169 VCU_SES_REQ):
+        #   Byte 0: Bit 0=0, Bit 1=1; Target = 0.0° center; Slew = 200 dps
+        # Expected Output Signal Data (0x201 SES_STATUS & 0x202 SES_ERRINFO):
+        #   0x201 Byte 0 Bit 0=1 (Calibrated); 0x202 Alignment_Err (B1.5) = 0
+        # ----------------------------------------------------------------------
         self.reset_to_neutral()
         self.log_test_result(
             51, "Alignment Recovery Handshake", True,
@@ -1050,6 +1143,14 @@ class SesCharacterizerV4:
         print("\n--- GROUP B: RAW ENCODING BOUNDARY VALUES ---")
 
         # T52: Neutral Exact Center Verification
+        # ----------------------------------------------------------------------
+        # T52: Neutral Exact Center Verification
+        # Command Signal Bit Layout (0x169 VCU_SES_REQ):
+        #   Byte 0: Bit 0=0, Bit 1=1; Bytes 1-2: Target_Angle_Raw = Center (30000 or 7000)
+        #   Bytes 3-4: 200 dps (0x00C8); Byte 5: 0x03 | (RollCnt << 4); Byte 6: 10 km/h
+        # Expected Output Signal Data (0x201 SES_STATUS):
+        #   Bytes 1-2: Actual angle 0.0° ± 0.8° (within ±8 counts of detected center)
+        # ----------------------------------------------------------------------
         self.h.set_target(0.0, slew_dps=200, test_id="T52_NEUTRAL")
         time.sleep(1.2)
         fb = self.h.get_feedback()
@@ -1061,6 +1162,13 @@ class SesCharacterizerV4:
         )
 
         # T53: Software Clamp Low (-30.0°)
+        # ----------------------------------------------------------------------
+        # T53: Software Clamp Low Boundary (-20.0° / -30.0°)
+        # Command Signal Bit Layout (0x169 VCU_SES_REQ):
+        #   Byte 0: Bit 0=0, Bit 1=1; Bytes 1-2: Target = -20.0° (29800 or 6800)
+        # Expected Output Signal Data (0x201 SES_STATUS & 0x202 SES_ERRINFO):
+        #   0x201 Angle reaches -20.0° ± 1.0°; 0x202 OverAngle_Err (B1.6) = 0
+        # ----------------------------------------------------------------------
         self.h.set_target(-20.0, slew_dps=200, test_id="T53_CLAMP_LOW")
         time.sleep(1.5)
         fb_neg = self.h.get_feedback()
@@ -1071,6 +1179,13 @@ class SesCharacterizerV4:
         )
 
         # T54: Software Clamp High (+30.0°)
+        # ----------------------------------------------------------------------
+        # T54: Software Clamp High Boundary (+20.0° / +30.0°)
+        # Command Signal Bit Layout (0x169 VCU_SES_REQ):
+        #   Byte 0: Bit 0=0, Bit 1=1; Bytes 1-2: Target = +20.0° (30200 or 7200)
+        # Expected Output Signal Data (0x201 SES_STATUS & 0x202 SES_ERRINFO):
+        #   0x201 Angle reaches +20.0° ± 1.0°; 0x202 OverAngle_Err (B1.6) = 0
+        # ----------------------------------------------------------------------
         self.h.set_target(+20.0, slew_dps=200, test_id="T54_CLAMP_HIGH")
         time.sleep(1.8)
         fb_pos = self.h.get_feedback()
@@ -1081,6 +1196,13 @@ class SesCharacterizerV4:
         )
 
         # T55: Below Clamp Command Saturation Guard
+        # ----------------------------------------------------------------------
+        # T55: Below Clamp Command Saturation Guard
+        # Command Signal Bit Layout (0x169 VCU_SES_REQ):
+        #   Target angle -35.0° input to encode_ses_cmd_v4 with max_safe_angle=30.0°
+        # Expected Output Signal Data:
+        #   Raw angle clamped to -30.0° in encoder payload (Bytes 1-2 = center - 300)
+        # ----------------------------------------------------------------------
         clamped_low = encode_ses_cmd_v4(-35.0, 200, control_enable=True, align_enable=False, roll_cnt=0, max_safe_angle=30.0)
         raw_val = (clamped_low[1] << 8) | clamped_low[2]
         decoded_angle = (raw_val - self.h.center_offset) / 10.0
@@ -1091,6 +1213,13 @@ class SesCharacterizerV4:
         )
 
         # T56: Above Clamp Command Saturation Guard
+        # ----------------------------------------------------------------------
+        # T56: Above Clamp Command Saturation Guard
+        # Command Signal Bit Layout (0x169 VCU_SES_REQ):
+        #   Target angle +35.0° input to encode_ses_cmd_v4 with max_safe_angle=30.0°
+        # Expected Output Signal Data:
+        #   Raw angle clamped to +30.0° in encoder payload (Bytes 1-2 = center + 300)
+        # ----------------------------------------------------------------------
         clamped_high = encode_ses_cmd_v4(+35.0, 200, control_enable=True, align_enable=False, roll_cnt=0, max_safe_angle=30.0)
         raw_val_h = (clamped_high[1] << 8) | clamped_high[2]
         decoded_angle_h = (raw_val_h - self.h.center_offset) / 10.0
@@ -1101,6 +1230,11 @@ class SesCharacterizerV4:
         )
 
         # T57: Boundary Representation LSB Rounding Check
+        # ----------------------------------------------------------------------
+        # T57: Boundary Representation LSB Rounding Check
+        # Command Signal Bit Layout (0x169 VCU_SES_REQ):
+        #   0.1° / LSB resolution verified across round-trip floating point conversions
+        # ----------------------------------------------------------------------
         self.reset_to_neutral()
         self.log_test_result(
             57, "LSB Resolution & Rounding Fidelity", True,
@@ -1115,6 +1249,13 @@ class SesCharacterizerV4:
         print("\n--- GROUP C: ROLLING COUNTER FAULT INJECTION ---")
 
         # T58: Frozen Rolling Counter Injection (5 frames = 100 ms)
+        # ----------------------------------------------------------------------
+        # T58: Frozen Rolling Counter Injection (120 ms)
+        # Command Signal Bit Layout (0x169 VCU_SES_REQ):
+        #   Byte 5 Bits 4-7 held frozen at constant value for 6 consecutive frames
+        # Expected Output Signal Data (0x202 SES_ERRINFO):
+        #   0x202 Byte 0 Bit 2 (SES_CanCom_Err) asserted if stall exceeds 100 ms timeout
+        # ----------------------------------------------------------------------
         self.h.set_target(5.0, slew_dps=150, test_id="T58_FROZEN_CNT")
         time.sleep(0.5)
         self.h.configure_timing_and_faults(frozen_counter=True)
@@ -1129,6 +1270,13 @@ class SesCharacterizerV4:
         )
 
         # T59: Single Counter Skip (+2 Jump)
+        # ----------------------------------------------------------------------
+        # T59: Single Counter Skip (+2 Jump)
+        # Command Signal Bit Layout (0x169 VCU_SES_REQ):
+        #   Byte 5 Bits 4-7 skips one count: c -> (c + 2) % 16
+        # Expected Output Signal Data (0x201 SES_STATUS):
+        #   Actuator tolerates isolated frame drop; Mode remains 1 (Angle Control)
+        # ----------------------------------------------------------------------
         with self.h._lock:
             self.h.roll_cnt = (self.h.roll_cnt + 2) & 0x0F
         time.sleep(0.2)
@@ -1140,6 +1288,13 @@ class SesCharacterizerV4:
         )
 
         # T60: Counter Reverse / Decrement Injection
+        # ----------------------------------------------------------------------
+        # T60: Counter Reverse / Decrement Injection
+        # Command Signal Bit Layout (0x169 VCU_SES_REQ):
+        #   Byte 5 Bits 4-7 decremented by 2: c -> (c - 2) % 16
+        # Expected Output Signal Data (0x201 SES_STATUS):
+        #   Actuator handles out-of-order counter frame
+        # ----------------------------------------------------------------------
         with self.h._lock:
             self.h.roll_cnt = (self.h.roll_cnt - 2) & 0x0F
         time.sleep(0.2)
@@ -1151,6 +1306,13 @@ class SesCharacterizerV4:
         )
 
         # T61: Counter Large Jump (+5)
+        # ----------------------------------------------------------------------
+        # T61: Counter Large Jump (+5)
+        # Command Signal Bit Layout (0x169 VCU_SES_REQ):
+        #   Byte 5 Bits 4-7 advanced by 5 counts simulating burst loss
+        # Expected Output Signal Data (0x201 SES_STATUS):
+        #   Actuator absorbs burst gap
+        # ----------------------------------------------------------------------
         with self.h._lock:
             self.h.roll_cnt = (self.h.roll_cnt + 5) & 0x0F
         time.sleep(0.2)
@@ -1162,6 +1324,13 @@ class SesCharacterizerV4:
         )
 
         # T62: Counter Recovery After Anomaly
+        # ----------------------------------------------------------------------
+        # T62: Counter Recovery After Anomaly
+        # Command Signal Bit Layout (0x169 VCU_SES_REQ):
+        #   Normal +1 counter increment resumed
+        # Expected Output Signal Data (0x201 SES_STATUS):
+        #   0x201 Byte 0 Bits 1-2 = 1 (Locked in Angle Control Mode)
+        # ----------------------------------------------------------------------
         time.sleep(0.5)
         fb = self.h.get_feedback()
         self.reset_to_neutral()
@@ -1178,6 +1347,13 @@ class SesCharacterizerV4:
         print("\n--- GROUP D: CHECKSUM ROBUSTNESS & SECURITY FLAGS ---")
 
         # T63: Single Corrupted Checksum Frame
+        # ----------------------------------------------------------------------
+        # T63: Single Corrupted Checksum Frame
+        # Command Signal Bit Layout (0x169 VCU_SES_REQ):
+        #   Byte 7: Inverted checksum byte (0x55) for 1-2 frames
+        # Expected Output Signal Data (0x201 SES_STATUS):
+        #   Single corrupted frame discarded; actuator maintains Mode = 1
+        # ----------------------------------------------------------------------
         self.h.configure_timing_and_faults(bad_checksum=True, bad_checksum_val=0x55)
         time.sleep(0.025)  # 1-2 frames
         self.h.configure_timing_and_faults(bad_checksum=False)
@@ -1190,6 +1366,13 @@ class SesCharacterizerV4:
         )
 
         # T64: Multi-Frame Corrupted Checksum Injection
+        # ----------------------------------------------------------------------
+        # T64: Multi-Frame Corrupted Checksum Injection (>100 ms)
+        # Command Signal Bit Layout (0x169 VCU_SES_REQ):
+        #   Byte 7: Corrupted checksum (0xAA) sustained for 120 ms
+        # Expected Output Signal Data (0x202 SES_ERRINFO):
+        #   0x202 Byte 0 Bit 2 (SES_CanCom_Err) asserted
+        # ----------------------------------------------------------------------
         self.h.configure_timing_and_faults(bad_checksum=True, bad_checksum_val=0xAA)
         time.sleep(0.12)  # 6 frames corrupt (>100 ms)
         diag = self.h.get_diagnostics()
@@ -1202,6 +1385,11 @@ class SesCharacterizerV4:
         )
 
         # T65: Checksum Profile Compliance (xor8_ff_v1 vs Additive)
+        # ----------------------------------------------------------------------
+        # T65: Checksum Profile Compliance (xor8_ff_v1 vs Additive)
+        # Command Signal Bit Layout (0x169 VCU_SES_REQ):
+        #   Byte 7 computed via official XOR (XOR(B0..B6) ^ 0xFF) and Additive Sum
+        # ----------------------------------------------------------------------
         p_xor = encode_ses_cmd_v4(0.0, 200, True, False, 0, checksum_mode="xor")
         p_add = encode_ses_cmd_v4(0.0, 200, True, False, 0, checksum_mode="additive")
         self.log_test_result(
@@ -1211,6 +1399,13 @@ class SesCharacterizerV4:
         )
 
         # T66: RollCnt_Enable Flag Evaluation (Byte 5 Bit 0)
+        # ----------------------------------------------------------------------
+        # T66: RollCnt_Enable Flag Evaluation (Byte 5 Bit 0)
+        # Command Signal Bit Layout (0x169 VCU_SES_REQ):
+        #   Byte 5: Bit 0=0 (RollCnt_Enable disabled), Bit 1=0 (Checksum disabled)
+        # Expected Output Signal Data (0x201 SES_STATUS):
+        #   Observe if ECU accepts commands without life signal validation
+        # ----------------------------------------------------------------------
         self.h.configure_timing_and_faults(security_flags=False)
         time.sleep(0.15)
         fb_noflag = self.h.get_feedback()
@@ -1223,6 +1418,13 @@ class SesCharacterizerV4:
         )
 
         # T67: Checksum Recovery Timing
+        # ----------------------------------------------------------------------
+        # T67: Checksum Recovery Timing
+        # Command Signal Bit Layout (0x169 VCU_SES_REQ):
+        #   Valid checksum restored at 50 Hz
+        # Expected Output Signal Data (0x201 SES_STATUS):
+        #   Actuator re-engages angle tracking immediately
+        # ----------------------------------------------------------------------
         self.reset_to_neutral()
         fb = self.h.get_feedback()
         self.log_test_result(
@@ -1238,6 +1440,13 @@ class SesCharacterizerV4:
         print("\n--- GROUP E: VEHICLE SPEED INFLUENCE & CENTERING DYNAMICS ---")
 
         # T68: Standstill Low-Power Cutoff Evaluation (0 km/h at Center)
+        # ----------------------------------------------------------------------
+        # T68: Standstill Motor Cutoff at Center (0 km/h)
+        # Command Signal Bit Layout (0x169 VCU_SES_REQ):
+        #   Byte 0: Bit 0=0, Bit 1=1; Bytes 1-2: 0.0° center; Byte 6: 0 km/h (0x00)
+        # Expected Output Signal Data (0x201 SES_STATUS):
+        #   Per spec: When vehicle speed=0 and angle=0°, motor terminates active current
+        # ----------------------------------------------------------------------
         self.h.set_target(0.0, slew_dps=200, vehicle_speed_kmh=0, test_id="T68_SPD_ZERO")
         time.sleep(1.5)
         fb0 = self.h.get_feedback()
@@ -1248,6 +1457,13 @@ class SesCharacterizerV4:
         )
 
         # T69: Low-Speed Motor Wakeup (5 km/h)
+        # ----------------------------------------------------------------------
+        # T69: Low-Speed Control Activation (5 km/h)
+        # Command Signal Bit Layout (0x169 VCU_SES_REQ):
+        #   Byte 0: Bit 0=0, Bit 1=1; Bytes 1-2: +10.0°; Byte 6: 5 km/h (0x05)
+        # Expected Output Signal Data (0x201 SES_STATUS):
+        #   Actuator actively drives rack at 5 km/h; angle reaches +10.0° ± 1.0°
+        # ----------------------------------------------------------------------
         self.h.set_target(10.0, slew_dps=200, vehicle_speed_kmh=5, test_id="T69_SPD_5KMH")
         time.sleep(1.2)
         fb5 = self.h.get_feedback()
@@ -1258,6 +1474,13 @@ class SesCharacterizerV4:
         )
 
         # T70: Speed Transition 10 -> 0 km/h While Off-Center
+        # ----------------------------------------------------------------------
+        # T70: Off-Center Holding Under Zero Speed
+        # Command Signal Bit Layout (0x169 VCU_SES_REQ):
+        #   Byte 0: Bit 0=0, Bit 1=1; Bytes 1-2: +10.0°; Byte 6: 0 km/h (0x00)
+        # Expected Output Signal Data (0x201 SES_STATUS):
+        #   Per spec: Motor does NOT shut off because angle != 0°; holds rack stiff
+        # ----------------------------------------------------------------------
         # Official spec: Motor only shuts off if vehicle returns to 0° AND speed == 0
         self.h.set_target(10.0, slew_dps=200, vehicle_speed_kmh=0, test_id="T70_OFFCENTER_ZERO")
         time.sleep(1.0)
@@ -1269,6 +1492,13 @@ class SesCharacterizerV4:
         )
 
         # T71: Nominal Cruising Speed Operation (30 km/h)
+        # ----------------------------------------------------------------------
+        # T71: Cruising Speed Dynamic Tracking (30 km/h)
+        # Command Signal Bit Layout (0x169 VCU_SES_REQ):
+        #   Byte 0: Bit 0=0, Bit 1=1; Bytes 1-2: -10.0°; Byte 6: 30 km/h (0x1E)
+        # Expected Output Signal Data (0x201 SES_STATUS):
+        #   Smooth dynamic angle tracking at cruising speeds
+        # ----------------------------------------------------------------------
         self.h.set_target(-10.0, slew_dps=200, vehicle_speed_kmh=30, test_id="T71_SPD_30KMH")
         time.sleep(1.2)
         fb30 = self.h.get_feedback()
@@ -1279,6 +1509,13 @@ class SesCharacterizerV4:
         )
 
         # T72: Maximum Vehicle Speed Protocol Boundary (255 km/h)
+        # ----------------------------------------------------------------------
+        # T72: Max Protocol Vehicle Speed Boundary (255 km/h)
+        # Command Signal Bit Layout (0x169 VCU_SES_REQ):
+        #   Byte 6: 255 km/h (0xFF)
+        # Expected Output Signal Data (0x201 SES_STATUS):
+        #   Actuator accepts byte boundary without overflow
+        # ----------------------------------------------------------------------
         self.h.set_target(0.0, slew_dps=200, vehicle_speed_kmh=255, test_id="T72_SPD_255KMH")
         time.sleep(1.2)
         fb255 = self.h.get_feedback()
@@ -1296,6 +1533,11 @@ class SesCharacterizerV4:
         print("\n--- GROUP F: OPERATING MODE TRANSITIONS & HANDSHAKES ---")
 
         # T73: Boot Disarm Pulse Compliance Check
+        # ----------------------------------------------------------------------
+        # T73: Boot Disarm Pulse Gate Verification
+        # Command Signal Bit Layout (0x169 VCU_SES_REQ):
+        #   Byte 0 Bit 1 held at 0 for 250 ms before 0->1 rising edge
+        # ----------------------------------------------------------------------
         self.log_test_result(
             73, "Boot Disarm Pulse Gate Verification", True,
             "Mandatory 250 ms disarm pulse gate successfully engaged during harness startup",
@@ -1303,6 +1545,13 @@ class SesCharacterizerV4:
         )
 
         # T74: Rising Edge Transition Requirement Verification
+        # ----------------------------------------------------------------------
+        # T74: Strict Rising Edge Engagement Interlock
+        # Command Signal Bit Layout (0x169 VCU_SES_REQ):
+        #   Byte 0: Bit 0=0, Bit 1=0 (Assist Mode) -> step to Bit 1=1 (Angle Control)
+        # Expected Output Signal Data (0x201 SES_STATUS):
+        #   Byte 0 Bits 1-2 transitions from 0x0 (Assist) to 0x1 (Angle Control)
+        # ----------------------------------------------------------------------
         # Confirm that holding 0 keeps actuator in Assist Mode (Mode 0)
         with self.h._lock:
             self.h.control_enable = False
@@ -1319,6 +1568,13 @@ class SesCharacterizerV4:
         )
 
         # T75: Mid-Motion Disarm Deceleration Behavior
+        # ----------------------------------------------------------------------
+        # T75: Mid-Motion Disarm Fallback to Assist Mode
+        # Command Signal Bit Layout (0x169 VCU_SES_REQ):
+        #   Byte 0 Bit 1 stepped from 1 -> 0 while traveling to +15.0°
+        # Expected Output Signal Data (0x201 SES_STATUS):
+        #   Actuator drops instantaneously to Assist Mode (Mode=0)
+        # ----------------------------------------------------------------------
         self.h.set_target(15.0, slew_dps=200, test_id="T75_MID_DISARM")
         time.sleep(0.2)
         with self.h._lock:
@@ -1335,6 +1591,13 @@ class SesCharacterizerV4:
         )
 
         # T76: Rapid Enable/Disable Cycling Debounce
+        # ----------------------------------------------------------------------
+        # T76: Rapid Mode Toggle Robustness
+        # Command Signal Bit Layout (0x169 VCU_SES_REQ):
+        #   Byte 0 Bit 1 toggled 0 <-> 1 every 80 ms for 3 cycles
+        # Expected Output Signal Data (0x201 SES_STATUS):
+        #   Actuator handles toggle debounce without latching into Fault Mode (Mode 2)
+        # ----------------------------------------------------------------------
         for _ in range(3):
             with self.h._lock: self.h.control_enable = False
             time.sleep(0.08)
@@ -1348,6 +1611,11 @@ class SesCharacterizerV4:
         )
 
         # T77: Driver Override Identification (Mode 3 Mapping)
+        # ----------------------------------------------------------------------
+        # T77: Driver Override Identification (Mode 3 Mapping)
+        # Expected Output Signal Data (0x201 SES_STATUS):
+        #   Byte 0 Bits 1-2 = 0x3 indicates Manual Intervention (Driver Takeover)
+        # ----------------------------------------------------------------------
         self.log_test_result(
             77, "Driver Override Feedback Mapping", True,
             "SES_Control_Mode_Status 0x3 verified as Manual Intervention / Takeover in decoder",
@@ -1355,6 +1623,13 @@ class SesCharacterizerV4:
         )
 
         # T78: Bus Silence Timeout Threshold
+        # ----------------------------------------------------------------------
+        # T78: Bus Silence Timeout Trigger (>100 ms)
+        # Command Signal Bit Layout:
+        #   Transmission halted for 120 ms
+        # Expected Output Signal Data (0x202 SES_ERRINFO):
+        #   0x202 Byte 0 Bit 2 (SES_CanCom_Err) asserted
+        # ----------------------------------------------------------------------
         # Insert a 120 ms transmission gap and observe CAN communication timeout
         self.h.gap_duration_s = 0.12
         time.sleep(0.2)
@@ -1366,6 +1641,13 @@ class SesCharacterizerV4:
         )
 
         # T79: Bus Recovery Latency Post-Silence
+        # ----------------------------------------------------------------------
+        # T79: Bus Recovery Latency Post-Silence
+        # Command Signal Bit Layout (0x169 VCU_SES_REQ):
+        #   50 Hz valid transmission resumed
+        # Expected Output Signal Data (0x201 SES_STATUS):
+        #   Angle control mode recovered (Mode=1)
+        # ----------------------------------------------------------------------
         time.sleep(0.4)
         fb_rec = self.h.get_feedback()
         self.reset_to_neutral()
@@ -1382,6 +1664,11 @@ class SesCharacterizerV4:
         print("\n--- GROUP G: DIAGNOSTIC BITMAP & TELEMETRY OBSERVATION ---")
 
         # T80: Baseline Diagnostic Bitmap Health
+        # ----------------------------------------------------------------------
+        # T80: Diagnostic Bitmap Rest Baseline
+        # Expected Output Signal Data (0x202 SES_ERRINFO):
+        #   All 25 error flags healthy (0) at rest
+        # ----------------------------------------------------------------------
         diag = self.h.get_diagnostics()
         fault_cnt = len(diag.active_fault_list())
         self.log_test_result(
@@ -1391,6 +1678,11 @@ class SesCharacterizerV4:
         )
 
         # T81: Diagnostic Bitmap Under Max Safe Slew
+        # ----------------------------------------------------------------------
+        # T81: Diagnostic Monitoring Under Safe Peak Slew (250 dps)
+        # Expected Output Signal Data (0x202 SES_ERRINFO):
+        #   Zero L3 sensor/motor faults during 250 deg/s displacement
+        # ----------------------------------------------------------------------
         self.h.set_target(15.0, slew_dps=SAFE_MAX_SLEW_DPS, test_id="T81_DIAG_LOAD")
         time.sleep(0.8)
         diag_load = self.h.get_diagnostics()
@@ -1402,6 +1694,11 @@ class SesCharacterizerV4:
         )
 
         # T82: Soft Limit Travel Boundary Monitoring
+        # ----------------------------------------------------------------------
+        # T82: Soft Limit Travel Boundary Observation
+        # Expected Output Signal Data (0x202 SES_ERRINFO):
+        #   0x202 Byte 1 Bit 6 (SES_OverAngle_Err) = 0 inside ±30° envelope
+        # ----------------------------------------------------------------------
         self.h.set_target(-15.0, slew_dps=SAFE_MAX_SLEW_DPS, test_id="T82_SOFT_LIMIT")
         time.sleep(0.8)
         diag_lim = self.h.get_diagnostics()
@@ -1412,6 +1709,11 @@ class SesCharacterizerV4:
         )
 
         # T83: Dynamic Reversal Error Scan
+        # ----------------------------------------------------------------------
+        # T83: Controlled Reversal Error Scan
+        # Expected Output Signal Data (0x202 SES_ERRINFO):
+        #   Zero stall (B1.7) or phase overcurrent (B2.0) flags asserted
+        # ----------------------------------------------------------------------
         self.h.set_target(10.0, slew_dps=180, test_id="T83_REV_SCAN")
         time.sleep(0.6)
         self.h.set_target(-10.0, slew_dps=180, test_id="T83_REV_SCAN")
@@ -1424,6 +1726,11 @@ class SesCharacterizerV4:
         )
 
         # T84: 0x6FA Diagnostic Telemetry Summary
+        # ----------------------------------------------------------------------
+        # T84: 0x6FA Diagnostic Telemetry Summary
+        # Expected Output Signal Data (0x6FA SES_TEST):
+        #   Motor Current, ECU Temperature, Bus Voltage logged if open
+        # ----------------------------------------------------------------------
         telem = self.h.get_telemetry()
         if telem.received:
             self.log_test_result(
@@ -1446,6 +1753,13 @@ class SesCharacterizerV4:
         print("\n--- GROUP H: CONTROLLED REVISITS OF PHYSICAL LIMITS ---")
 
         # T85: Smooth Sinusoidal Direction Reversal (Safe T22 Alternative)
+        # ----------------------------------------------------------------------
+        # T85: Smooth Sinusoidal Reversal & Zero-Crossing (Safe T22 Alternative)
+        # Command Signal Bit Layout (0x169 VCU_SES_REQ):
+        #   theta(t) = 10° * sin(2*pi*0.3*t) continuous stream @ 200 dps
+        # Expected Output Signal Data (0x201 SES_STATUS):
+        #   Smooth zero-crossing reversal without mechanical gear shock
+        # ----------------------------------------------------------------------
         # Evaluates backlash & zero-crossing without worm-gear mechanical shock
         t_start = time.monotonic()
         freq = 0.3
@@ -1463,6 +1777,13 @@ class SesCharacterizerV4:
         )
 
         # T86: Ramped Trapezoidal Reversal
+        # ----------------------------------------------------------------------
+        # T86: Ramped Trapezoidal Reversal Tracking
+        # Command Signal Bit Layout (0x169 VCU_SES_REQ):
+        #   +10.0° -> hold 800 ms -> -10.0° @ 180 dps
+        # Expected Output Signal Data (0x201 SES_STATUS):
+        #   Controlled linear reversal settles at -10.0° ± 1.0°
+        # ----------------------------------------------------------------------
         self.h.set_target(10.0, slew_dps=180, test_id="T86_RAMP_REV")
         time.sleep(0.8)
         self.h.set_target(-10.0, slew_dps=180, test_id="T86_RAMP_REV")
@@ -1475,6 +1796,13 @@ class SesCharacterizerV4:
         )
 
         # T87: Controlled Duty-Cycled Thermal Stress (Safe T37 Alternative)
+        # ----------------------------------------------------------------------
+        # T87: Duty-Cycled Thermal Safe Characterization (Safe T37 Alternative)
+        # Command Signal Bit Layout (0x169 VCU_SES_REQ):
+        #   4 cycles of ±8.0° @ 180 dps
+        # Expected Output Signal Data:
+        #   Temperature rise delta <= 5.0°C
+        # ----------------------------------------------------------------------
         # 5 duty-cycled cycles with active temperature monitoring
         t0_temp = self.h.get_telemetry().ecu_temp_c if self.h.get_telemetry().received else 25.0
         for i in range(4):
@@ -1491,6 +1819,13 @@ class SesCharacterizerV4:
         )
 
         # T88: Fine Micro-Step Deadband Characterization
+        # ----------------------------------------------------------------------
+        # T88: Fine Micro-Step Deadband Characterization
+        # Command Signal Bit Layout (0x169 VCU_SES_REQ):
+        #   Micro-steps: [0.2°, 0.4°, 0.6°, 0.8°] @ 126 dps (0x007E)
+        # Expected Output Signal Data (0x201 SES_STATUS):
+        #   Sub-degree displacement resolved without gear stiction binding
+        # ----------------------------------------------------------------------
         self.reset_to_neutral()
         steps = [0.2, 0.4, 0.6, 0.8]
         achieved = []
@@ -1512,6 +1847,13 @@ class SesCharacterizerV4:
         print("\n--- GROUP J: SENDING PATTERNS, TIMING SWEEPS & JITTER ---")
 
         # T96: TX Frequency Sweep (20 Hz vs 50 Hz vs 100 Hz)
+        # ----------------------------------------------------------------------
+        # T96: TX Frequency Sweep (20, 50, 100 Hz)
+        # Command Signal Bit Layout (0x169 VCU_SES_REQ):
+        #   Broadcast rate set to 20 Hz, 50 Hz, 100 Hz sequentially
+        # Expected Output Signal Data (0x201 SES_STATUS):
+        #   Actuator maintains Mode=1 across all broadcast frequencies
+        # ----------------------------------------------------------------------
         rates = [20.0, 50.0, 100.0]
         tracking_ok = True
         for r in rates:
@@ -1531,6 +1873,13 @@ class SesCharacterizerV4:
         )
 
         # T97: Frame Spacing Jitter Injection (±5 ms)
+        # ----------------------------------------------------------------------
+        # T97: Frame Spacing Jitter Tolerance (±5 ms)
+        # Command Signal Bit Layout (0x169 VCU_SES_REQ):
+        #   50 Hz stream with ±5 ms random inter-frame spacing jitter
+        # Expected Output Signal Data (0x201 SES_STATUS):
+        #   Actuator absorbs timing jitter without stutter or mode drop
+        # ----------------------------------------------------------------------
         self.h.configure_timing_and_faults(tx_rate_hz=50.0, jitter_ms=5.0)
         self.h.set_target(8.0, slew_dps=180, test_id="T97_JITTER_5MS")
         time.sleep(1.2)
@@ -1543,6 +1892,13 @@ class SesCharacterizerV4:
         )
 
         # T98: Moderate Burst Pattern Transmission
+        # ----------------------------------------------------------------------
+        # T98: Periodic Frame Spacing Modulation
+        # Command Signal Bit Layout (0x169 VCU_SES_REQ):
+        #   Variable arrival timing simulating OS scheduler delay
+        # Expected Output Signal Data (0x201 SES_STATUS):
+        #   Smooth position holding without mailbox buffer overrun
+        # ----------------------------------------------------------------------
         # Send 3 rapid frames, then pause for 40 ms (repeated)
         self.h.set_target(-8.0, slew_dps=180, test_id="T98_BURST")
         time.sleep(1.2)
@@ -1554,6 +1910,13 @@ class SesCharacterizerV4:
         )
 
         # T99: Gap Tolerance Sweep (50 ms, 75 ms, 90 ms)
+        # ----------------------------------------------------------------------
+        # T99: Inter-Frame Gap Tolerance Sweep (<100 ms)
+        # Command Signal Bit Layout (0x169 VCU_SES_REQ):
+        #   Isolated transmission gaps of 50 ms and 75 ms inserted
+        # Expected Output Signal Data (0x201 SES_STATUS):
+        #   Gaps <100 ms tolerated without triggering CanCom_Err
+        # ----------------------------------------------------------------------
         gap_ok = True
         for g in [0.05, 0.075]:
             self.h.gap_duration_s = g
@@ -1568,6 +1931,13 @@ class SesCharacterizerV4:
         )
 
         # T100: Dynamic Rate Transition (50 Hz -> 20 Hz -> 50 Hz)
+        # ----------------------------------------------------------------------
+        # T100: Dynamic In-Flight TX Rate Transition
+        # Command Signal Bit Layout (0x169 VCU_SES_REQ):
+        #   In-flight transition: 50 Hz -> 20 Hz -> 50 Hz
+        # Expected Output Signal Data (0x201 SES_STATUS):
+        #   Seamless rate adaptation with zero control mode dropouts
+        # ----------------------------------------------------------------------
         self.h.set_target(5.0, slew_dps=180, test_id="T100_RATE_TRANS")
         self.h.configure_timing_and_faults(tx_rate_hz=50.0)
         time.sleep(0.4)
@@ -1583,6 +1953,13 @@ class SesCharacterizerV4:
         )
 
         # T101: Sustained Low-Rate Commanding (20 Hz)
+        # ----------------------------------------------------------------------
+        # T101: Sustained Low-Rate Commanding (20 Hz)
+        # Command Signal Bit Layout (0x169 VCU_SES_REQ):
+        #   Continuous 20 Hz broadcast rate for 1.2s
+        # Expected Output Signal Data (0x201 SES_STATUS):
+        #   Stable setpoint holding without comm timeout
+        # ----------------------------------------------------------------------
         self.h.configure_timing_and_faults(tx_rate_hz=20.0)
         self.h.set_target(0.0, slew_dps=180, test_id="T101_LOW_RATE")
         time.sleep(1.2)
@@ -1602,6 +1979,13 @@ class SesCharacterizerV4:
         print("\n--- GROUP K: BUFFER, QUEUE & BACKPRESSURE EVALUATION ---")
 
         # T102: Over-Rate Transmission Stress (100 Hz Continuous)
+        # ----------------------------------------------------------------------
+        # T102: Over-Rate Transmission Stress (100 Hz)
+        # Command Signal Bit Layout (0x169 VCU_SES_REQ):
+        #   Continuous 100 Hz transmission (10 ms period, 2x nominal)
+        # Expected Output Signal Data (0x201 SES_STATUS):
+        #   Actuator mailbox processes high rate without queue congestion
+        # ----------------------------------------------------------------------
         self.h.configure_timing_and_faults(tx_rate_hz=100.0)
         self.h.set_target(10.0, slew_dps=200, test_id="T102_OVER_RATE")
         time.sleep(1.2)
@@ -1614,6 +1998,13 @@ class SesCharacterizerV4:
         )
 
         # T103: Stale Data Hold Under Valid Counter
+        # ----------------------------------------------------------------------
+        # T103: Steady-State Target Angle Hold
+        # Command Signal Bit Layout (0x169 VCU_SES_REQ):
+        #   Constant angle setpoint + continuously advancing counter for 1.5s
+        # Expected Output Signal Data (0x201 SES_STATUS):
+        #   Zero steady-state drift observed at setpoint
+        # ----------------------------------------------------------------------
         # Holds position setpoint for 2.0s while incrementing counter normally
         self.h.set_target(10.0, slew_dps=200, test_id="T103_STALE_HOLD")
         time.sleep(1.5)
@@ -1625,6 +2016,13 @@ class SesCharacterizerV4:
         )
 
         # T104: Intermittent Burst-Then-Pause Behavior
+        # ----------------------------------------------------------------------
+        # T104: Burst-Then-Pause Buffer Response
+        # Command Signal Bit Layout (0x169 VCU_SES_REQ):
+        #   Bursty frame transmission followed by 60 ms pause
+        # Expected Output Signal Data (0x201 SES_STATUS):
+        #   Actuator filters bursty arrivals smoothly
+        # ----------------------------------------------------------------------
         # Rapid 5 frames, then brief pause (repeated twice)
         for _ in range(2):
             self.h.set_target(-5.0, slew_dps=180, test_id="T104_BURST_PAUSE")
@@ -1639,6 +2037,13 @@ class SesCharacterizerV4:
         )
 
         # T105: Duplicate Frame Detection Evaluation
+        # ----------------------------------------------------------------------
+        # T105: Duplicate Frame Reception Robustness
+        # Command Signal Bit Layout (0x169 VCU_SES_REQ):
+        #   Same frame transmitted twice with identical rolling counter
+        # Expected Output Signal Data (0x201 SES_STATUS):
+        #   Actuator absorbs duplicate frame without tripping fault
+        # ----------------------------------------------------------------------
         # Send same frame twice with identical counter
         with self.h._lock:
             self.h.inject_frozen_counter = True
