@@ -96,13 +96,13 @@ public:
 
         switch (snap.op_mode) {
             case OperatingMode::Bare:
-                emit_bare(snap, drive_active, tick_10ms, send);
+                emit_bare(snap, drive_active, raw_drive_active, tick_10ms, send);
                 break;
             case OperatingMode::Sys:
-                emit_sys(snap, drive_active, tick_10ms, send);
+                emit_sys(snap, drive_active, raw_drive_active, tick_10ms, send);
                 break;
             case OperatingMode::Rt:
-                emit_rt(snap, drive_active, tick_10ms, send);
+                emit_rt(snap, drive_active, raw_drive_active, tick_10ms, send);
                 break;
         }
     }
@@ -145,7 +145,7 @@ private:
     bool     throttle_zero_latched_{false}; // Zero-throttle gate on startup/arming
     // ── Mode 1: BARE (Direct Actuator Control on Low-CAN) ────────────
     template <typename SendFn>
-    void emit_bare(const RcSnapshot& snap, bool drive_active, uint32_t tick_10ms, SendFn&& send) {
+    void emit_bare(const RcSnapshot& snap, bool drive_active, bool gear_active, uint32_t tick_10ms, SendFn&& send) {
         // 1. Steering: 0x169 VCU_SES_REQ (50 Hz / 20 ms per SES spec)
         //    Raw wire-frame encoding (Byte5=0x00, Byte7=0x00, zero-security bypass).
         //    Verified on physical hardware: actuator accepts frames without rolling
@@ -208,7 +208,10 @@ private:
         // 3. Traction: 0x204 RT_DRIVE_CMD (100 Hz)
         can::gen::RtDriveCmd drive_cmd{};
         drive_cmd.motor_speed_mmps = drive_active ? snap.target_speed_mmps : 0;
-        drive_cmd.gear = static_cast<uint8_t>(drive_active ? snap.gear : can::Gear::N);
+        // Gear follows arm/park/link authority, NOT the zero-throttle speed
+        // interlock: the gear relay must engage as soon as the operator selects
+        // D/R while armed, even before the throttle is returned to idle.
+        drive_cmd.gear = static_cast<uint8_t>(gear_active ? snap.gear : can::Gear::N);
 
         can::Frame drive_fr;
         if (can::gen::encode_rt_drive_cmd(drive_cmd, drive_fr) == can::gen::CodecStatus::Ok) {
@@ -264,7 +267,7 @@ private:
 
     // ── Mode 2: SYS (Targeting sys-esp32 on Low-CAN) ─────────────────
     template <typename SendFn>
-    void emit_sys(const RcSnapshot& snap, bool drive_active, uint32_t tick_10ms, SendFn&& send) {
+    void emit_sys(const RcSnapshot& snap, bool drive_active, bool gear_active, uint32_t tick_10ms, SendFn&& send) {
         // Direct actuator setpoints (50 Hz / 20 ms per SES spec)
         // Raw wire-frame encoding (Byte5=0x00, Byte7=0x00, zero-security bypass).
         if (tick_10ms % 2 == 0) {
@@ -316,7 +319,7 @@ private:
 
         can::gen::RtDriveCmd drive_cmd{};
         drive_cmd.motor_speed_mmps = drive_active ? snap.target_speed_mmps : 0;
-        drive_cmd.gear = static_cast<uint8_t>(drive_active ? snap.gear : can::Gear::N);
+        drive_cmd.gear = static_cast<uint8_t>(gear_active ? snap.gear : can::Gear::N);
 
         can::Frame drive_fr;
         if (can::gen::encode_rt_drive_cmd(drive_cmd, drive_fr) == can::gen::CodecStatus::Ok) {
@@ -356,7 +359,7 @@ private:
 
     // ── Mode 3: RT (Targeting rt-esp32 on High-CAN) ──────────────────
     template <typename SendFn>
-    void emit_rt(const RcSnapshot& snap, bool drive_active, uint32_t tick_10ms, SendFn&& send) {
+    void emit_rt(const RcSnapshot& snap, bool drive_active, bool gear_active, uint32_t tick_10ms, SendFn&& send) {
         // 1. Host Steer: 0x303 HOST_STEER_CMD (100 Hz)
         can::gen::HostSteerCmd steer_cmd{};
         int16_t steer_0_1deg = static_cast<int16_t>(std::round(snap.steering_deg * 10.0f));
@@ -387,7 +390,7 @@ private:
         drive_cmd.speed_mmps = drive_active ? snap.target_speed_mmps : 0;
         drive_cmd.speed_mmps = std::clamp<int32_t>(drive_cmd.speed_mmps, -kSpeedRevMaxMmps, kSpeedFwdMaxMmps);
         drive_cmd.yaw_rate_mrad_s = 0;
-        drive_cmd.gear = drive_active ? static_cast<uint8_t>(snap.gear) : static_cast<uint8_t>(can::Gear::N);
+        drive_cmd.gear = gear_active ? static_cast<uint8_t>(snap.gear) : static_cast<uint8_t>(can::Gear::N);
 
         can::Frame drive_fr;
         if (can::gen::encode_host_drive_cmd(drive_cmd, drive_fr) == can::gen::CodecStatus::Ok) {

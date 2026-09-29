@@ -225,8 +225,8 @@ static bool send_can_frame(can::Frame& fr) {
             s_last_can_log.enable         = snap.drive_enable_req;
             s_last_can_log.park           = snap.park_hold_req;
 
-            const char* gear_str = (snap.gear == can::Gear::D) ? "D" :
-                                   ((snap.gear == can::Gear::R) ? "R" : "N");
+            const char* gear_str = (active_gear == can::Gear::D) ? "D" :
+                                   ((active_gear == can::Gear::R) ? "R" : "N");
 
             const auto health = g_can.health_snapshot();
             const char* can_str = (health.state == can::CanDriver::HealthState::BusOff) ? "OFF" :

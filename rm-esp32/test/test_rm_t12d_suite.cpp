@@ -588,6 +588,75 @@ void test_can_emitter_three_modes() {
     ASSERT_FALSE(has_sys_mode);
 }
 
+void test_gear_emitted_before_throttle_idle() {
+    // Regression: the startup zero-throttle interlock must gate ONLY the motor
+    // speed setpoint, never the gear byte. Otherwise the MTR gear relay stays
+    // in Neutral (ignition/power still works) until the throttle is returned to
+    // idle — which is the "gear not reaching MTR" bug.
+    rm::CanEmitter emitter;
+    std::vector<can::Frame> emitted;
+    auto send_fn = [&](const can::Frame& fr) {
+        emitted.push_back(fr);
+        return true;
+    };
+
+    auto drive_204 = [&](can::gen::RtDriveCmd& out) -> bool {
+        for (const auto& fr : emitted) {
+            if (fr.id == 0x204u &&
+                can::gen::decode_rt_drive_cmd(fr.view(), out) == can::gen::CodecStatus::Ok) {
+                return true;
+            }
+        }
+        return false;
+    };
+
+    rm::RcSnapshot snap{};
+    snap.signal_valid = true;
+    snap.drive_enable_req = true;   // SWA armed
+    snap.park_hold_req = false;     // SWB released
+    snap.gear = can::Gear::D;
+    snap.target_speed_mmps = 2500;
+    snap.throttle_norm = 0.50f;     // off-idle: interlock NOT yet latched
+    snap.op_mode = rm::OperatingMode::Bare;
+
+    // 1. Off-idle throttle: gear D MUST be transmitted, speed held at 0.
+    emitted.clear();
+    emitter.emit_cluster(snap, 0, send_fn);
+    can::gen::RtDriveCmd cmd{};
+    ASSERT_TRUE(drive_204(cmd));
+    ASSERT_EQ(cmd.gear, static_cast<uint8_t>(can::Gear::D));
+    ASSERT_EQ(cmd.motor_speed_mmps, 0);
+
+    // 2. Throttle returned to idle: interlock releases, speed now passes.
+    snap.throttle_norm = 0.0f;
+    emitted.clear();
+    emitter.emit_cluster(snap, 0, send_fn);
+    ASSERT_TRUE(drive_204(cmd));
+    ASSERT_EQ(cmd.gear, static_cast<uint8_t>(can::Gear::D));
+    ASSERT_EQ(cmd.motor_speed_mmps, 2500);
+
+    // 3. Reverse gear also reaches MTR before throttle idle.
+    rm::CanEmitter emitter_r;
+    std::vector<can::Frame> emitted_r;
+    auto send_r = [&](const can::Frame& fr) { emitted_r.push_back(fr); return true; };
+    rm::RcSnapshot rev = snap;
+    rev.gear = can::Gear::R;
+    rev.target_speed_mmps = -500;
+    rev.throttle_norm = 0.8f;   // still off-idle on a fresh emitter
+    emitter_r.emit_cluster(rev, 0, send_r);
+    can::gen::RtDriveCmd rcmd{};
+    bool found_r = false;
+    for (const auto& fr : emitted_r) {
+        if (fr.id == 0x204u &&
+            can::gen::decode_rt_drive_cmd(fr.view(), rcmd) == can::gen::CodecStatus::Ok) {
+            found_r = true;
+        }
+    }
+    ASSERT_TRUE(found_r);
+    ASSERT_EQ(rcmd.gear, static_cast<uint8_t>(can::Gear::R));
+    ASSERT_EQ(rcmd.motor_speed_mmps, 0);
+}
+
 void test_can_frame_encoding() {
     // 1. 0x169 VCU_SES_REQ
     can::custom::ses::Command ses_cmd{};
@@ -716,6 +785,7 @@ int main() {
     test_operating_mode_switch_decoding();
     test_vra_speed_governor_scaling();
     test_can_emitter_three_modes();
+    test_gear_emitted_before_throttle_idle();
     test_can_frame_encoding();
 
     std::printf("----------------------------------------------------\n");
