@@ -51,6 +51,16 @@ int main() {
         CHECK(a.power_on == false);
     }
 
+    // ── START run/enable latch released (run_enabled=false) -> stop ──
+    // No ESTOP, no inhibit: releasing the START latch drops power and clamps
+    // mode to MANUAL, but does NOT latch ESTOP (mode authority only).
+    {
+        auto a = resolve_authority(/*estop=*/false, /*auto=*/true, /*pwr_req=*/true,
+                                   /*run_enabled=*/false);
+        CHECK(a.mode_auto == false);
+        CHECK(a.power_on == false);
+    }
+
     // ── Cross-owner independence: clearing MTR bit must not clear SEB-comms bit ──
     {
         set_inhibit(kInhibitMtrFbkLoss);

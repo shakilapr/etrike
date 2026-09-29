@@ -47,20 +47,54 @@ void test_mode_manager_auto_to_manual(void) {
 }
 
 void test_mode_manager_estop_exit_via_start_button(void) {
+    // START is no longer an ESTOP reset: it is a latching run/enable control.
+    // Verify it neither exits ESTOP nor enables run while latched in ESTOP.
     ModeManager mm;
     mm.init();
+    mm.tick(false, false);       // seed START level (idle)
     mm.force_estop();
     TEST_ASSERT_EQUAL(Mode::Estop, mm.mode());
 
-    mm.tick(true, false);
-    bool changed = mm.tick(false, false);
-    TEST_ASSERT_FALSE(changed);
+    mm.tick(false, true);        // latch START during ESTOP -> ignored
+    TEST_ASSERT_EQUAL(Mode::Estop, mm.mode());
+    TEST_ASSERT_FALSE(mm.run_enabled());
+
+    mm.tick(false, false);       // release START -> still ESTOP
     TEST_ASSERT_EQUAL(Mode::Estop, mm.mode());
 
-    mm.tick(false, true);
-    changed = mm.tick(false, false);
-    TEST_ASSERT_TRUE(changed);
+    // Only the MODE 5s long-press exits ESTOP.
+    bool exited = false;
+    for (int i = 0; i < 51; ++i) {
+        if (mm.tick(true, false)) { exited = true; break; }
+    }
+    TEST_ASSERT_TRUE(exited);
     TEST_ASSERT_EQUAL(Mode::Manual, mm.mode());
+}
+
+void test_mode_manager_start_latch_run_enable(void) {
+    ModeManager mm;
+    mm.init();
+    TEST_ASSERT_FALSE(mm.run_enabled());
+
+    mm.tick(false, false);       // seed START level (idle)
+    TEST_ASSERT_FALSE(mm.run_enabled());
+
+    mm.tick(false, true);        // latch START (rising edge) -> run enabled
+    TEST_ASSERT_TRUE(mm.run_enabled());
+
+    mm.tick(false, false);       // release START -> run disabled, NOT ESTOP
+    TEST_ASSERT_FALSE(mm.run_enabled());
+    TEST_ASSERT_EQUAL(Mode::Manual, mm.mode());
+}
+
+void test_mode_manager_start_seeded_at_boot(void) {
+    ModeManager mm;
+    mm.init();
+    mm.tick(false, true);        // START already latched at boot -> seeded
+    TEST_ASSERT_FALSE(mm.run_enabled());
+    mm.tick(false, false);       // operator unlatches
+    mm.tick(false, true);        // fresh latch -> run enabled
+    TEST_ASSERT_TRUE(mm.run_enabled());
 }
 
 void test_mode_manager_estop_exit_via_mode_long_press(void) {
@@ -69,7 +103,7 @@ void test_mode_manager_estop_exit_via_mode_long_press(void) {
     mm.force_estop();
 
     bool exited = false;
-    for (int i = 0; i < 31; ++i) {
+    for (int i = 0; i < 51; ++i) {
         bool ch = mm.tick(true, false);
         if (ch) { exited = true; break; }
     }
@@ -212,10 +246,13 @@ void test_estop_latched_follows_mode_latch_lifecycle(void) {
     mm.set_from_can(uint8_t(Mode::Manual));
     TEST_ASSERT_TRUE(ModeManager::estop_latched(mm.mode(), /*hw_estop=*/false));
 
-    // Only the physical START-button reset path exits ESTOP; only then may the
+    // Only the MODE 5 s validated reset exits ESTOP; only then may the
     // published bit drop to 0 so RT/MTR can begin their confirmed clear.
-    mm.tick(false, true);  // START press
-    mm.tick(false, false); // debounce settle
+    bool exited = false;
+    for (int i = 0; i < 51; ++i) {
+        if (mm.tick(true, false)) { exited = true; break; }
+    }
+    TEST_ASSERT_TRUE(exited);
     TEST_ASSERT_EQUAL(Mode::Manual, mm.mode());
     TEST_ASSERT_FALSE(ModeManager::estop_latched(mm.mode(), /*hw_estop=*/false));
 }
@@ -235,14 +272,14 @@ void test_estop_exit_blocked_while_latched_cause_active(void) {
     mm.force_estop();
     sys::set_latched_fault(sys::kLatchedBrakeFollowing);
 
-    // START-button reset attempt — refused.
+    // START no longer resets; it only latches run authority. Mode stays ESTOP.
     mm.tick(false, true);
     mm.tick(false, false);
     TEST_ASSERT_EQUAL(Mode::Estop, mm.mode());
 
-    // MODE 3s long-press — also refused while the cause is still asserted.
+    // MODE 5 s long-press — also refused while the cause is still asserted.
     bool exited = false;
-    for (int i = 0; i < 40; ++i) {
+    for (int i = 0; i < 60; ++i) {
         if (mm.tick(true, false)) { exited = true; break; }
     }
     TEST_ASSERT_FALSE(exited);
@@ -250,8 +287,10 @@ void test_estop_exit_blocked_while_latched_cause_active(void) {
 
     // Cause clears (fresh 0x721 frame arrives) → validated reset now allowed.
     g_seb_status_byte0.store(0x00);
-    mm.tick(false, true);   // release MODE, press START
-    mm.tick(false, false);  // START release → falling edge → reset
+    for (int i = 0; i < 51; ++i) {
+        if (mm.tick(true, false)) { exited = true; break; }
+    }
+    TEST_ASSERT_TRUE(exited);
     TEST_ASSERT_EQUAL(Mode::Manual, mm.mode());
     TEST_ASSERT_FALSE(sys::latched_fault_present());
 }
@@ -270,10 +309,42 @@ void test_estop_exit_blocked_while_seb_l3_active(void) {
     mm.tick(false, false);
     TEST_ASSERT_EQUAL(Mode::Estop, mm.mode());
 
-    // SEB recovers to error_status < 3 → reset allowed.
+    // SEB recovers to error_status < 3 → MODE 5 s reset allowed.
     g_seb_error_status.store(0);
-    mm.tick(false, true);
-    mm.tick(false, false);
+    bool exited = false;
+    for (int i = 0; i < 51; ++i) {
+        if (mm.tick(true, false)) { exited = true; break; }
+    }
+    TEST_ASSERT_TRUE(exited);
+    TEST_ASSERT_EQUAL(Mode::Manual, mm.mode());
+    TEST_ASSERT_FALSE(sys::latched_fault_present());
+}
+
+// MODE 5 s also clears a latched fault while in MANUAL (no ESTOP latch).
+void test_mode_long_press_clears_latched_fault_in_manual(void) {
+    g_seb_error_status.store(0);
+    g_seb_status_byte0.store(0x00);
+    sys::g_latched_fault_reasons.store(0);
+    ModeManager mm;
+    mm.init();
+    sys::set_latched_fault(sys::kLatchedSebL3);
+    TEST_ASSERT_EQUAL(Mode::Manual, mm.mode());
+
+    // Not clearable yet (L3 still asserted) → persists.
+    g_seb_error_status.store(3);
+    bool cleared = false;
+    for (int i = 0; i < 60; ++i) {
+        if (mm.tick(true, false)) { cleared = true; break; }
+    }
+    TEST_ASSERT_FALSE(cleared);
+    TEST_ASSERT_TRUE(sys::latched_fault_present());
+
+    // Cause clears → MODE 5 s clears the latch, mode stays MANUAL.
+    g_seb_error_status.store(0);
+    for (int i = 0; i < 51; ++i) {
+        if (mm.tick(true, false)) { cleared = true; break; }
+    }
+    TEST_ASSERT_TRUE(cleared);
     TEST_ASSERT_EQUAL(Mode::Manual, mm.mode());
     TEST_ASSERT_FALSE(sys::latched_fault_present());
 }
@@ -396,6 +467,8 @@ extern "C" void app_main() {
     RUN_TEST(test_mode_manager_manual_to_auto);
     RUN_TEST(test_mode_manager_auto_to_manual);
     RUN_TEST(test_mode_manager_estop_exit_via_start_button);
+    RUN_TEST(test_mode_manager_start_latch_run_enable);
+    RUN_TEST(test_mode_manager_start_seeded_at_boot);
     RUN_TEST(test_mode_manager_estop_exit_via_mode_long_press);
     RUN_TEST(test_mode_manager_mode_long_press_early_release);
     RUN_TEST(test_mode_manager_debounce_blocks_rapid_retrigger);
@@ -406,6 +479,7 @@ extern "C" void app_main() {
     RUN_TEST(test_mode_manager_can_mode_cmd_does_not_clear_estop);
     RUN_TEST(test_estop_exit_blocked_while_latched_cause_active);
     RUN_TEST(test_estop_exit_blocked_while_seb_l3_active);
+    RUN_TEST(test_mode_long_press_clears_latched_fault_in_manual);
     RUN_TEST(test_remote_reset_rejected_when_physical_estop_active);
     RUN_TEST(test_remote_reset_rejected_when_vehicle_moving);
     RUN_TEST(test_remote_reset_rejected_when_token_invalid);

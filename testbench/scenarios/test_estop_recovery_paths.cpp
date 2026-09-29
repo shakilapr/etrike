@@ -40,8 +40,9 @@ bool test_estop_reset_recovery_host() {
     tb.run_for_ms(400, 10);
     bool stopped = !tb.mtr().is_traction_enabled() && tb.sys().is_estop_latched();
 
-    // Operator reset: release the button, press START.
+    // Operator reset: release the button, hold MODE 5 s, then re-enable run.
     tb.release_estop_button();
+    tb.hold_mode_button_5s();
     tb.press_start_button();
     tb.run_for_ms(400, 10);
     bool cleared = !tb.sys().is_estop_latched();
@@ -76,14 +77,14 @@ bool test_estop_reset_blocked_by_fault() {
     bool latched = tb.sys().is_estop_latched();
 
     // Attempt reset with the fault STILL present.
-    tb.press_start_button();
+    tb.hold_mode_button_5s();
     tb.run_for_ms(300, 10);
     bool refused = tb.sys().is_estop_latched();
 
     // Clear the fault and let the cleared SEB status propagate, THEN reset.
     tb.seb().clear_fault();
     tb.run_for_ms(300, 10);
-    tb.press_start_button();
+    tb.hold_mode_button_5s();
     tb.run_for_ms(300, 10);
     bool cleared = !tb.sys().is_estop_latched();
 
@@ -154,6 +155,7 @@ bool test_estop_recovery_rm_sys() {
 
     sys.release_estop_button();
     for (uint32_t t = 1910; t <= 2300; t += 10) { sys.step(t, 10); mtr.step(t, 10); rm.step(t, 10); low.tick(t, 10); }
+    sys.hold_mode_button_5s();
     sys.press_start_button();
     // Re-command AUTO via rm HMI (rm keeps emitting 0x111 AUTO).
     for (uint32_t t = 2310; t <= 3200; t += 10) { sys.step(t, 10); mtr.step(t, 10); rm.step(t, 10); low.tick(t, 10); }
@@ -205,6 +207,7 @@ bool test_estop_recovery_rm_rt() {
     rt.clear_software_estop();
     sys.release_estop_button();
     run(1910, 2300);
+    sys.hold_mode_button_5s();
     sys.press_start_button();
     run(2310, 3400);
 

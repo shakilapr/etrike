@@ -18,7 +18,7 @@ void SysNode::init() {
     brake_ctrl_.init();
 
     hw_estop_pressed_ = false;
-    hw_start_pressed_ = false;
+    hw_start_latched_ = false;
     hw_mode_pressed_ = false;
 
     safety_seq_ctr_ = 0;
@@ -49,19 +49,25 @@ void SysNode::init() {
     sys::mark_estop_reset(0);
 }
 
+// START is a latching NC run/enable control. "Press" latches run enabled;
+// "release" unlatches it (stop authority) without latching ESTOP.
 void SysNode::press_start_button() {
-    hw_start_pressed_ = true;
+    hw_start_latched_ = true;
+}
+
+void SysNode::release_start_button() {
+    hw_start_latched_ = false;
 }
 
 void SysNode::press_mode_button() {
     hw_mode_pressed_ = true;
 }
 
-void SysNode::hold_mode_button_3s() {
-    for (int i = 0; i < 35; ++i) {
-        mode_mgr_.tick(true, false);
-    }
-    mode_mgr_.tick(false, false);
+// Operator recovery gesture: hold MODE for 5 s (validated reset transaction).
+void SysNode::hold_mode_button_5s() {
+    for (int i = 0; i < 7; ++i) mode_mgr_.tick(false, false, hw_estop_pressed_);
+    for (int i = 0; i < 55; ++i) mode_mgr_.tick(true, false, hw_estop_pressed_);
+    mode_mgr_.tick(false, false, hw_estop_pressed_);
     if (mode_mgr_.mode() != can::Mode::Estop && !hw_estop_pressed_ && safety_.heartbeat_ok()) {
         safety_.set_estop(false);
         sys::mark_estop_reset(last_now_ms_);
@@ -217,26 +223,22 @@ void SysNode::step(uint32_t now_ms, uint32_t dt_ms) {
     }
 
     // Handle operator push buttons
-    if (hw_start_pressed_) {
-        if (!hw_estop_pressed_ && safety_.heartbeat_ok()) {
-            safety_.set_estop(false);
-        }
-        // Step debounce and attempt exit
-        for (int i = 0; i < 6; ++i) mode_mgr_.tick(false, false);
-        mode_mgr_.tick(false, true);
-        mode_mgr_.tick(false, false);
+    if (hw_mode_pressed_) {
+        for (int i = 0; i < 6; ++i) mode_mgr_.tick(false, false, hw_estop_pressed_);
+        mode_mgr_.tick(true, false, hw_estop_pressed_);
+        mode_mgr_.tick(false, false, hw_estop_pressed_);
+        hw_mode_pressed_ = false;
         if (mode_mgr_.mode() != can::Mode::Estop) {
             sys::mark_estop_reset(now_ms);
         }
         publish_mode_cmd(now_ms);
         publish_pwr_cmd(now_ms);
-        hw_start_pressed_ = false;
-    } else if (hw_mode_pressed_) {
-        for (int i = 0; i < 6; ++i) mode_mgr_.tick(false, false);
-        mode_mgr_.tick(true, false);
-        mode_mgr_.tick(false, false);
-        hw_mode_pressed_ = false;
     }
+
+    // START is a latching run/enable control: feed its persistent level every
+    // step so latch/release edges are observed. Releasing START must NOT latch
+    // ESTOP; it only drops run authority (resolve_authority in the publish path).
+    mode_mgr_.tick(false, hw_start_latched_, hw_estop_pressed_);
 
     // Check RT heartbeat watchdog
     if (!safety_.heartbeat_ok() && now_ms > 3000) {

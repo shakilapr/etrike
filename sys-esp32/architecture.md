@@ -49,7 +49,7 @@ All GPIOs are initialized in `init_board_gpio()` before tasks start:
 |---|---:|---|---|---|
 | `kEstopGpio` | 1 | Input | Internal Pull-up (NC to GND) | Red mushroom ESTOP button (0V/GND = Safe, HIGH/Open = Active ESTOP) |
 | `kBrakeLeverGpio` | 2 | Input | Internal Pull-up | Physical handlebar brake lever (Active LOW) |
-| `kStartBtnGpio` | 41 | Input | Internal Pull-up (NC to GND) | Green momentary button, NC (0V/GND = Idle, HIGH/Open = Pressed; ESTOP → MANUAL exit on release) |
+| `kStartBtnGpio` | 41 | Input | Internal Pull-up (NC to GND) | Green **latching** NC run/enable button (0V/GND = idle/released, HIGH/Open = latched; latched = run enabled, released = motion inhibited) |
 | `kModeBtnGpio` | 11 | Input | Internal Pull-up | Mode toggle button (MANUAL ↔ AUTO; 3s hold exits ESTOP) |
 | `DEVELOPER_OVERRIDE_PIN` | 42 | Input | Internal Pull-up | Jumper to GND enables developer bench bypass mode |
 | `kSwitchLeftTurn` | 9 | Input | Internal Pull-up | Left turn signal toggle switch (MANUAL mode) |
@@ -57,19 +57,19 @@ All GPIOs are initialized in `init_board_gpio()` before tasks start:
 | `kSwitchHeadlight` | 7 | Input | Internal Pull-up | Headlight toggle switch (MANUAL mode) |
 | `kCanTxGpio` | 5 | Output | TWAI TX | 500 kbit/s Low CAN bus |
 | `kCanRxGpio` | 4 | Input | TWAI RX | 500 kbit/s Low CAN bus |
-| `kLightBrake` | 21 | Output | Push-Pull | 12V brake light relay driver (Active HIGH) |
-| `kBulbAuto` | 48 | Output | Push-Pull | Dash indicator: AUTO mode active |
+| `kLightBrake` | 21 | Output | Push-Pull | 12V brake light relay driver (relay active-LOW → GPIO LOW = lamp ON; no ULN2803A) |
+| `kBulbAuto` | 10 | Output | Push-Pull | Dash indicator: AUTO mode active |
 | `kBulbManual` | 39 | Output | Push-Pull | Dash indicator: MANUAL mode active |
 | `kBulbReady` | 17 | Output | Push-Pull | Green ready LED (Normal mode, RT alive, no fault) |
 | `kBulbEstop` | 18 | Output | Push-Pull | Red ESTOP indicator LED |
 | `kBulbBypass` | 14 | Output | Push-Pull | Amber developer bypass indicator LED |
-| `kPower12vRelay` | 40 | Output | Push-Pull | 12V auxiliary power relay (Active when not in ESTOP) |
+| `kPower12vRelay` | 40 | Output | Push-Pull | 12V auxiliary power relay (energized in all modes, including ESTOP, so indicator lamps stay powered) |
 
 ---
 
-## 3. Concurrency Architecture (13 Tasks)
+## 3. Concurrency Architecture (12 Tasks)
 
-The firmware runs 13 preemptive FreeRTOS tasks configured in `app_main()`:
+The firmware runs 12 preemptive FreeRTOS tasks configured in `app_main()`:
 
 ```
 Priority 5: [task_can_rx]        [task_safety (20 Hz)]
@@ -77,7 +77,7 @@ Priority 5: [task_can_rx]        [task_safety (20 Hz)]
                    ▼ (g_can_rx_queue)
 Priority 4: [task_dispatch]      [task_mode (10 Hz)]
 Priority 3: [task_brake (50 Hz)] [task_lights (20 Hz)] [task_gear (50 Hz)]
-Priority 2: [task_can_tx (5 Hz)] [task_can_ctrl (50 Hz)][task_indicator (5 Hz)] [task_power (5 Hz)]
+Priority 2: [task_can_tx (5 Hz)] [task_can_ctrl (50 Hz)][task_indicator (25 Hz)]
 Priority 1: [task_hb (10 Hz)]    [task_diag (1 Hz)]
 ```
 
@@ -88,12 +88,11 @@ Priority 1: [task_hb (10 Hz)]    [task_diag (1 Hz)]
 | `task_can_rx` | 5 | 4608 B | Event | Blocks on `g_can.receive()` from TWAI driver; yields 5 ms on congestion and forwards frame to `g_can_rx_queue`. |
 | `task_safety` | 5 | 4608 B | 20 Hz | Polls ESTOP button and brake lever GPIOs; checks RT heartbeat timeout (`0x7FD`); enforces `0x204` setpoint staleness; checks MTR feedback (`0x206`) staleness. |
 | `task_dispatch` | 4 | 3584 B | Event | Dequeues from `g_can_rx_queue`; parses incoming CAN frames (`0x204`, `0x205`, `0x111`, `0x112`, `0x114`, `0x206`, `0x302`, `0x001`, `0x721`, `0x6FB`, `0x731`, `0x741`, `0x210`, `0x122`, `0x7FD`); unpacks payload into shared atomic state. |
-| `task_mode` | 4 | 2560 B | 10 Hz | Debounces START/MODE buttons; handles 3-second long-press reset; evaluates optional wheel EGAS; calculates `resolve_authority()`; broadcasts `0x110 SYS_MODE_CMD` and `0x113 SYS_PWR_CMD`. |
+| `task_mode` | 4 | 2560 B | 10 Hz | Debounces START/MODE buttons; START spans the run/enable latch; MODE 5 s runs the validated reset; evaluates optional wheel EGAS; calculates `resolve_authority()`; broadcasts `0x110 SYS_MODE_CMD` and `0x113 SYS_PWR_CMD`. |
 | `task_brake` | 3 | 3584 B | 50 Hz | Runs `BrakeControl` state machine; arbitrates priority (ESTOP > Lever > Pressure); encodes and transmits `0x7B9 VCU_SEB_REQ`; monitors `0x721` staleness. |
 | `task_lights` | 3 | 2560 B | 20 Hz | Flashes turn signals (500 ms period); handles handlebar switches vs `0x302` commands; sets `kLightBrake` relay; updates `g_light_state`. |
 | `task_gear` | 3 | 2048 B | 50 Hz | Compares `0x204` commanded gear vs `0x206` reported gear state; logs error on persistent mismatch. |
-| `task_indicator` | 2 | 2560 B | 5 Hz | Drives `kBulbAuto`, `kBulbManual`, `kBulbReady`, `kBulbEstop`, and `kBulbBypass` GPIOs. |
-| `task_power` | 2 | 2560 B | 5 Hz | Toggles `kPower12vRelay` (HIGH when mode != ESTOP). |
+| `task_indicator` | 2 | 2560 B | 25 Hz | Drives `kBulbAuto`, `kBulbManual`, `kBulbReady`, `kBulbEstop`, `kBulbBypass`, and `kPower12vRelay` GPIOs (via the polarity-aware `set_relay()` helper). |
 | `task_can_tx` | 2 | 3584 B | 5 Hz | Encodes and sends `0x011 SYS_SAFETY_STS` (with CRC-8) and `0x500 SYS_NODE_STATUS`. |
 | `task_can_control`| 2 | 2560 B | 50 Hz | Calls `g_can.service_recovery()` every 20 ms to monitor bus-off and execute exponential backoff recovery. |
 | `task_hb` | 1 | 2560 B | 10 Hz | Encodes and transmits `0x7FE SYS_HEARTBEAT` with rolling counter and 4 task health bits. |
@@ -116,7 +115,7 @@ SYS separates transient/recoverable degradation from permanent safety-latched fa
 2. **Latched Safety Faults (`LatchedFaultReason`):**
    - `kLatchedSebL3`: `0x721` reports error status $\ge 3$ or `0x731` reports Level 3 error bits (actuator internal hardware fault / overcurrent / motor stall).
    - **Action:** Clamps `0x110` mode to MANUAL and drops `0x113` power to OFF, cutting positive propulsion while keeping steer-by-wire (SES) operational and 12V auxiliary power intact (does not force ESTOP or broadcast `0x001`).
-   - **Recovery:** Requires an explicit validated reset transaction (`START` button falling edge or `0x114` remote reset) while `latched_causes_currently_clearable()` returns true.
+   - **Recovery:** Requires an explicit validated reset transaction (MODE 5 s long-press) while `latched_causes_currently_clearable()` returns true.
 
 ### 4.2 Authenticated Remote ESTOP Reset (BUG-10)
 Host can clear an ESTOP over CAN via `0x114 HOST_ESTOP_RESET_REQ`:

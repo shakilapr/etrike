@@ -31,9 +31,10 @@ public:
     bool is_mtr_feedback_lost() const { return (sys::g_inhibit_reasons.load() & sys::kInhibitMtrFbkLoss) != 0; }
 
     // Operator physical inputs
-    void press_start_button();
+    void press_start_button();       // latch START (run/enable)
+    void release_start_button();     // unlatch START (stop, no ESTOP)
     void press_mode_button();
-    void hold_mode_button_3s();
+    void hold_mode_button_5s();      // operator ESTOP/latch recovery gesture
     void press_estop_button();
     void release_estop_button();
     void set_brake_lever(bool pressed);
@@ -51,7 +52,7 @@ private:
     sys::BrakeControl brake_ctrl_;
 
     bool hw_estop_pressed_{false};
-    bool hw_start_pressed_{false};
+    bool hw_start_latched_{false};
     bool hw_mode_pressed_{false};
 
     uint8_t safety_seq_ctr_{0};

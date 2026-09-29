@@ -22,7 +22,7 @@ constexpr int kCanRxGpio    =       4;
 // makes an open wire or pressed button read HIGH (ESTOP active). Fail-safe.
 constexpr int kEstopGpio      =  1;   // big red mushroom, NC, active-high-on-open, pull-up
 constexpr int kBrakeLeverGpio =  2;   // active-low, pull-up
-constexpr int kStartBtnGpio   = 41;   // green momentary, NC (active-high-on-open, pull-up) — ESTOP exit to MANUAL
+constexpr int kStartBtnGpio   = 41;   // green latching NC (active-high-on-open, pull-up) — run/enable latch
 constexpr int kModeBtnGpio    = 11;   // momentary, toggles MANUAL↔AUTO
 constexpr int kIgnitionGpio   =  8;   // reserved; production firmware does not drive it
 
@@ -30,6 +30,22 @@ constexpr int kIgnitionGpio   =  8;   // reserved; production firmware does not 
 constexpr int kSwitchLeftTurn  =  9;  // moved from GPIO3 (ESP32-S3 JTAG strapping pin)
 constexpr int kSwitchRightTurn =  6;
 constexpr int kSwitchHeadlight =  7;
+
+// ── relay/lamp output polarity ────────────────────────────────────
+// The vehicle has NO ULN2803A and uses an active-LOW relay module wired
+// directly to the ESP32 GPIO: a LOW pin energizes the relay (lamp ON). The
+// firmware's positive logic is inverted through set_relay() using this flag.
+// Set false if the board ever gains an inverting ULN2803A or an active-HIGH
+// module.
+constexpr bool kRelayOutputActiveLow = true;
+
+// ── digital input polarity ────────────────────────────────────────
+// ESTOP: NC contact to GND + internal pull-up (idle LOW = safe,
+// open/press HIGH = active ESTOP). Fail-safe: a broken wire reads HIGH.
+constexpr bool kEstopActiveHigh = true;
+// START: NC latching push button to GND + internal pull-up (idle LOW,
+// latched/pressed HIGH). Latched = run enabled, released = stop.
+constexpr bool kStartPressedHigh = true;
 
 // ── signal lights — relay lamp outputs ────────────────────────────
 constexpr int kLightBrake     = 21;
@@ -97,8 +113,11 @@ constexpr int kSebRollingTimeoutMs    = 100;   // 0x721 rolling counter may repe
 constexpr int kSebHandoffGraceMs      = 500;   // AUTO transition: let RT establish sole 0x7B9 ownership
 constexpr int kSebStartupAcquireMs    = 1000;  // startup deadline to detect SEB before diagnosing absence
 
-// ── mode button long-press ESTOP exit (gap #11) ─────────────────────
-constexpr int kEstopLongPressMs       = 3000;  // held 3s → MANUAL
+// ── mode button long-press reset (gap #11) ──────────────────────────
+// Held this long MODE runs the validated reset transaction: exits ESTOP, or
+// clears a latched fault while in MANUAL. START is no longer a reset input
+// (it is now a latching run/enable control).
+constexpr int kEstopLongPressMs       = 5000;  // held 5s → validated reset
 
 // ── MTR ESTOP ACK (gap #15) ──────────────────────────────────────────
 constexpr int kMtrEstopAckTimeoutMs   =  100;  // ESTOP_ACTIVE bit in 0x206 within 100ms

@@ -96,12 +96,16 @@ void TestBench::press_start_button() {
     sys_.press_start_button();
 }
 
+void TestBench::release_start_button() {
+    sys_.release_start_button();
+}
+
 void TestBench::press_mode_button() {
     sys_.press_mode_button();
 }
 
-void TestBench::hold_mode_button_3s() {
-    sys_.hold_mode_button_3s();
+void TestBench::hold_mode_button_5s() {
+    sys_.hold_mode_button_5s();
 }
 
 void TestBench::press_estop_button() {

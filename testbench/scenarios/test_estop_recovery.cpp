@@ -57,9 +57,9 @@ bool test_estop_seb_l3_and_rearm_recovery() {
     assert(bench.sys().latched_faults() & sys::kLatchedSebL3);
     std::cout << "  [P4] Motion remained suppressed (DAC == 0) as required.\n";
 
-    // ── Phase 5: Operator presses START button ───────────────────────
-    std::cout << "  [P5] Operator presses START button to clear latched brake fault...\n";
-    bench.press_start_button();
+    // ── Phase 5: Operator holds MODE 5 s ───────────────────────
+    std::cout << "  [P5] Operator holds MODE 5 s to clear latched brake fault...\n";
+    bench.hold_mode_button_5s();
     bench.run_for_ms(200);
 
     std::cout << "       SYS Latched SEB L3: " << ((bench.sys().latched_faults() & sys::kLatchedSebL3) ? "LATCHED" : "CLEAR") << "\n";

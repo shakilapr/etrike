@@ -264,11 +264,13 @@ struct Vehicle {
         bool changed = sys_mode.tick(false, false);   // release -> falling edge
         (void)changed;
     }
-    // Press-and-release the START button (exits ESTOP -> Manual).
-    void press_start_button() {
+    // Operator recovery gesture: hold MODE for 5 s (50 ticks @ 10 Hz) runs the
+    // validated reset transaction that exits ESTOP. START is now a latching
+    // run/enable control, not a reset.
+    void hold_mode_button_5s() {
         for (int i = 0; i < 7; ++i) sys_mode.tick(false, false);  // flush debounce
-        sys_mode.tick(false, true);    // press START
-        sys_mode.tick(false, false);   // release -> falling edge -> ESTOP->Manual
+        for (int i = 0; i < 55; ++i) sys_mode.tick(true, false);  // hold MODE (5 s)
+        sys_mode.tick(false, false);                              // release
     }
 
     // ?? RT fail-safe check evaluation (mirrors t_control) ?????????
@@ -357,9 +359,9 @@ int main() {
         CHECK(v.mtr.is_estop_active());
 
         // (b) A single 0x011 zero frame must NOT clear MTR (asymmetric).
-        // Force SYS out of ESTOP via START button (real ModeManager), then
+        // Force SYS out of ESTOP via the MODE 5 s reset (real ModeManager), then
         // publish EXACTLY ONE zero frame before the next.
-        v.press_start_button();
+        v.hold_mode_button_5s();
         CHECK(v.sys_mode.mode() == can::Mode::Manual);
         // SYS is now unlatched but only ONE 0x011 zero reaches MTR.
         v.send_sys_mode_cmd();
@@ -387,10 +389,10 @@ int main() {
         for (int i = 0; i < 3; ++i) { v.sys_publish_tick(); v.advance(10); }
         CHECK(v.mtr.is_estop_active());
 
-        // Operator releases hardware + presses START.
+        // Operator releases hardware + holds MODE 5 s to reset.
         v.sys_safety.set_estop(false);
         v.hw_estop_pressed = false;
-        v.press_start_button();
+        v.hold_mode_button_5s();
         CHECK(v.sys_mode.mode() == can::Mode::Manual);
 
         // SYS now publishes two CONSECUTIVE advancing 0x011 zero frames.
@@ -418,7 +420,7 @@ int main() {
         // Reset -> two-frame clear.
         v.sys_safety.set_estop(false);
         v.hw_estop_pressed = false;
-        v.press_start_button();
+        v.hold_mode_button_5s();
         v.sys_publish_tick();
         v.sys_publish_tick();
         CHECK(!v.mtr.is_estop_active());
@@ -550,7 +552,7 @@ int main() {
         // Full reset + rearm restores AUTO drive.
         v.sys_safety.set_estop(false);
         v.hw_estop_pressed = false;
-        v.press_start_button();
+        v.hold_mode_button_5s();
         CHECK(v.sys_mode.mode() == can::Mode::Manual);
         v.sys_publish_tick();             // 0x011 zero #1 (baseline)
         CHECK(v.mtr.is_estop_active());

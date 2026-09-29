@@ -27,7 +27,7 @@
 \renewcommand{\footrulewidth}{0.4pt}
 \fancyhead[L]{\textbf{E-TRIKE SYSTEM WIRING MANUAL} $\cdot$ SYS ESP32-S3 PIN-TO-PIN}
 \fancyhead[R]{\textbf{REV 0.8.0-ALPHA}}
-\fancyfoot[L]{SYS ESP32-S3 Wiring Guide $\cdot$ Low CAN, Digital Inputs, ULN2803A \& Relays}
+\fancyfoot[L]{SYS ESP32-S3 Wiring Guide $\cdot$ Low CAN, Digital Inputs \& Relays}
 \fancyfoot[R]{Page \thepage\ of 2}
 
 \hypersetup{
@@ -91,6 +91,7 @@
 \textbf{CORE ELECTRICAL INVARIANTS \& CONNECTION RULES:}
 \begin{itemize}[leftmargin=1.3em, itemsep=1pt, topsep=1pt, parsep=0pt]
   \item \textbf{Active-LOW Inputs:} Every digital input connects directly between the assigned \textbf{GPIO} and \textbf{Common GND (0\,V)}. Internal MCU pull-up resistors ($\approx$3.3\,V) are active on all input pins.
+  \item \textbf{Active-LOW Outputs:} The 12\,V relay module is wired \textbf{directly} to the GPIO (no ULN2803A). A \textbf{LOW} GPIO energizes the relay (lamp ON); a HIGH GPIO turns it OFF. The firmware inverts its positive logic accordingly.
   \item \textbf{Strict Voltage Limit:} \textbf{NEVER connect +12\,V or external 3.3\,V to any GPIO pin.} Doing so destroys the ESP32-S3 SoC immediately.
   \item \textbf{Fail-Safe ESTOP Loop:} Must use a \textbf{Normally Closed (NC)} contact to GND. Disconnection, broken wire, or button push opens circuit $\rightarrow$ pulls to 3.3\,V $\rightarrow$ latches ESTOP.
   \item \textbf{Wiring Standard:} Use \textbf{22 AWG stranded wire} for all switch lines and CAN bus pairs.
@@ -107,8 +108,8 @@
 \midrule
 \textbf{GPIO 1} & ESTOP (\texttt{kEstopGpio}) & \textbf{NC Contacts} $\longleftrightarrow$ \textbf{Common GND} & \textbf{0\,V (Closed)} & \textbf{Open / Cut} $\rightarrow$ \textbf{ESTOP} \\
 \textbf{GPIO 2} & Brake (\texttt{kBrakeLeverGpio}) & \textbf{NO \& COM} $\longleftrightarrow$ \textbf{Common GND} & Open (3.3\,V) & Closed to GND $\rightarrow$ Active Brake \\
-\textbf{GPIO 41} & START (\texttt{kStartBtnGpio}) & \textbf{NC Button} $\longleftrightarrow$ \textbf{Common GND} & 0\,V (Closed) & Pressed / Open (3.3\,V) $\rightarrow$ Exits ESTOP \\
-\textbf{GPIO 11} & MODE (\texttt{kModeBtnGpio}) & \textbf{NO Button} $\longleftrightarrow$ \textbf{Common GND} & Open (3.3\,V) & Pressed to GND $\rightarrow$ Mode Toggle \\
+\textbf{GPIO 41} & START (\texttt{kStartBtnGpio}) & \textbf{NC Latching} $\longleftrightarrow$ \textbf{Common GND} & 0\,V (Closed) & Latch (open/3.3\,V) $\rightarrow$ Run enabled; release $\rightarrow$ Stop (not ESTOP) \\
+\textbf{GPIO 11} & MODE (\texttt{kModeBtnGpio}) & \textbf{NO Button} $\longleftrightarrow$ \textbf{Common GND} & Open (3.3\,V) & Pressed to GND $\rightarrow$ Mode Toggle; hold 5\,s $\rightarrow$ Validated reset \\
 \textbf{GPIO 42} & Dev Bypass (\texttt{DEV\_OVERRIDE}) & \textbf{SPST / Jumper} $\longleftrightarrow$ \textbf{Common GND} & Open (3.3\,V) & Closed to GND $\rightarrow$ Bench Mode \\
 \textbf{GPIO 9} & Left Turn (\texttt{kSwitchLeftTurn}) & \textbf{Switch Pin} $\longleftrightarrow$ \textbf{Common GND} & Open (3.3\,V) & Pressed to GND $\rightarrow$ Flasher ON \\
 \textbf{GPIO 6} & Right Turn (\texttt{kSwitchRightTurn}) & \textbf{Switch Pin} $\longleftrightarrow$ \textbf{Common GND} & Open (3.3\,V) & Pressed to GND $\rightarrow$ Flasher ON \\
@@ -155,7 +156,7 @@
 % ═════════════════════════════════════════════════════════════════════════════
 
 \begin{center}
-  {\large\bfseries PART 2: ULN2803A DRIVER, RELAY ACTUATORS \& POWER DISTRIBUTION}
+  {\large\bfseries PART 2: RELAY ACTUATORS, POLARITY \& POWER DISTRIBUTION}
 \end{center}
 \vspace{-8pt}
 
@@ -171,19 +172,20 @@ GPIO 19 and GPIO 20 are physically shared with the ESP32-S3 Native USB data line
 \begin{tcolorbox}[bwcard, title={4. Indicator \& Relay Module Wiring (Complete Pin-to-Pin \& Screw Terminals)}]
 \begin{tabularx}{\textwidth}{@{} C{0.8cm} L{3.3cm} C{1.8cm} C{2.2cm} L{3.8cm} Y @{}}
 \toprule
-\textbf{Ch.} & \textbf{Signal Name (Code)} & \textbf{ESP32 Pin} & \textbf{ULN2803A} & \textbf{Screw Terminals (COM/NO/NC)} & \textbf{Output Function / Lamp (+)} \\
+\textbf{Ch.} & \textbf{Signal Name (Code)} & \textbf{ESP32 Pin} & \textbf{Driver} & \textbf{Screw Terminals (COM/NO/NC)} & \textbf{Output Function / Lamp (+)} \\
 \midrule
-\textbf{K1} & AUTO (\texttt{kBulbAuto}) & \textbf{GPIO 48} & 1 $\rightarrow$ 18 & COM: +12\,V $\mid$ NO: Out $\mid$ NC: Open & 12\,V AUTO Mode Lamp (+) \\
-\textbf{K2} & MANUAL (\texttt{kBulbManual}) & \textbf{GPIO 39} & 2 $\rightarrow$ 17 & COM: +12\,V $\mid$ NO: Out $\mid$ NC: Open & 12\,V MANUAL Mode Lamp (+) \\
-\textbf{K3} & READY (\texttt{kBulbReady}) & \textbf{GPIO 17} & 3 $\rightarrow$ 16 & COM: +12\,V $\mid$ NO: Out $\mid$ NC: Open & 12\,V READY Green Lamp (+) \\
-\textbf{K4} & \textit{Reserved (USB D+)} & \textbf{GPIO 20} & 4 $\rightarrow$ 15 & \textbf{Leave All Terminals Open} & \textbf{DO NOT USE (Native USB D+)} \\
-\textbf{K5} & BYPASS (\texttt{kBulbBypass}) & \textbf{GPIO 14} & 5 $\rightarrow$ 14 & COM: +12\,V $\mid$ NO: Out $\mid$ NC: Open & 12\,V BYPASS Amber Lamp (+) \\
-\textbf{K6} & ESTOP (\texttt{kBulbEstop}) & \textbf{GPIO 18} & 6 $\rightarrow$ 13 & COM: +12\,V $\mid$ NO: Out $\mid$ NC: Open & 12\,V ESTOP Red Lamp (+) \\
-\textbf{K7} & \textit{Reserved (USB D-)} & \textbf{GPIO 19} & 7 $\rightarrow$ 12 & \textbf{Leave All Terminals Open} & \textbf{DO NOT USE (Native USB D-)} \\
-\textbf{K8} & Brake (\texttt{kLightBrake}) & \textbf{GPIO 21} & 8 $\rightarrow$ 11 & COM: +12\,V $\mid$ NO: Out $\mid$ NC: Open & 12\,V Rear Brake Light (+) \\
+\textbf{K1} & AUTO (\texttt{kBulbAuto}) & \textbf{GPIO 10} & Direct & COM: +12\,V $\mid$ NO: Out $\mid$ NC: Open & 12\,V AUTO Mode Lamp (+) \\
+\textbf{K2} & MANUAL (\texttt{kBulbManual}) & \textbf{GPIO 39} & Direct & COM: +12\,V $\mid$ NO: Out $\mid$ NC: Open & 12\,V MANUAL Mode Lamp (+) \\
+\textbf{K3} & READY (\texttt{kBulbReady}) & \textbf{GPIO 17} & Direct & COM: +12\,V $\mid$ NO: Out $\mid$ NC: Open & 12\,V READY Green Lamp (+) \\
+\textbf{K4} & \textit{Reserved (USB D+)} & \textbf{GPIO 20} & --- & \textbf{Leave All Terminals Open} & \textbf{DO NOT USE (Native USB D+)} \\
+\textbf{K5} & BYPASS (\texttt{kBulbBypass}) & \textbf{GPIO 14} & Direct & COM: +12\,V $\mid$ NO: Out $\mid$ NC: Open & 12\,V BYPASS Amber Lamp (+) \\
+\textbf{K6} & ESTOP (\texttt{kBulbEstop}) & \textbf{GPIO 18} & Direct & COM: +12\,V $\mid$ NO: Out $\mid$ NC: Open & 12\,V ESTOP Red Lamp (+) \\
+\textbf{K7} & \textit{Reserved (USB D-)} & \textbf{GPIO 19} & --- & \textbf{Leave All Terminals Open} & \textbf{DO NOT USE (Native USB D-)} \\
+\textbf{K8} & Brake (\texttt{kLightBrake}) & \textbf{GPIO 21} & Direct & COM: +12\,V $\mid$ NO: Out $\mid$ NC: Open & 12\,V Rear Brake Light (+) \\
 \midrule
 \multicolumn{6}{@{}p{\linewidth}@{}}{\textbf{Terminal Rules:} COM = +12\,V (Fused 5\,A Bus); NO = Switched +12\,V feed to Lamp (+); NC = Leave open/unused.} \\
-\multicolumn{6}{@{}p{\linewidth}@{}}{\textbf{Ground \& Supply:} All lamp negative ($-$) leads return to Common GND (0\,V). ULN Pin 9 $\rightarrow$ GND; Pin 10 $\rightarrow$ +12\,V Fused Rail.} \\
+\multicolumn{6}{@{}p{\linewidth}@{}}{\textbf{Ground \& Supply:} All lamp negative ($-$) leads return to Common GND (0\,V). Relay module GND $\rightarrow$ Common GND; VCC $\rightarrow$ +12\,V Fused Rail.} \\
+\multicolumn{6}{@{}p{\linewidth}@{}}{\textbf{Polarity:} Active-LOW relay driven directly (no ULN2803A): GPIO LOW = lamp ON. GPIO 48 is the onboard WS2812 data line --- never wire it to a relay.} \\
 \bottomrule
 \end{tabularx}
 \end{tcolorbox}
@@ -199,12 +201,10 @@ GPIO 19 and GPIO 20 are physically shared with the ESP32-S3 Native USB data line
   wire/.style={very thick, -{Latex[length=3.5pt]}}
 ]
   \node[box] (gpio) {\textbf{ESP32 GPIO}\\{\small (3.3\,V Output)}};
-  \node[box, right=0.9cm of gpio] (uln) {\textbf{ULN2803A}\\{\small (Pins 1--8 $\rightarrow$ 18--11)}};
-  \node[box, right=0.9cm of uln] (relay) {\textbf{12\,V Relay Module}\\{\small (Active-LOW Coil)}};
+  \node[box, right=0.9cm of gpio] (relay) {\textbf{12\,V Relay Module}\\{\small (Active-LOW Coil --- Direct)}};
   \node[box, right=0.9cm of relay] (lamp) {\textbf{12\,V Lamp / Load}\\{\small (Switched via \textbf{NO})}};
 
-  \draw[wire] (gpio) -- (uln);
-  \draw[wire] (uln) -- (relay);
+  \draw[wire] (gpio) -- (relay);
   \draw[wire] (relay) -- (lamp);
 \end{tikzpicture}
 

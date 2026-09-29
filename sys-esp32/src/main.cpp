@@ -104,6 +104,16 @@ static bool send_can(can::Frame& fr, const char* caller = "?") {
     return true;
 }
 
+// ── Relay/lamp output helper ────────────────────────────────────────
+// Single point of truth for output polarity. The vehicle has no ULN2803A and
+// uses an active-LOW relay module wired directly to the GPIO, so a LOW pin
+// energizes the relay (lamp ON). kRelayOutputActiveLow inverts the positive
+// logic used throughout the tasks.
+static inline void set_relay(int pin, bool on) {
+    const int level = (on ^ sys::kRelayOutputActiveLow) ? 1 : 0;
+    gpio_set_level(static_cast<gpio_num_t>(pin), level);
+}
+
 static bool send_estop_frame(const char* caller) {
     can::Frame frame;
     can::gen::SafetyEstop message{};
@@ -590,7 +600,8 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
         bool estop_hw = false;
         bool brake_lever = false;
 #else
-        bool estop_hw = (gpio_get_level(static_cast<gpio_num_t>(sys::kEstopGpio)) == 1);
+        bool estop_hw = (gpio_get_level(static_cast<gpio_num_t>(sys::kEstopGpio))
+                         == (sys::kEstopActiveHigh ? 1 : 0));
         bool brake_lever = (gpio_get_level(static_cast<gpio_num_t>(sys::kBrakeLeverGpio)) == 0);
 #endif
 
@@ -685,15 +696,30 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
         bool start_btn = false;
 #else
         bool mode_btn  = (gpio_get_level(static_cast<gpio_num_t>(sys::kModeBtnGpio)) == 0);
-        // START button is NC (normally closed to GND, pulled up): 0 = released/idle, 1 = pressed/open
-        bool start_btn = (gpio_get_level(static_cast<gpio_num_t>(sys::kStartBtnGpio)) == 1);
+        // START is a latching NC button to GND (pulled up): idle = LOW,
+        // latched/pressed = open = HIGH.
+        bool start_btn = (gpio_get_level(static_cast<gpio_num_t>(sys::kStartBtnGpio))
+                          == (sys::kStartPressedHigh ? 1 : 0));
 #endif
 
-        bool changed = g_mode_mgr.tick(mode_btn, start_btn);
-        // Issue #4 / gap #14: an operator reset (START button / MODE long-press)
-        // carries the system out of ESTOP. Open the reset-grace window so a
-        // 0x001 still in flight on the bus cannot instantly re-latch ESTOP
-        // (livelock). The harness shares this exact policy via sys::rx_estop_suppressed.
+        bool changed = g_mode_mgr.tick(mode_btn, start_btn, g_safety.estop_active());
+        // START run/enable latch: on release (unlatch) immediately zero the
+        // motion setpoints. resolve_authority() below drops 0x113 power and
+        // clamps 0x110 to MANUAL; this is a stop, never an ESTOP.
+        {
+            static bool was_run_enabled = false;
+            const bool run_now = g_mode_mgr.run_enabled();
+            if (was_run_enabled && !run_now) {
+                g_setpoint_speed_mmps.store(0, std::memory_order_relaxed);
+                g_setpoint_gear.store(0, std::memory_order_relaxed);
+                ESP_LOGW(TAG, "START released — run disabled (motion inhibited)");
+            }
+            was_run_enabled = run_now;
+        }
+        // Issue #4 / gap #14: an operator reset (MODE long-press) carries the
+        // system out of ESTOP. Open the reset-grace window so a 0x001 still in
+        // flight on the bus cannot instantly re-latch ESTOP (livelock). The
+        // harness shares this exact policy via sys::rx_estop_suppressed.
         if (mode_was_estop && g_mode_mgr.mode() != can::Mode::Estop) {
             sys::mark_estop_reset(static_cast<uint32_t>(pdTICKS_TO_MS(xTaskGetTickCount())));
             g_mtr_ack_watchdog.reset();
@@ -752,7 +778,8 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
             const bool power_req = hmi_valid
                 ? g_hmi_pwr_on.load(std::memory_order_relaxed) : true;
 
-            const auto auth = sys::resolve_authority(mode_is_estop, resolved_auto, power_req);
+            const auto auth = sys::resolve_authority(mode_is_estop, resolved_auto, power_req,
+                                                      g_mode_mgr.run_enabled());
 
             can::Frame fr_m;
             can::gen::SysModeCmd message{};
@@ -927,7 +954,7 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
         bool seb_braking = (seb_raw > 610);  // 610 raw ≈ 0.5mm
         auto out = g_lights.tick(mode, lever, bits, sw_L, sw_R, sw_H, seb_braking);
 #ifndef TESTING
-        gpio_set_level(static_cast<gpio_num_t>(sys::kLightBrake), out.brake_lamp ? 1 : 0);
+        set_relay(sys::kLightBrake, out.brake_lamp);
 #endif
 
         // Pack light output state for 0x011 byte 2 (v0.0.5 — CAN feedback)
@@ -950,8 +977,8 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
     while (1) {
         [[maybe_unused]] auto out = g_indicator.tick(g_mode_mgr.mode());
 #ifndef TESTING
-        gpio_set_level(static_cast<gpio_num_t>(sys::kBulbAuto), out.auto_bulb ? 1 : 0);
-        gpio_set_level(static_cast<gpio_num_t>(sys::kBulbManual), out.manual_bulb ? 1 : 0);
+        set_relay(sys::kBulbAuto, out.auto_bulb);
+        set_relay(sys::kBulbManual, out.manual_bulb);
 #endif
 
         // Green "ready" bulb: AUTO or MANUAL, RT alive, no brake/traction fault
@@ -963,11 +990,11 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
         [[maybe_unused]] bool estop = (mode == can::Mode::Estop);
 
 #ifndef TESTING
-        gpio_set_level(static_cast<gpio_num_t>(sys::kBulbReady), ready ? 1 : 0);
-        gpio_set_level(static_cast<gpio_num_t>(sys::kBulbEstop), estop ? 1 : 0);
-        gpio_set_level(static_cast<gpio_num_t>(sys::kBulbBypass), g_bench_solo_mode ? 1 : 0);
+        set_relay(sys::kBulbReady, ready);
+        set_relay(sys::kBulbEstop, estop);
+        set_relay(sys::kBulbBypass, g_bench_solo_mode);
         // Keep 12V accessory relay energized even during ESTOP so indicator bulbs remain visible
-        gpio_set_level(static_cast<gpio_num_t>(sys::kPower12vRelay), 1);
+        set_relay(sys::kPower12vRelay, true);
 #endif
 
         // Status LED Evaluation (25 Hz)
@@ -1230,13 +1257,15 @@ static void init_board_gpio() {
                                     | (1ULL << sys::kSwitchRightTurn)
                                     | (1ULL << sys::kSwitchHeadlight);
 
-    // Latch LOW before enabling output drivers so relay and lamp drivers do
-    // not receive an indeterminate boot pulse.
+    // Latch every output to its OFF level before enabling the drivers so no
+    // relay/lamp receives an indeterminate boot pulse. With an active-LOW
+    // relay module, "OFF" is a HIGH pin.
+    constexpr int kOutputOffLevel = sys::kRelayOutputActiveLow ? 1 : 0;
     for (int pin : {sys::kLightBrake,
                     sys::kBulbAuto, sys::kBulbManual,
                     sys::kBulbReady, sys::kBulbEstop, sys::kBulbBypass, sys::kPower12vRelay/*,
                     sys::kWdtToggleGpio*/}) {
-        ESP_ERROR_CHECK(gpio_set_level(static_cast<gpio_num_t>(pin), 0));
+        ESP_ERROR_CHECK(gpio_set_level(static_cast<gpio_num_t>(pin), kOutputOffLevel));
     }
 
     gpio_config_t outputs = {};
@@ -1248,7 +1277,7 @@ static void init_board_gpio() {
     ESP_ERROR_CHECK(gpio_config(&outputs));
 
     // Energize 12V accessory relay so that indicators and warning lamps have power
-    ESP_ERROR_CHECK(gpio_set_level(static_cast<gpio_num_t>(sys::kPower12vRelay), 1));
+    set_relay(sys::kPower12vRelay, true);
 
     gpio_config_t estop = {};
     estop.pin_bit_mask = 1ULL << sys::kEstopGpio;
@@ -1346,11 +1375,11 @@ extern "C" void app_main() {
 
     // Init status bulbs (green=ready, red=ESTOP, amber=bypass) — start ready/estop OFF, bypass reflects solo mode
     gpio_set_direction(static_cast<gpio_num_t>(sys::kBulbReady), GPIO_MODE_OUTPUT);
-    gpio_set_level(static_cast<gpio_num_t>(sys::kBulbReady), 0);
+    set_relay(sys::kBulbReady, false);
     gpio_set_direction(static_cast<gpio_num_t>(sys::kBulbEstop), GPIO_MODE_OUTPUT);
-    gpio_set_level(static_cast<gpio_num_t>(sys::kBulbEstop), 0);
+    set_relay(sys::kBulbEstop, false);
     gpio_set_direction(static_cast<gpio_num_t>(sys::kBulbBypass), GPIO_MODE_OUTPUT);
-    gpio_set_level(static_cast<gpio_num_t>(sys::kBulbBypass), g_bench_solo_mode ? 1 : 0);
+    set_relay(sys::kBulbBypass, g_bench_solo_mode);
 
 
     // 3. Create queues

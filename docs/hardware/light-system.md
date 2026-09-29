@@ -14,7 +14,7 @@ All lights controlled by SYS ESP32-S3. Design covers all modes: MANUAL, AUTO, ES
 | 4 | Headlight | -- | *(Removed)* | -- |
 | 5 | Reverse light | **TBD** | OUT — relay → 12V lamp | Non-safety |
 | 6 | Position/running lights | **TBD** | OUT — relay → 12V lamp | Non-safety |
-| 7 | AUTO mode bulb | 48 | OUT — relay → 12V bulb | Non-safety |
+| 7 | AUTO mode bulb | 10 | OUT — relay → 12V bulb | Non-safety |
 | 8 | MANUAL mode bulb | 39 | OUT — relay → 12V bulb | Non-safety |
 | 9 | ESTOP mode bulb | 18 | OUT — relay → 12V bulb | Safety-critical |
 
@@ -101,7 +101,7 @@ All turn signals OFF regardless of mode, switches, or CAN state.
 
 ---
 
-## 4. Headlight — GPIO10
+## 4. Headlight — removed
 
 | Mode | Control |
 |------|---------|
@@ -137,15 +137,15 @@ Optional CAN override: if `g_light_state.position_lights` (new bit in `0x302`) i
 
 ---
 
-## 7. Mode indicator bulbs — GPIO48/39/18
+## 7. Mode indicator bulbs — GPIO10/39/18
 
-| Mode | AUTO bulb (GPIO48) | MANUAL bulb (GPIO39) | ESTOP bulb (GPIO18) |
+| Mode | AUTO bulb (GPIO10) | MANUAL bulb (GPIO39) | ESTOP bulb (GPIO18) |
 |------|-------------------|---------------------|---------------------|
 | MANUAL | OFF | ON | OFF |
 | AUTO | ON | OFF | OFF |
 | ESTOP | OFF | OFF | ON |
 
-Both OFF = ESTOP (visually distinct from both MANUAL and AUTO). Bulbs powered from 12V accessory rail via relays — they go dark on ESTOP regardless of MCU state.
+Both OFF = ESTOP (visually distinct from both MANUAL and AUTO). Bulbs are driven through the active-LOW relay module directly from the GPIO (no ULN2803A): GPIO LOW = lamp ON. The 12V accessory relay (GPIO40) stays energized so the bulbs remain powered in every mode.
 
 ---
 
@@ -210,7 +210,7 @@ SYS receives `0x302` on low bus. It cannot tell whether the bits came from Jetso
 | AUTO bulb | OFF |
 | MANUAL bulb | OFF |
 
-All lamps except brake go dark. The 12V accessory relay (GPIO40) is cut on ESTOP, so all relay-driven lights lose power at the source regardless of MCU GPIO state.
+All lamps except brake go dark. The 12V accessory relay (GPIO40) stays energized in every mode (including ESTOP) so the indicator/status lamps remain powered; ESTOP is indicated by the red ESTOP bulb alone.
 
 ---
 

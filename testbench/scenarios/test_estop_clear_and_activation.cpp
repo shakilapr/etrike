@@ -26,8 +26,8 @@ bool test_estop_clear_with_transient_inflight_publishing() {
     bench.release_estop_button();
     bench.run_for_ms(50);
 
-    // 3. Operator initiates reset
-    bench.press_start_button();
+    // 3. Operator holds MODE 5 s to reset
+    bench.hold_mode_button_5s();
 
     // Simulate in-flight / trailing 0x001 frame arriving at +20 ms (e.g. delayed network transit)
     can::Frame fr = can::Frame::standard(can::kIdSafetyEstop, 0);
@@ -73,7 +73,7 @@ bool test_estop_clear_refused_when_continuously_publishing() {
 
     // 2. Continuous publisher keeps firing 0x001 every 20 ms
     // Operator attempts reset while frames are actively and continuously publishing
-    bench.press_start_button();
+    bench.hold_mode_button_5s();
 
     // Stream continuous frames for 800 ms (past 500 ms grace window)
     for (int t = 0; t < 40; ++t) {
@@ -126,8 +126,8 @@ bool test_estop_clear_does_not_mean_controllers_active() {
     bench.release_estop_button();
     bench.run_for_ms(50);
 
-    // 4. Operator presses START button -> ESTOP signal clears
-    bench.press_start_button();
+    // 4. Operator holds MODE 5 s -> ESTOP signal clears
+    bench.hold_mode_button_5s();
     bench.run_for_ms(50); // Just enough for 2 frames of 0x011=0 to arrive
 
     // ── INSPECT CONTROLLER STATES IMMEDIATELY AFTER ESTOP CLEAR ───────

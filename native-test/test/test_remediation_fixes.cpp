@@ -242,11 +242,15 @@ void test_issue4_estop_latched_predicate(void) {
     TEST_ASSERT(Mode::Estop == mm.mode(), "CAN cannot exit ESTOP");
     TEST_ASSERT(ModeManager::estop_latched(mm.mode(), false), "still latched after CAN mode cmd");
 
-    // Physical START-button reset exits ESTOP; only then may the published
-    // bit drop to 0 so RT/MTR can begin their confirmed two-frame clear.
-    mm.tick(/*mode_btn=*/false, /*start_btn=*/true);  // START press
-    mm.tick(/*mode_btn=*/false, /*start_btn=*/false); // debounce settle
-    TEST_ASSERT(Mode::Manual == mm.mode(), "START button exits ESTOP");
+    // MODE 5 s validated reset exits ESTOP; only then may the published bit
+    // drop to 0 so RT/MTR can begin their confirmed two-frame clear. START is
+    // now a latching run/enable control, not a reset.
+    bool exited = false;
+    for (int i = 0; i < 55; ++i) {
+        if (mm.tick(/*mode_btn=*/true, /*start_btn=*/false)) { exited = true; break; }
+    }
+    TEST_ASSERT(exited, "MODE 5s exits ESTOP");
+    TEST_ASSERT(Mode::Manual == mm.mode(), "MODE 5s exits ESTOP");
     TEST_ASSERT(!ModeManager::estop_latched(mm.mode(), false),
                 "published bit drops only after explicit reset");
 }

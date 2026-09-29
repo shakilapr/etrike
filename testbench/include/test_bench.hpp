@@ -42,8 +42,9 @@ public:
 
     // Operator physical inputs
     void press_start_button();
+    void release_start_button();
     void press_mode_button();
-    void hold_mode_button_3s();
+    void hold_mode_button_5s();
     void press_estop_button();
     void release_estop_button();
     void power_off();

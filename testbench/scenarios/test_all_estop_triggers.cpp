@@ -5,7 +5,7 @@
 namespace testbench {
 
 // ── Trigger 1: Hardware ESTOP Button on SYS ──────────────────────────────
-// Tests: Physical button press -> refusal while held -> release -> START reset.
+// Tests: Physical button press -> refusal while held -> release -> MODE 5 s reset.
 bool test_estop_trigger_01_hw_button() {
     std::cout << "[ESTOP TRIGGER 01] Hardware ESTOP Button on SYS...\n";
     TestBench bench;
@@ -21,7 +21,7 @@ bool test_estop_trigger_01_hw_button() {
     assert(bench.mtr().dac_output() == 0);
 
     // 2. Refusal check: While button is physically depressed, attempt reset
-    bench.press_start_button();
+    bench.hold_mode_button_5s();
     bench.run_for_ms(100);
     assert(bench.sys().is_estop_latched());
     assert(bench.rt().is_estop_latched());
@@ -31,8 +31,8 @@ bool test_estop_trigger_01_hw_button() {
     bench.release_estop_button();
     bench.run_for_ms(50);
 
-    // 4. Operator reset: press START
-    bench.press_start_button();
+    // 4. Operator reset: hold MODE 5 s
+    bench.hold_mode_button_5s();
     bench.run_for_ms(200);
 
     assert(!bench.sys().is_estop_latched());
@@ -62,7 +62,7 @@ bool test_estop_trigger_02_remote_001_low_can() {
     assert(bench.mtr().is_estop_latched());
 
     // 2. Refusal check: Active repeating 0x001 spam
-    bench.press_start_button();
+    bench.hold_mode_button_5s();
     for (int t = 0; t < 70; ++t) {
         bench.low_can().send(NodeId::TEST_HARNESS, fr);
         bench.run_for_ms(10);
@@ -75,8 +75,8 @@ bool test_estop_trigger_02_remote_001_low_can() {
     // 3. Clear cause: stop spam and wait past reset grace window (500 ms)
     bench.run_for_ms(600);
 
-    // 4. Operator reset: press START
-    bench.press_start_button();
+    // 4. Operator reset: hold MODE 5 s
+    bench.hold_mode_button_5s();
     bench.run_for_ms(200);
 
     assert(!bench.sys().is_estop_latched());
@@ -106,7 +106,7 @@ bool test_estop_trigger_03_remote_001_high_can() {
     assert(bench.mtr().is_estop_latched());
 
     // 2. Refusal check: High CAN continues repeating 0x001 past grace window
-    bench.press_start_button();
+    bench.hold_mode_button_5s();
     for (int t = 0; t < 70; ++t) {
         bench.high_can().send(NodeId::HOST, fr);
         bench.run_for_ms(10);
@@ -118,8 +118,8 @@ bool test_estop_trigger_03_remote_001_high_can() {
     // 3. Clear cause: stop injection and wait past reset grace window
     bench.run_for_ms(600);
 
-    // 4. Operator reset: press START
-    bench.press_start_button();
+    // 4. Operator reset: hold MODE 5 s
+    bench.hold_mode_button_5s();
     bench.run_for_ms(200);
 
     assert(!bench.sys().is_estop_latched());
@@ -149,7 +149,7 @@ bool test_estop_trigger_04_seb_l3_fault() {
     assert(bench.mtr().dac_output() == 0);
 
     // 2. Refusal check: try reset while error_status == 3
-    bench.press_start_button();
+    bench.hold_mode_button_5s();
     bench.run_for_ms(100);
     assert(!bench.sys().is_estop_latched());
     assert(bench.sys().latched_faults() & sys::kLatchedSebL3);
@@ -158,8 +158,8 @@ bool test_estop_trigger_04_seb_l3_fault() {
     bench.seb().clear_fault();
     bench.run_for_ms(50);
 
-    // 4. Operator reset: press START
-    bench.press_start_button();
+    // 4. Operator reset: hold MODE 5 s
+    bench.hold_mode_button_5s();
     bench.run_for_ms(200);
 
     assert(!bench.sys().is_estop_latched());
@@ -190,7 +190,7 @@ bool test_estop_trigger_05_brake_following_error() {
     assert(bench.mtr().dac_output() == 0);
 
     // 2. Refusal check: try reset while actuator is still stuck
-    bench.press_start_button();
+    bench.hold_mode_button_5s();
     bench.run_for_ms(100);
     assert(!bench.sys().is_estop_latched());
     assert(bench.sys().latched_faults() & sys::kLatchedBrakeFollowing);
@@ -199,8 +199,8 @@ bool test_estop_trigger_05_brake_following_error() {
     bench.seb().clear_fault();
     bench.run_for_ms(100);
 
-    // 4. Operator reset: press START
-    bench.press_start_button();
+    // 4. Operator reset: hold MODE 5 s
+    bench.hold_mode_button_5s();
     bench.run_for_ms(200);
 
     assert(!bench.sys().is_estop_latched());
@@ -228,8 +228,8 @@ bool test_estop_trigger_06_rt_software_estop() {
     assert(bench.sys().is_estop_latched());
     assert(bench.mtr().is_estop_latched());
 
-    // 2. Refusal check: while RT internal condition is active, press START
-    bench.press_start_button();
+    // 2. Refusal check: while RT internal condition is active, hold MODE 5 s
+    bench.hold_mode_button_5s();
     bench.run_for_ms(100);
     assert(bench.rt().is_estop_latched());
 
@@ -237,8 +237,8 @@ bool test_estop_trigger_06_rt_software_estop() {
     bench.rt().clear_software_estop();
     bench.run_for_ms(50);
 
-    // 4. Operator reset: press START on SYS
-    bench.press_start_button();
+    // 4. Operator reset: hold MODE 5 s on SYS
+    bench.hold_mode_button_5s();
     bench.run_for_ms(200);
 
     assert(!bench.sys().is_estop_latched());
@@ -268,7 +268,7 @@ bool test_estop_trigger_07_rt_heartbeat_timeout() {
     assert(bench.mtr().is_estop_latched());
 
     // 2. Refusal check: try reset while heartbeat is still lost
-    bench.press_start_button();
+    bench.hold_mode_button_5s();
     bench.run_for_ms(100);
     assert(bench.sys().is_estop_latched());
 
@@ -276,8 +276,8 @@ bool test_estop_trigger_07_rt_heartbeat_timeout() {
     bench.low_can().clear_faults();
     bench.run_for_ms(100); // allow watchdog to refresh
 
-    // 4. Operator reset: press START
-    bench.press_start_button();
+    // 4. Operator reset: hold MODE 5 s
+    bench.hold_mode_button_5s();
     bench.run_for_ms(200);
 
     assert(!bench.sys().is_estop_latched());
@@ -310,7 +310,7 @@ bool test_estop_trigger_08_seb_0x731_err_info() {
 
     // 2. Refusal check: keep sending 0x731 L3 error
     bench.low_can().send(NodeId::SEB, fr);
-    bench.press_start_button();
+    bench.hold_mode_button_5s();
     bench.run_for_ms(100);
     assert(!bench.sys().is_estop_latched());
     assert(bench.sys().latched_faults() & sys::kLatchedSebL3);
@@ -319,8 +319,8 @@ bool test_estop_trigger_08_seb_0x731_err_info() {
     bench.seb().clear_fault();
     bench.run_for_ms(100);
 
-    // 4. Operator reset: press START
-    bench.press_start_button();
+    // 4. Operator reset: hold MODE 5 s
+    bench.hold_mode_button_5s();
     bench.run_for_ms(200);
 
     assert(!bench.sys().is_estop_latched());
@@ -348,8 +348,8 @@ bool test_estop_trigger_09_mtr_reported_estop() {
     assert(bench.sys().is_estop_latched());
     assert(bench.rt().is_estop_latched());
 
-    // 2. Operator reset: press START on SYS
-    bench.press_start_button();
+    // 2. Operator reset: hold MODE 5 s on SYS
+    bench.hold_mode_button_5s();
     bench.run_for_ms(200);
 
     assert(!bench.sys().is_estop_latched());
@@ -381,7 +381,7 @@ bool test_estop_trigger_10_multi_cause_simultaneous() {
     // 2. Refusal Check A: Release hardware button, but LEAVE SEB L3 active
     bench.release_estop_button();
     bench.run_for_ms(50);
-    bench.press_start_button();
+    bench.hold_mode_button_5s();
     bench.run_for_ms(100);
     // Must remain latched because SEB L3 is still active!
     assert(bench.sys().is_estop_latched());
@@ -391,7 +391,7 @@ bool test_estop_trigger_10_multi_cause_simultaneous() {
     bench.seb().clear_fault();
     bench.press_estop_button();
     bench.run_for_ms(50);
-    bench.press_start_button();
+    bench.hold_mode_button_5s();
     bench.run_for_ms(100);
     // Must remain latched because hardware button is active!
     assert(bench.sys().is_estop_latched());
@@ -400,8 +400,8 @@ bool test_estop_trigger_10_multi_cause_simultaneous() {
     bench.release_estop_button();
     bench.run_for_ms(50);
 
-    // 5. Operator reset: press START
-    bench.press_start_button();
+    // 5. Operator reset: hold MODE 5 s
+    bench.hold_mode_button_5s();
     bench.run_for_ms(200);
 
     assert(!bench.sys().is_estop_latched());
@@ -413,10 +413,10 @@ bool test_estop_trigger_10_multi_cause_simultaneous() {
     return true;
 }
 
-// ── Trigger 11: Alternative Reset via MODE Button 3-Second Long-Press ─────
-// Tests: Latched ESTOP cleared via 3.0s MODE button hold instead of START button.
+// ── Trigger 11: Alternative Reset via MODE Button 5-Second Long-Press ─────
+// Tests: Latched ESTOP cleared via 5.0s MODE button hold.
 bool test_estop_trigger_11_mode_longpress_reset() {
-    std::cout << "[ESTOP TRIGGER 11] Alternative Reset via MODE 3-Second Long-Press...\n";
+    std::cout << "[ESTOP TRIGGER 11] Alternative Reset via MODE 5-Second Long-Press...\n";
     TestBench bench;
     bench.boot();
     bench.run_for_ms(1500);
@@ -430,8 +430,8 @@ bool test_estop_trigger_11_mode_longpress_reset() {
     bench.release_estop_button();
     bench.run_for_ms(50);
 
-    // 3. Instead of START button, hold MODE button for 3.0 seconds
-    bench.hold_mode_button_3s();
+    // 3. Hold MODE button for 5.0 seconds
+    bench.hold_mode_button_5s();
     bench.run_for_ms(200);
 
     assert(!bench.sys().is_estop_latched());

@@ -6,7 +6,7 @@
 namespace testbench {
 
 // ── Test 1: ESTOP reset-loop test ──────────────────────────────────────────
-// Trigger ESTOP, remove cause, keep RT powered, press START.
+// Trigger ESTOP, remove cause, keep RT powered, hold MODE 5 s.
 // Verify SYS remains cleared long enough for RT to receive two 0x011=0 frames
 // and does not immediately re-enter ESTOP because RT rebroadcasts 0x001.
 bool test_01_estop_reset_loop() {
@@ -26,8 +26,8 @@ bool test_01_estop_reset_loop() {
     bench.release_estop_button();
     bench.run_for_ms(50);
 
-    // 3. Keep RT powered and press START button
-    bench.press_start_button();
+    // 3. Keep RT powered and hold MODE 5 s
+    bench.hold_mode_button_5s();
     bench.run_for_ms(200);
 
     // Verify SYS cleared and RT received two consecutive 0x011=0 clear frames
@@ -63,8 +63,8 @@ bool test_02_repeated_reset_attempts() {
         bench.release_estop_button();
         bench.run_for_ms(20 + (iter % 10));
 
-        // Press START reset
-        bench.press_start_button();
+        // Hold MODE 5 s reset
+        bench.hold_mode_button_5s();
         bench.run_for_ms(150 + (iter % 25));
 
         assert(!bench.sys().is_estop_latched());
@@ -97,15 +97,15 @@ bool test_03_rt_originated_estop_recovery() {
     bench.rt().clear_software_estop();
     bench.run_for_ms(50);
 
-    // Press START on SYS
-    bench.press_start_button();
+    // hold MODE 5 s on SYS
+    bench.hold_mode_button_5s();
     bench.run_for_ms(200);
 
     assert(!bench.sys().is_estop_latched());
     assert(!bench.rt().is_estop_latched());
     assert(!bench.mtr().is_estop_latched());
 
-    std::cout << "  -> PASS: RT-originated ESTOP cleared cleanly via SYS START button.\n";
+    std::cout << "  -> PASS: RT-originated ESTOP cleared cleanly via SYS MODE 5 s reset.\n";
     return true;
 }
 
@@ -126,7 +126,7 @@ bool test_04_remote_001_echo() {
     assert(high_001_count > 0); // Verified RT forwarded to High CAN
 
     bench.release_estop_button();
-    bench.press_start_button();
+    bench.hold_mode_button_5s();
     bench.run_for_ms(200);
 
     assert(!bench.sys().is_estop_latched());
@@ -157,7 +157,7 @@ bool test_05_persistent_001_spam() {
     }
 
     // Attempt reset while spam is continuously active
-    bench.press_start_button();
+    bench.hold_mode_button_5s();
     // Keep spamming for 600 ms (past the 500 ms reset grace window)
     for (int i = 0; i < 30; ++i) {
         bench.low_can().send(NodeId::TEST_HARNESS, estop_frame);
@@ -171,7 +171,7 @@ bool test_05_persistent_001_spam() {
     bench.run_for_ms(600);
 
     // Reset after spam stops -> must recover deterministically
-    bench.press_start_button();
+    bench.hold_mode_button_5s();
     bench.run_for_ms(200);
 
     assert(!bench.sys().is_estop_latched());
@@ -247,7 +247,7 @@ bool test_07_mtr_feedback_dropout_standstill() {
 
 // ── Test 8: MTR feedback recovery test ─────────────────────────────────────
 // After temporary 0x206 loss, restore 3 consecutive frames.
-// Verify recoverable inhibit clears automatically without operator START button reset.
+// Verify recoverable inhibit clears automatically without operator reset.
 bool test_08_mtr_feedback_recovery() {
     std::cout << "[TEST 08] Running MTR feedback recovery test...\n";
     TestBench bench;

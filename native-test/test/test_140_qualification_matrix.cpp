@@ -1108,20 +1108,24 @@ void test_082_physical_estop_bouncing_input(void) {
 }
 
 void test_083_start_button_bounce(void) {
+    // START is now a latching run/enable control and never resets ESTOP; a
+    // bouncing START must leave the ESTOP latch untouched. Recovery is MODE 5s.
     sys::ModeManager mm; mm.init();
     mm.force_estop();
     mm.tick(false, true);
     mm.tick(false, false);
     mm.tick(false, true);
+    TEST_ASSERT_EQUAL(can::Mode::Estop, mm.mode());
+    for (int i = 0; i < 51; ++i) mm.tick(true, false);
     TEST_ASSERT_EQUAL(can::Mode::Manual, mm.mode());
 }
 
 void test_084_mode_long_press_boundary(void) {
     sys::ModeManager mm; mm.init();
     mm.force_estop();
-    for (int i = 0; i < 29; ++i) mm.tick(true, false);
+    for (int i = 0; i < 49; ++i) mm.tick(true, false);
     TEST_ASSERT_EQUAL(can::Mode::Estop, mm.mode());
-    mm.tick(true, false);
+    mm.tick(true, false);   // 50th tick @ 10 Hz == 5 s boundary -> reset
     TEST_ASSERT_EQUAL(can::Mode::Manual, mm.mode());
 }
 
