@@ -637,6 +637,12 @@ class SesBenchHarnessV4:
             if abs(fb.driver_torque_nm) >= TORQUE_TAKEOVER_THRESH:
                 self.active_safety_event = f"HIGH_TORQUE: {fb.driver_torque_nm:.1f} Nm"
 
+            # Control Mode State Machine Supervision (Official: 0=Assist, 1=Angle, 2=Fault, 3=Driver Takeover)
+            if armed and fb.control_mode == 2:
+                self.trigger_emergency_stop("Actuator transitioned to Fault Mode (SES_Control_Mode_Status = 0x2).")
+            elif fb.control_mode == 3:
+                self.active_safety_event = "DRIVER_TAKEOVER: Mode=3 (Manual Intervention active)"
+
             # Critical L3 Fault Check
             if diag.has_l3_fault():
                 fault_str = ", ".join(diag.active_fault_list())
