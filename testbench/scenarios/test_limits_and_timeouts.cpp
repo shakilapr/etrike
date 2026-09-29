@@ -35,8 +35,9 @@ bool test_limit_steer_clamp_bare() {
     rm.set_op_mode(rm::OperatingMode::Bare);
 
     auto ses_angle = [&](float deg) -> int {
+        rm.init();
         rm.drive(1500, deg);
-        for (uint32_t t = 100; t <= 300; t += 10) { rm.step(t, 10); bus.tick(t, 10); }
+        for (uint32_t t = 100; t <= 500; t += 10) { rm.step(t, 10); bus.tick(t, 10); }
         can::Frame f;
         if (!last_frame(bus, 0x169, f)) return 0;
         can::custom::ses::Command c{};

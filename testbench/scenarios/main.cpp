@@ -139,7 +139,7 @@ int main(int argc, char* argv[]) {
     run_test("Trigger 08: SEB 0x731 L3 Error Info Frame", testbench::test_estop_trigger_08_seb_0x731_err_info);
     run_test("Trigger 09: MTR Reported ESTOP (0x206)", testbench::test_estop_trigger_09_mtr_reported_estop);
     run_test("Trigger 10: Multi-Cause Simultaneous ESTOP", testbench::test_estop_trigger_10_multi_cause_simultaneous);
-    run_test("Trigger 11: Alternative Reset via MODE 3s Long-Press", testbench::test_estop_trigger_11_mode_longpress_reset);
+    run_test("Trigger 11: Alternative Reset via MODE 5s Long-Press", testbench::test_estop_trigger_11_mode_longpress_reset);
 
     std::cout << "--- SECTION 3: Concurrent Publishing & Active State Invariants ---\n";
     run_test("Test 12: In-Flight / Transient 0x001 Publishing During Clear", testbench::test_estop_clear_with_transient_inflight_publishing);

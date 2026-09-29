@@ -171,14 +171,12 @@ RT strictly adheres to a lock-free design using `std::atomic` for sensor values 
 | **6** | Input | Switch R-Turn | Right turn signal switch on handlebars. |
 | **7** | Input | Switch Headlght| Headlight switch on handlebars. |
 | **17** | Output | Bulb READY | Green LED: System healthy & ready. |
-| **20** | Output | Bulb ESTOP | Red LED: ESTOP currently active. |
-| **48** | Output | Bulb AUTO | Auto mode indication LED. |
+| **18** | Output | Bulb ESTOP | Red LED: ESTOP currently active. |
+| **10** | Output | Bulb AUTO | Auto mode indication LED. |
 | **39** | Output | Bulb MANUAL | Manual mode indication LED. |
-| **10** | Output | Relay Headlght | Drives 12V headlight. |
-| **18** | Output | Relay Turn L | Drives 12V left turn signal. |
-| **19** | Output | Relay Turn R | Drives 12V right turn signal. |
+| **48** | Output | WS2812 RGB | Onboard addressable status LED. |
 | **21** | Output | Relay Brake | Drives 12V brake light. |
-| **40** | Output | Relay 12V Main | Controls non-safety 12V accessory power. |
+| **40** | Output | Relay 12V Main | Controls 12V accessory power (always-ON). |
 | **47** | Output | WDT Toggle | Toggles an external TPS3850 Hardware Watchdog. |
 
 ### 2.2 Internal Data Structures & Synchronization

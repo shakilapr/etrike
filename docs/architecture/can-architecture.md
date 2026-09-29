@@ -168,7 +168,7 @@ The vehicle operates under strict deterministic timing boundaries. Violations tr
 | `kSebHandoffGraceMs` | **500 ms** | SYS Brake Task | `0x7B9` (`VCU_SEB_REQ`) | Handoff window during MANUAL $\rightarrow$ AUTO transition for RT to claim `0x7B9` sole ownership. |
 | `kMtrEstopAckTimeoutMs` | *Retired* | SYS Safety Task| `0x206` (`MTR_MOTOR_FBK`) | *Retired*: MTR ESTOP ACK timeout removed; 0x001 broadcast directly enforces hardware ESTOP. |
 | `kDebounceMs` | **500 ms** | SYS Mode Manager| Physical Switch | Physical button debounce lock-out window. |
-| `kEstopLongPressMs` | **3000 ms** | SYS Mode Manager| MODE Button | Required hold duration on MODE button in ESTOP state to recover to MANUAL mode. |
+| `kEstopLongPressMs` | **5000 ms** | SYS Mode Manager| MODE Button | Required hold duration on MODE button in ESTOP state to recover to MANUAL mode. |
 | `kEstopRateLimitWindowMs`| **500 ms**| RT & SYS Safety| `0x001` (`SAFETY_ESTOP`) | Rolling window for rate-limiting ESTOP broadcasts (max 2 frames per 500ms). |
 | `kEstopBroadcastMinIntervalUs`| **250 ms**| Shared Safety | `0x001` (`SAFETY_ESTOP`) | Minimum 250,000 µs interval between `0x001` broadcasts per ECU node. |
 
@@ -273,7 +273,7 @@ The vehicle operates under strict deterministic timing boundaries. Violations tr
 - **BOOT State**: Initial power-on state. Peripheral initialization, NVS flash read, and hardware self-test occur. Suppresses missing heartbeat ESTOPs for 3000 ms (`kStartupGracePeriodMs`).
 - **MANUAL State**: Default operating mode. Rider handlebar switches control steering, throttle, and braking directly. High-CAN autonomous drive commands are ignored.
 - **AUTO State**: Autonomous drive mode. Activated via physical MODE button toggle or `0x111` (`HMI_MODE_REQ`). SYS delegates `0x7B9` (`VCU_SEB_REQ`) brake authority to RT while supervising safety.
-- **ESTOP State**: Emergency stop mode. Triggered by physical ESTOP button, software fault, or incoming `0x001` (`SAFETY_ESTOP`). Zeroes motor throttle, commands maximum SEB brake stroke ($27\text{ mm}$), and forces brake lamps ON. Recovery to MANUAL requires a physical START button press or 3-second long-press on the MODE button (`kEstopLongPressMs`).
+- **ESTOP State**: Emergency stop mode. Triggered by physical ESTOP button, software fault, or incoming `0x001` (`SAFETY_ESTOP`). Zeroes motor throttle, commands maximum SEB brake stroke ($27\text{ mm}$), and forces brake lamps ON. Recovery to MANUAL requires a 5-second long-press on the MODE button (`kEstopLongPressMs`) after physical ESTOP is released. (The latching START button acts as a run-enable switch once ESTOP is cleared, not an ESTOP exit mechanism).
 
 ---
 
@@ -808,11 +808,11 @@ To guarantee deterministic execution order and eliminate priority inversion acro
 - **Priority 3**: `tx_low` (Low-CAN TWAI TX), `tx_high` (High-CAN MCP2515 TX)
 - **Priority 1 (Lowest)**: `t_watchdog` (External Watchdog), `t_heartbeat` (10 Hz Dual Heartbeats)
 
-### SYS ESP32-S3 Task Architecture (12 Tasks)
+### SYS ESP32-S3 Task Architecture (11 Tasks)
 - **Priority 5 (Highest)**: `task_can_rx` (CAN RX Handler), `task_safety` (20 Hz Safety Supervisor)
 - **Priority 4**: `task_dispatch` (Internal Dispatcher), `task_mode` (Mode State Machine)
 - **Priority 3**: `task_gear` (50 Hz Gear Control), `task_brake` (50 Hz SEB Brake Arbitration), `task_lights` (Lighting Controller)
-- **Priority 2**: `task_indicator` (Turn Signal Blink Loop), `task_power` (12V Relay Control), `task_can_tx` (CAN TX Handler), `task_can_control` (CAN Bus Manager)
+- **Priority 2**: `task_indicator` (Turn Signal Blink Loop), `task_can_tx` (CAN TX Handler), `task_can_control` (CAN Bus Manager)
 - **Priority 1 (Lowest)**: `task_diag` (System Diagnostics), `task_hb` (10 Hz SYS Heartbeat)
 
 ---

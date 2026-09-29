@@ -273,18 +273,19 @@ Motor DAC and gear output are bench-only on SYS; no vehicle motor-actuation path
 
 | # | Signal | GPIO | Type | Connected To | Notes |
 |---|--------|------|------|-------------|-------|
-| 1 | AUTO Mode Bulb | 48 | Digital out | Lamp driver → 12 V | ESP GPIO must not drive the lamp directly. |
+| 1 | AUTO Mode Bulb | 10 | Digital out | Lamp driver → 12 V | Reassigned from GPIO 48 to dedicate 48 to WS2812. |
 | 2 | MANUAL Mode Bulb | 39 | Digital out | Lamp driver → 12 V | Conflicts with external JTAG use. |
 | 3 | READY Bulb | 17 | Digital out | Relay coil → 12 V | Green — system ready (AUTO/MANUAL, RT alive, no faults) |
-| 4 | ESTOP Bulb | 20 | Digital out | Relay coil → 12 V | Red — dedicated ESTOP indicator |
+| 4 | ESTOP Bulb | 18 | Digital out | Relay coil → 12 V | Red — dedicated ESTOP indicator (moved from 20 to avoid USB conflict) |
 | 5 | Bypass Indicator | 14 | Digital out | Lamp driver / LED → GND | Yellow/amber — developer override / safety bypass active |
-| 6 | 12V Power Relay | 40 | Digital out | Relay driver → 12 V | Accessory relay, opens in ESTOP. Conflicts with external JTAG use. |
+| 6 | 12V Power Relay | 40 | Digital out | Relay driver → 12 V | Accessory relay, energized at boot. Conflicts with external JTAG use. |
 | 7 | WDT Toggle | 47 | Digital out | TPS3850 WDI pin | Toggled at 20 Hz by safety task. |
+| 8 | WS2812 RGB | 48 | RMT / Data | Onboard addressable LED | Hardware status visual language. |
 
 ### 4.6 SYS — GPIO Quick Reference
 
 ```
-GPIO 1  : ESTOP button (NC from 3.3 V, external pull-down, active-low)
+GPIO 1  : ESTOP button (NC to GND, internal pull-up, active-high)
 GPIO 2  : Brake lever (active-low) → SEB via CAN 0x7B9
 GPIO 4  : CAN RX — low bus TWAI
 GPIO 5  : CAN TX — low bus TWAI
@@ -292,7 +293,7 @@ GPIO 6  : Right turn switch (active-low)
 GPIO 7  : Parking Gear sense (via voltage divider R1/R2)
 GPIO 8  : Reserved ignition output — not implemented
 GPIO 9  : Left turn switch (active-low)
-GPIO 10 : Speed sensor pulse input (via voltage divider R1/R2)
+GPIO 10 : AUTO mode bulb relay output
 GPIO 11 : MODE button (active-low) — publishes CAN 0x110
 GPIO 12 : Drive Gear sense (via voltage divider R1/R2)
 GPIO 13 : Reverse Gear sense (via voltage divider R1/R2)
@@ -300,16 +301,15 @@ GPIO 14 : Bypass indicator (yellow/amber) — active when safety checks bypassed
 GPIO 15 : ADS1115 I2C SCL (Throttle ADC)
 GPIO 16 : ADS1115 I2C SDA (Throttle ADC)
 GPIO 17 : READY bulb (green) — relay output
-GPIO 18 : Left turn lamp — relay output
+GPIO 18 : ESTOP bulb (red) — relay output
 GPIO 19 : Right turn lamp — relay output
-GPIO 20 : ESTOP bulb (red) — relay output
 GPIO 21 : Brake light — relay output
 GPIO 39 : MANUAL mode bulb — external JTAG conflict
-GPIO 40 : 12V accessory relay — external JTAG conflict
-GPIO 41 : START button (active-low) — external JTAG conflict
+GPIO 40 : 12V accessory relay (always ON) — external JTAG conflict
+GPIO 41 : START button (NC to GND, internal pull-up) — external JTAG conflict
 GPIO 42 : Mode 1 developer override (active-low, J3 pin 6) — external JTAG conflict
 GPIO 47 : WDT toggle → TPS3850 WDI (20 Hz)
-GPIO 48 : AUTO mode bulb — relay output
+GPIO 48 : Onboard WS2812 RGB LED (DevKitC-1)
 GPIO 33–37 : Unavailable on N16R8 octal-memory modules
 ```
 
@@ -783,7 +783,7 @@ Hardware/API mapping: CANalyst-II Ch0 = high bus and Ch1 = low bus. The smoke ID
 - [ ] Do not connect SYS throttle DAC, ADC, or gear I/O to a vehicle motor controller.
 - [ ] Signal switches: *(Side signals / Headlight removed)*
 - [ ] Lamp drivers: GPIO21 (Brake lamp) → relay or lamp-driver inputs; add coil suppression.
-- [ ] Indicator/accessory drivers: GPIO48 (AUTO), GPIO39 (MANUAL), GPIO18 (ESTOP), GPIO17 (READY), GPIO14 (BYPASS) → driver inputs; add coil suppression.
+- [ ] Indicator/accessory drivers: GPIO10 (AUTO), GPIO39 (MANUAL), GPIO18 (ESTOP), GPIO17 (READY), GPIO14 (BYPASS) → driver inputs; add coil suppression.
 - [ ] WDT: GPIO47 → TPS3850 WDI
 - [ ] Mode 1 only: GPIO42 (J3 pin 6) → GND. Remove for production and external JTAG.
 
@@ -860,7 +860,7 @@ GPIO 47 : MCP2515 INT                               [IN, falling edge]
 ### 18.2 SYS ESP32-S3
 
 ```
-GPIO 1  : ESTOP button (NC from 3.3 V, active-low)  [IN, 10k external pull-down]
+GPIO 1  : ESTOP button (NC to GND, internal pull-up, active-high) [IN, internal pull-up]
 GPIO 2  : Brake lever (NO, active-low)              [IN, internal pull-up]
 GPIO 4  : CAN RX — low bus TWAI                     [IN]
 GPIO 5  : CAN TX — low bus TWAI                     [OUT]
@@ -868,24 +868,23 @@ GPIO 6  : Right turn switch (NO, active-low)        [IN, internal pull-up]
 GPIO 7  : Parking Gear sense                        [IN, voltage divider R1/R2]
 GPIO 8  : Reserved ignition output                   [not implemented]
 GPIO 9  : Left turn switch (NO, active-low)         [IN, internal pull-up]
-GPIO 10 : Speed sensor pulse input                   [IN, voltage divider R1/R2]
+GPIO 10 : AUTO mode bulb relay output                [OUT, active-low relay module]
 GPIO 11 : MODE button (NO, active-low)              [IN, internal pull-up]
 GPIO 12 : Drive Gear sense                          [IN, voltage divider R1/R2]
 GPIO 13 : Reverse Gear sense                        [IN, voltage divider R1/R2]
-GPIO 14 : Bypass indicator (yellow/amber)           [OUT, active-high]
+GPIO 14 : Bypass indicator (yellow/amber)           [OUT]
 GPIO 15 : ADS1115 I2C SCL (Throttle ADC)            [I/O, I2C clock]
 GPIO 16 : ADS1115 I2C SDA (Throttle ADC)            [I/O, I2C data, addr 0x48]
-GPIO 17 : READY bulb (green) relay                  [OUT, active-high]
-GPIO 18 : Left turn lamp relay                      [OUT, active-high]
-GPIO 19 : Right turn lamp relay                     [OUT, active-high]
-GPIO 20 : ESTOP bulb (red) relay                    [OUT, active-high]
-GPIO 21 : Brake light relay                         [OUT, active-high]
-GPIO 47 : WDT toggle → TPS3850 WDI                  [OUT, 20 Hz]
-GPIO 48 : AUTO mode bulb relay                      [OUT, active-high]
-GPIO 39 : MANUAL mode bulb relay                    [OUT, active-high]
-GPIO 40 : 12V power relay                           [OUT, active-high]
-GPIO 41 : START button (NO, active-low)             [IN, internal pull-up]
+GPIO 17 : READY bulb (green) relay                  [OUT, active-low relay module]
+GPIO 18 : ESTOP bulb (red) relay                    [OUT, active-low relay module]
+GPIO 19 : Right turn lamp relay                     [OUT, active-low relay module]
+GPIO 21 : Brake light relay                         [OUT, active-low relay module]
+GPIO 39 : MANUAL mode bulb relay                    [OUT, active-low relay module]
+GPIO 40 : 12V power relay (always ON)               [OUT, active-low relay module]
+GPIO 41 : START button (NC to GND, internal pull-up)[IN, internal pull-up]
 GPIO 42 : Mode 1 developer override                 [IN, active-low, internal pull-up]
+GPIO 47 : WDT toggle → TPS3850 WDI                  [OUT, 20 Hz]
+GPIO 48 : Onboard WS2812 RGB LED (DevKitC-1)        [OUT, RMT]
 GPIO 33–37 : Octal flash/PSRAM interface            [unavailable on N16R8]
 ```
 

@@ -48,7 +48,7 @@ ESTOP is the system's **absorbing safety state**. When entered, all actuators re
 | # | Principle | Implementation |
 |---|-----------|---------------|
 | 1 | **ESTOP bypasses queues.** | Safety task preempts and writes directly to actuators ? no queue delay. |
-| 2 | **ESTOP is an absorbing state.** | Once entered, only deliberate human action (START button or power-cycle) exits. No automatic recovery, no CAN exit. |
+| 2 | **ESTOP is an absorbing state.** | Once entered, only deliberate human action (MODE 5s long-press after button release, or power-cycle) exits. No automatic recovery, no CAN exit. |
 | 3 | **ESTOP exit goes to MANUAL, never AUTO.** | Rider resumes direct control after any emergency. |
 | 4 | **NC wiring for all safety inputs.** | Cut wires and disconnected plugs read as ESTOP, not "everything fine." |
 | 5 | **Threshold + duration for all fault checks.** | Single-sample glitches don't trigger ESTOP ? faults must persist. |
@@ -60,10 +60,10 @@ ESTOP is the system's **absorbing safety state**. When entered, all actuators re
 
 | Control | GPIO | Type | Function |
 |---------|------|------|----------|
-| **ESTOP button** | SYS GPIO1, MTR kEstopGpio (TBD STM32 pin) | NC (normally-closed), active-low, red mushroom | Press ? ESTOP. Dual-path to independent MCUs. |
-| **START button** | SYS GPIO41 | Momentary, green | ESTOP ? MANUAL. Short press in STEER_FAULT resets steering SM. Long press (3s) + throttle zero ? force-activate steering at 0? (MANUAL only). |
-| **MODE button** | SYS GPIO11 | Momentary | Toggle MANUAL?AUTO. Short press ignored in ESTOP. Long press (3s) in ESTOP ? MANUAL (secondary exit path). |
-| **Brake lever** | SYS GPIO2 | Digital input | Always works. SYS ? CAN 0x7B9 ? SEB. Has priority over Jetson brake commands in AUTO. |
+| **ESTOP button** | SYS GPIO1, MTR kEstopGpio | NC (normally-closed), active-low, red mushroom | Press → ESTOP. Dual-path to independent MCUs. |
+| **START button** | SYS GPIO41 | Latching, green | Run-enable switch (NC contact to GND with pull-up). Latched = run enabled; released = stop. Does NOT reset ESTOP. |
+| **MODE button** | SYS GPIO11 | Momentary | Toggle MANUAL↔AUTO. Short press ignored in ESTOP. Long press (5s, `kEstopLongPressMs`) in ESTOP → MANUAL (validated reset). |
+| **Brake lever** | SYS GPIO2 | Digital input | Always works. SYS → CAN 0x7B9 → SEB. Has priority over Jetson brake commands in AUTO. |
 
 ### ESTOP as Absorbing State
 
@@ -76,11 +76,12 @@ MANUAL ???? AUTO          (MODE button toggle)
  ????????????????
  ?    ESTOP     ?  ??? absorbing state
  ????????????????
-        ?
-        ? START button (GPIO41) or MODE long-press 3s (GPIO11)
-        ? ? always goes to MANUAL, never AUTO
-        ? Power-cycle ? MANUAL (ultimate fallback)
-        ?
+        │
+        │ MODE button long-press 5s (GPIO11) after ESTOP released
+        │ └─► always goes to MANUAL, never AUTO
+        │ START button engaged ─► Run enabled (after ESTOP cleared)
+        │ Power-cycle ─► MANUAL (ultimate fallback)
+        │
       MANUAL
 ```
 
@@ -246,9 +247,9 @@ TWAI TEC > 255 (bus-off condition) ? log, auto-recover. ESTOP if persistent. Dur
 
 | Path | Trigger | Result |
 |------|---------|--------|
-| **Primary** | START button (GPIO41) short press | ESTOP ? MANUAL |
-| **Secondary** | MODE button (GPIO11) long-press 3 seconds | ESTOP ? MANUAL |
-| **Ultimate fallback** | Power-cycle (key OFF ? ON) | Boot ? MANUAL |
+| **Primary** | MODE button (GPIO11) long-press 5 seconds (`kEstopLongPressMs`) after physical ESTOP released | ESTOP → MANUAL |
+| **Ultimate fallback** | Power-cycle (key OFF → ON) | Boot → MANUAL |
+| **Run Enable** | START button (GPIO41) latched | Enables run authority (after ESTOP cleared) |
 
 ### NOT valid exit paths
 - CAN command (any ID)
@@ -262,11 +263,12 @@ Ensures no single button failure locks the rider in ESTOP.
 ### ESTOP Exit Sequence (detailed)
 
 ```
-1. Rider presses START button (GPIO41) or holds MODE button 3s (GPIO11).
+1. Rider releases physical ESTOP button, then holds MODE button for 5s (`kEstopLongPressMs`, GPIO11).
 2. Brake transitions from max stroke to lever-controlled immediately.
-   (Rider can release brake lever ? brake follows lever position.)
-3. Motor and gear transition to MANUAL pass-through immediately.
-   (Throttle grip ? ADC ? CAN ? MTR ? DAC. Gear selector ? relays.)
+   (Rider can release brake lever → brake follows lever position.)
+3. Rider engages latching START button (GPIO41) to enable run authority.
+4. Motor and gear transition to MANUAL pass-through immediately.
+   (Throttle grip → ADC → CAN → MTR → DAC. Gear selector → relays.)
 4. Steering ramp completion (non-obstacle ESTOP only):
    - RT continues centering ramp at 20?/s via active 0x169 until 0? reached.
    - Mode transition for steering is DEFERRED until ramp completes.
@@ -292,7 +294,7 @@ Without the deferral, pressing START mid-ramp would stop `0x169` transmission im
 if (m_mode == can::Mode::Estop) {
     if (mode_btn_pressed) {
         if (++m_estop_longpress_ctr >= (kEstopLongPressMs / 100)) {
-            // kEstopLongPressMs = 3000, so ?30 ticks
+            // kEstopLongPressMs = 5000, so 50 ticks @ 10Hz
             set_mode(can::Mode::Manual);
             m_estop_longpress_ctr = 0;
             return true;  // caller sends CAN 0x110
@@ -570,35 +572,42 @@ ESTOP  ? MANUAL (START button short press, MODE button long-press 3s, or power-c
 | Gear | Selector ? TLP281 ? MTR relays | Jetson 0x300 gear ? MTR relays | All OFF (Neutral) |
 | Lights | Handlebar switches ? GPIOs | Jetson 0x302 ? GPIOs | Brake ON, all others OFF |
 | DC-DC | ON | ON | ON (MCUs need power) |
-| 12V Relay | ON | ON | OFF (non-safety loads cut) |
+| 12V Relay | ON | ON | ON (auxiliary power rail maintained) |
 
 ### Implementation Pattern
 
 ```cpp
 // SYS mode_manager.cpp
-// MODE button toggles MANUAL?AUTO, ignored in ESTOP.
-// START button exits ESTOP?MANUAL.
-// MODE long-press (3s) exits ESTOP?MANUAL (secondary path).
+// MODE button toggles MANUAL↔AUTO, ignored in ESTOP.
+// MODE long-press (5s, kEstopLongPressMs) resets ESTOP→MANUAL once physical ESTOP released.
+// START button acts as a run/enable latch (rising edge = run enabled, falling edge = stop).
 
-bool ModeManager::tick(bool mode_btn_pressed, bool start_btn_pressed) {
-    // MODE button long-press (3s) in ESTOP ? MANUAL (gap #11)
-    if (m_mode == can::Mode::Estop) {
+bool ModeManager::tick(bool mode_btn_pressed, bool start_btn_pressed, bool hw_estop_active) {
+    // MODE button long-press (5s) in ESTOP → MANUAL (validated reset)
+    const bool reset_relevant = (m_mode == can::Mode::Estop) || sys::latched_fault_present();
+    if (reset_relevant && !hw_estop_active) {
         if (mode_btn_pressed) {
-            if (++m_estop_longpress_ctr >= (kEstopLongPressMs / 100)) {  // 30 ticks @10Hz
-                set_mode(can::Mode::Manual);
-                return true;
+            if (++m_estop_longpress_ctr >= (kEstopLongPressMs / 100)) {  // 50 ticks @ 10Hz
+                const bool ok = (m_mode == can::Mode::Estop)
+                                    ? try_exit_estop()
+                                    : reset_latched_faults_if_clearable();
+                if (ok) {
+                    m_estop_longpress_ctr = 0;
+                    return true;
+                }
             }
         } else {
             m_estop_longpress_ctr = 0;
         }
     }
-    
-    // START button falling edge ? ESTOP?MANUAL
-    if (falling_edge(m_prev_start_btn, start_btn_pressed)) {
-        if (m_mode == can::Mode::Estop) {
-            set_mode(can::Mode::Manual);
-            return true;
+
+    // START button: run/enable latch (NOT an ESTOP reset)
+    if (rising_edge(m_prev_start_btn, start_btn_pressed)) {
+        if (m_mode != can::Mode::Estop) {
+            m_run_enabled.store(true, std::memory_order_relaxed);
         }
+    } else if (falling_edge(m_prev_start_btn, start_btn_pressed)) {
+        m_run_enabled.store(false, std::memory_order_relaxed);
     }
     
     // MODE button falling edge ? toggle MANUAL?AUTO (ignored in ESTOP)
@@ -842,7 +851,7 @@ Level 1: Function Controller ? MTR STM32
 
 | Level | Trigger | Response | Reversible? |
 |-------|---------|----------|-------------|
-| **ESTOP** (full) | Button, CAN 0x001, heartbeat loss, follow err, SEB L3 | Full brake, motor kill, gear OFF, steering safe-state, 12V cut | START button only ? MANUAL |
+| **ESTOP** (full) | Button, CAN 0x001, heartbeat loss, follow err, SEB L3 | Full brake, motor kill, gear OFF, steering safe-state, 12V auxiliary maintained | MODE 5s long-press after button release → MANUAL |
 | **Assisted Stop** | Jetson heartbeat loss | Zero speed, moderate brake (2000 kPa), stop steering | Auto-recover when Jetson returns |
 | **Coast Stop** | Command staleness (0x300, 0x204) | Zero speed setpoint, gear N | Auto-recover when commands resume |
 | **Watchdog Reset** | MCU hang (external WDT fire) | Hardware reset ? safe state ? reboot ? MANUAL | Post-boot: MANUAL mode |
@@ -856,7 +865,7 @@ Level 1: Function Controller ? MTR STM32
 1. Vehicle stationary, MANUAL mode.
 2. Press ESTOP button.
 3. Verify: brake light ON, mode indicators OFF, throttle grip produces no response, gear selector produces no response.
-4. Press START button ? verify transition to MANUAL mode.
+4. Release ESTOP button, then long-press MODE button for 5s (`kEstopLongPressMs`) → verify transition to MANUAL mode. Engage START button to enable run.
 5. Verify: throttle and gear respond again.
 
 ### 15.2 CAN ESTOP Test
@@ -957,7 +966,7 @@ From `native-test/test/test_dual_heartbeat.cpp`:
 |----------|-------|-------------|
 | `kEstopGpio` | 1 | ESTOP button input |
 | `kBrakeLeverGpio` | 2 | Brake lever input |
-| `kStartBtnGpio` | 32 | START button (ESTOP exit) |
+| `kStartBtnGpio` | 41 | START button (run-enable latch) |
 | `kModeBtnGpio` | 11 | MODE button (toggle + long-press exit) |
 | `kHeartbeatIntervalMs` | 100 | SYS heartbeat at 10 Hz |
 | `kHeartbeatTimeoutMsRt` | 1000 | RT heartbeat loss timeout |
@@ -969,7 +978,7 @@ From `native-test/test/test_dual_heartbeat.cpp`:
 | `kBrakeFollowingErrRaw` | 60 | Brake following error = 3mm |
 | `kBrakeFollowingErrMs` | 100 | Brake error persistence |
 | `kSebStatusTimeoutMs` | 100 | SEB status staleness timeout |
-| `kEstopLongPressMs` | 3000 | MODE button long-press for ESTOP exit |
+| `kEstopLongPressMs` | 5000 | MODE button long-press for ESTOP exit |
 | `kMtrFbkStaleMs` | 200 | MTR feedback staleness timeout |
 | `kEstopRateLimitWindowMs` | 500 | ESTOP rate limit window |
 | `kEstopRateLimitMax` | 2 | Max ESTOP frames per window |

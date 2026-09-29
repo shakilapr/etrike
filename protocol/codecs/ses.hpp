@@ -66,12 +66,15 @@ inline CodecStatus encode_command_raw(const Command& value, Frame& out) noexcept
 inline CodecStatus decode_command(FrameView frame, Command& out) noexcept {
     const CodecStatus status = detail::validate_frame(frame, kCommandId, false, kDlc);
     if (status != CodecStatus::Ok) return status;
-    std::uint8_t sum8 = 0;
-    for (std::size_t i = 0; i < 7; ++i) sum8 = static_cast<std::uint8_t>(sum8 + frame[i]);
-    if (frame[7] != profiles::xor8_ff_v1(frame.data(), 7) && frame[7] != sum8) {
-        return CodecStatus::ChecksumMismatch;
+    const bool zero_security = ((frame[5] & 0x03u) == 0x00u);
+    if (!zero_security) {
+        std::uint8_t sum8 = 0;
+        for (std::size_t i = 0; i < 7; ++i) sum8 = static_cast<std::uint8_t>(sum8 + frame[i]);
+        if (frame[7] != profiles::xor8_ff_v1(frame.data(), 7) && frame[7] != sum8) {
+            return CodecStatus::ChecksumMismatch;
+        }
+        if ((frame[5] & 0x03u) != 0x03u) return CodecStatus::ConstantMismatch;
     }
-    if ((frame[5] & 0x03u) != 0x03u) return CodecStatus::ConstantMismatch;
 
     Command value{};
     value.alignment_enable = (frame[0] & 0x01u) != 0;

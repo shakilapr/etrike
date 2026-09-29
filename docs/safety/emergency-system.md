@@ -17,28 +17,28 @@ ESTOP is the system's **absorbing safety state**. When entered, all actuators re
 | **Brake (SEB)** | Stroke = max (~27 mm) | Full hydraulic brake pressure, 50 Hz CAN 0x7B9 |
 | **Steering (SES)** | Obstacle trigger: hold angle, silent-stop after 500ms. Non-obstacle: ramp to 0° at 20°/s via active 0x169. Fallback to silent-stop if following error persists >1s (mechanical jam). | Two-tier response — see §2.5 |
 | **DC-DC converter** | CAN 0x012 enable = **1** (maintains 12V for MCUs, CAN transceivers, and brake light — MCUs need power to run safety tasks) |
-| **12V accessory relay** | GPIO40 OFF (cuts headlight, turn signals, mode bulbs — non-safety loads) |
-| **Signal lights** | Brake light **ON** (powered from always-on DC-DC rail, not through accessory relay), all others OFF |
+| **12V accessory relay** | GPIO40 ON (energized unconditionally at boot to keep 12V auxiliary rail stable) |
+| **Signal lights** | Brake light **ON** (relay GPIO21 active), all others OFF |
 | **Mode indicators** | Both AUTO and MANUAL bulbs OFF | Dark dashboard = ESTOP |
 | **Throttle pass-through** | Ignored | ADC reads ignored, DAC forced to 0 |
 | **Gear pass-through** | Ignored | All gear relays forced OFF |
 
-### 1.2 ESTOP exit — START button with deferred steering ramp completion
+### 1.2 ESTOP exit — MODE button 5s long-press reset, START run-latch
 
-ESTOP can only be exited by pressing the **START button** (green, GPIO41 on SYS) or via **MODE button long-press** (GPIO11, 3-second hold). Both exit to **MANUAL mode** — the rider is always in direct control after an ESTOP, never in AUTO.
+ESTOP can only be exited via **MODE button long-press** (GPIO11, 5-second hold) once the physical ESTOP button is released. The vehicle exits to **MANUAL mode** — the rider is always in direct control after an ESTOP, never in AUTO. Once ESTOP is cleared, engaging the **START button** (latching push button, GPIO41) enables run authority.
 
-- **START button (GPIO41):** Short press exits ESTOP → MANUAL immediately (subject to steering ramp completion, see below).
-- **MODE button (GPIO11):** Long-press (3 seconds) exits ESTOP → MANUAL. This is the secondary exit path — two independent GPIOs on separate physical buttons ensure no single button failure locks the rider in ESTOP.
-- MODE button short-press is ignored in ESTOP (prevents accidental exit).
+- **MODE button (GPIO11):** Long-press (5 seconds) resets ESTOP → MANUAL mode once the physical ESTOP button has been released.
+- **START button (GPIO41):** Latching switch (NC contact to GND with internal pull-up) acting as a run/enable latch. Engaging START enables run authority; releasing START removes drive authority. START does NOT reset ESTOP.
+- MODE button short-press is ignored in ESTOP (prevents accidental exit). Short-press toggles MANUAL↔AUTO only when not in ESTOP.
 - CAN commands cannot exit ESTOP.
 - No automatic timeout recovery.
 - Power-cycle always exits ESTOP (reboot starts in MANUAL by default) — ultimate fallback.
 
 ```
-ESTOP exit: START button → MANUAL mode
-           MODE button long-press (3s) → MANUAL mode (secondary)
-           Power-cycle → MANUAL mode (ultimate fallback)
-           (NOT CAN command, NOT timeout)
+ESTOP exit: MODE button long-press (5s) → MANUAL mode
+            START button engaged → Run enabled (after ESTOP cleared)
+            Power-cycle → MANUAL mode (ultimate fallback)
+            (NOT CAN command, NOT timeout)
 ```
 
 **START button health monitoring:** The `diag_task` monitors ESTOP duration. If the vehicle remains in ESTOP for >30 seconds with no START button activity, a diagnostic flag is set in CAN `0x600 SYS_DIAG_RPT`. This catches a stuck or disconnected START button before the rider discovers it at roadside.
@@ -376,11 +376,11 @@ Level 1: Function Controller — MTR STM32
 
 | Trigger | Speed | Gear | Brake | Steering | DCDC | 12V | Lights | Exit |
 |---------|-------|------|-------|----------|------|-----|--------|------|
-| **ESTOP button** | 0V | N | Max | Obstacle: hold (dyn-clamped)→silent. Non-obstacle: ramp→0°. | ON (MCU power) | OFF (accessories) | Brake ON | START btn or MODE long-press → MANUAL |
-| **CAN 0x001** | 0V | N | Max | Same as button | ON | OFF | Brake ON | START btn or MODE long-press → MANUAL |
-| **RT heartbeat lost** | 0V | N | Max | Same as button | ON | OFF | Brake ON | START btn or MODE long-press → MANUAL |
-| **SYS heartbeat lost** | 0V (MTR kills locally) | N (MTR cuts locally) | Max (RT takes over 0x7B9) | SES timeout* (RT still alive in AUTO) | ON (RT alive) | OFF | Brake ON | SYS reboot → re-sync; MANUAL mode |
-| **Steering follow err** | 0V | N | Max | Obstacle: hold (dyn-clamped)→silent. Non-obstacle: ramp→0°. | ON | OFF | Brake ON | START btn or MODE long-press → MANUAL |
+| **ESTOP button** | 0V | N | Max | Obstacle: hold (dyn-clamped)→silent. Non-obstacle: ramp→0°. | ON (MCU power) | ON (accessories) | Brake ON | MODE 5s long-press → MANUAL |
+| **CAN 0x001** | 0V | N | Max | Same as button | ON | ON | Brake ON | MODE 5s long-press → MANUAL |
+| **RT heartbeat lost** | 0V | N | Max | Same as button | ON | ON | Brake ON | MODE 5s long-press → MANUAL |
+| **SYS heartbeat lost** | 0V (MTR kills locally) | N (MTR cuts locally) | Max (RT takes over 0x7B9) | SES timeout* (RT still alive in AUTO) | ON (RT alive) | ON | Brake ON | SYS reboot → re-sync; MANUAL mode |
+| **Steering follow err** | 0V | N | Max | Obstacle: hold (dyn-clamped)→silent. Non-obstacle: ramp→0°. | ON | ON | Brake ON | MODE 5s long-press → MANUAL |
 | **Jetson heartbeat lost** | 0 mm/s | N | Moderate brake (2 MPa via 0x205) | Stop 0x169 | ON | ON | Brake ON | Auto-recover on resume; MANUAL mode |
 | **0x300 stale (500ms)** | 0 mm/s (coast) | N | Lever only | Stop 0x169 | ON | ON | Normal | Auto-recover on resume |
 | **0x204 stale (200ms)** | 0 mm/s | N | Lever only | No change | ON | ON | Normal | Auto-recover on resume |
@@ -409,10 +409,11 @@ Level 1: Function Controller — MTR STM32
 
 1. **Stay seated and hold the handlebars.** The steering will either center itself or hold position.
 2. **The brake will engage automatically** — the vehicle will decelerate.
-3. **Do NOT press the MODE button** — it is ignored in ESTOP.
-4. **To recover:** Press the **green START button** (GPIO41). The vehicle will enter MANUAL mode.
-5. **Check surroundings** before releasing the brake lever and riding.
-6. **If START button doesn't work:** Power-cycle the vehicle (key switch). This always starts in MANUAL mode.
+3. **Release the physical ESTOP button** if it was pressed.
+4. **To recover:** Long-press the **MODE button** (GPIO11) for 5 seconds (`kEstopLongPressMs`). The vehicle will enter MANUAL mode.
+5. **Engage the START button** (latching push button, GPIO41) to enable run authority.
+6. **Check surroundings** before releasing the brake lever and riding.
+7. **If recovery fails:** Power-cycle the vehicle (key switch). This always starts in MANUAL mode.
 
 ### 7.3 If the vehicle behaves unexpectedly in AUTO
 
@@ -438,7 +439,7 @@ If the system reboots unexpectedly (watchdog fired):
 1. Vehicle stationary, MANUAL mode.
 2. Press ESTOP button.
 3. Verify: brake light ON, mode indicators OFF, throttle grip produces no response, gear selector produces no response.
-4. Press START button → verify transition to MANUAL mode.
+4. Release ESTOP button, then long-press MODE button for 5s → verify transition to MANUAL mode. Engage START button to enable run.
 5. Verify: throttle and gear respond again.
 
 ### 8.2 CAN ESTOP Test
@@ -489,7 +490,7 @@ If the system reboots unexpectedly (watchdog fired):
 ## 9. Design Principles
 
 1. **ESTOP bypasses queues.** The safety task preempts and writes directly to actuators — no queue delay.
-2. **ESTOP is an absorbing state.** Once entered, only deliberate human action (START button or power-cycle) exits.
+2. **ESTOP is an absorbing state.** Once entered, only deliberate human action (MODE 5s long-press after button release, or power-cycle) exits.
 3. **ESTOP exit goes to MANUAL, never AUTO.** The rider resumes direct control after any emergency.
 4. **NC wiring for all safety inputs.** Cut wires and disconnected plugs read as ESTOP, not "everything fine."
 5. **Threshold + duration for all fault checks.** Single-sample glitches don't trigger ESTOP — faults must persist.

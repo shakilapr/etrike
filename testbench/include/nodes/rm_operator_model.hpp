@@ -65,6 +65,7 @@ private:
     rm::RcSnapshot snap_{};
     rm::CanEmitter emitter_{};
     uint32_t last_tx_ms_{0};
+    uint32_t last_now_ms_{0};
     bool enabled_{false};
 };
 

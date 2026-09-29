@@ -36,7 +36,7 @@ The protocol follows the principle: **One CAN ID = One Sender per Bus** to elimi
 ### Mode State Machine & Authority
 1. **Mode Authority**: SYS is the single source of truth for system mode ([ModeManager](file:///e:/work/etrike/sys-esp32/src/mode_manager.cpp#L15-L68)). Mode transitions occur on SYS via:
    - **Rider Controls**: Physical MODE button toggle (`MANUAL` $\leftrightarrow$ `AUTO`).
-   - **ESTOP Recovery**: START button press or 3-second long-press of the MODE button in `ESTOP` mode transitions the vehicle to `MANUAL`.
+   - **ESTOP Recovery**: 5-second long-press of the MODE button (`kEstopLongPressMs`) after physical ESTOP release transitions the vehicle to `MANUAL`. Engaging the START button enables run authority.
    - **HMI Network Commands**: `HMI_MODE_REQ` (`0x111`) from High-CAN bridged to SYS.
 2. **Mode Broadcast**: SYS broadcasts its state via `SYS_MODE_CMD` (`0x110`).
 3. **RT Mode Adoption**: When RT receives `0x110`, [can_dispatch.h](file:///e:/work/etrike/rt-esp32/src/can_dispatch.h#L240) enqueues a `SafetyEvent::MODE_CHANGE` into RT's 100 Hz control loop queue ([safety_monitor.h](file:///e:/work/etrike/rt-esp32/src/safety_monitor.h#L28-L35)). RT updates its internal mode to match SYS.

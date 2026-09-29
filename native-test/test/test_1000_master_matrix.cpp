@@ -273,23 +273,22 @@ void test_t1_171_to_210_reset_atomicity_and_active_faults(void) {
         g_harness.sys_mode.force_estop();
         TEST_ASSERT_EQUAL(can::Mode::Estop, g_harness.sys_mode.mode());
 
-        // Operator presses START to attempt reset while L3 is still active.
+        // Operator attempts reset while L3 is still active (5s MODE hold).
         // Validated reset (try_exit_estop) MUST refuse: it must not leave ESTOP
         // nor clear a latched fault whose cause is still asserted (no false-clear
-        // 0x011). This is the corrected behavior — the old code illegally
-        // transitioned to Manual here.
+        // 0x011).
         for (int d = 0; d < 6; ++d) g_harness.sys_mode.tick(false, false);
-        g_harness.sys_mode.tick(/*mode=*/false, /*start=*/true);
+        for (int d = 0; d < 51; ++d) g_harness.sys_mode.tick(/*mode=*/true, /*start=*/false);
         g_harness.sys_mode.tick(/*mode=*/false, /*start=*/false);
 
         TEST_ASSERT_EQUAL(can::Mode::Estop, g_harness.sys_mode.mode());
         TEST_ASSERT_TRUE(sys::latched_fault_present());
 
-        // When the cause becomes healthy, try_exit_estop clears the latch
+        // When the cause becomes healthy, holding MODE 5s clears the latch
         // atomically and transitions to Manual — no manual latch clear needed.
         g_seb_error_status.store(0);
         for (int d = 0; d < 6; ++d) g_harness.sys_mode.tick(false, false);
-        g_harness.sys_mode.tick(/*mode=*/false, /*start=*/true);
+        for (int d = 0; d < 51; ++d) g_harness.sys_mode.tick(/*mode=*/true, /*start=*/false);
         g_harness.sys_mode.tick(/*mode=*/false, /*start=*/false);
         TEST_ASSERT_EQUAL(can::Mode::Manual, g_harness.sys_mode.mode());
         TEST_ASSERT_FALSE(sys::latched_fault_present());

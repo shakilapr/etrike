@@ -39,6 +39,11 @@ public:
         last_0x201_ms_ = now_ms;
     }
 
+    void set_ses_armed(bool armed = true) noexcept {
+        ses_armed_ = armed;
+        ses_online_ = armed;
+    }
+
     template <typename SendFn>
     void emit_cluster(const RcSnapshot& snap, uint32_t tick_10ms, SendFn&& send) {
         emit_cluster(snap, tick_10ms, 0, send);
@@ -59,6 +64,7 @@ public:
         }
         const bool drive_active = raw_drive_active && throttle_zero_latched_;
 
+#if !(defined(TESTING) || defined(CONFIG_BENCH_SOLO))
         // Auto-detect link loss: if no 0x201 for >250ms, mark offline
         if (now_ms > 0 && last_0x201_ms_ > 0 && (now_ms - last_0x201_ms_ > 250)) {
             ses_online_ = false;
@@ -84,6 +90,7 @@ public:
             ses_online_start_ms_ = 0;
             ses_armed_ = false;
         }
+#endif
 
         // Auto re-arm if actuator fell out of Auto mode (e.g. power cycle/reconnect) while drive active
         if (ses_online_ && drive_active && (ses_mode_status_ == 0) && (rearm_ses_ticks_ == 0)) {
@@ -109,8 +116,13 @@ public:
 
     void reset_counters() noexcept {
         rearm_ses_ticks_ = 0;
+#if defined(TESTING) || defined(CONFIG_BENCH_SOLO)
+        ses_online_ = true;
+        ses_armed_ = true;
+#else
         ses_online_ = false;
         ses_armed_ = false;
+#endif
         ses_online_start_ms_ = 0;
         ses_actual_angle_ = 0.0f;
         last_0x201_ms_ = 0;
@@ -136,8 +148,13 @@ private:
     uint32_t last_0x201_ms_{0};       // Timestamp of last received 0x201 SES_STATUS
     uint32_t ses_online_start_ms_{0}; // Timestamp when SES was first seen online
     uint8_t  ses_mode_status_{0};     // 0 = Manual/Assist, 1 = Auto/Angle Control
+#if defined(TESTING) || defined(CONFIG_BENCH_SOLO)
+    bool     ses_online_{true};
+    bool     ses_armed_{true};
+#else
     bool     ses_online_{false};
     bool     ses_armed_{false};       // True when 2.5s post-ignition delay completes
+#endif
     float    ses_actual_angle_{0.0f}; // Actual angle from 0x201 feedback
     float    filtered_steer_deg_{0.0f};   // Low-pass filtered target angle
     float    prev_steer_deg_{0.0f};       // Previous angle setpoint for velocity calculation

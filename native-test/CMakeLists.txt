@@ -490,14 +490,14 @@ if(WIN32 AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
   target_link_options(sim_engine_native PRIVATE -static)
 endif()
 
-# ── RM-ESP32-T12D SBUS Suite ─────────────────────────────────────────
+# ── RM-ESP32 SBUS Suite ─────────────────────────────────────────────
 add_executable(rm_t12d_suite
-    ${ETRIKE_ROOT}/rm-esp32-t12d/test/test_rm_t12d_suite.cpp
-    ${ETRIKE_ROOT}/rm-esp32-t12d/src/sbus_parser.cpp
+    ${ETRIKE_ROOT}/rm-esp32/test/test_rm_t12d_suite.cpp
+    ${ETRIKE_ROOT}/rm-esp32/src/sbus_parser.cpp
 )
 target_link_libraries(rm_t12d_suite PRIVATE protocol_headers)
 target_include_directories(rm_t12d_suite PRIVATE
-    ${ETRIKE_ROOT}/rm-esp32-t12d/src
+    ${ETRIKE_ROOT}/rm-esp32/src
     ${ETRIKE_ROOT}
     ${ETRIKE_ROOT}/shared
 )

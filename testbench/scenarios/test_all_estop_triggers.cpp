@@ -439,7 +439,7 @@ bool test_estop_trigger_11_mode_longpress_reset() {
     assert(!bench.rt().is_estop_latched());
     assert(!bench.mtr().is_estop_latched());
 
-    std::cout << "  -> PASS: MODE 3-second long-press reset verified successfully.\n";
+    std::cout << "  -> PASS: MODE 5-second long-press reset verified successfully.\n";
     return true;
 }
 

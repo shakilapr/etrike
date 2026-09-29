@@ -1469,9 +1469,8 @@ constexpr int kSwitchLeftTurn = 3, kSwitchRightTurn = 6, kSwitchHeadlight = 7;
 // Light outputs
 constexpr int kLightLeftTurn = 18, kLightRightTurn = 19;
 constexpr int kLightBrake = 21, kLightHead = 22;
-// Indicators & power
-constexpr int kBulbAuto = 25, kBulbManual = 26, kPower12vRelay = 27;
-constexpr int kModeBtnGpio = 11, kStartBtnGpio = 32;
+constexpr int kBulbAuto = 10, kBulbManual = 39, kPower12vRelay = 40;
+constexpr int kModeBtnGpio = 11, kStartBtnGpio = 41;
 constexpr int kDebounceMs = 500;         // push button debounce period
 // Turn blink
 constexpr int kTurnBlinkOnMs = 500, kTurnBlinkOffMs = 500;
@@ -1581,9 +1580,9 @@ SYS is the safety controller and body control module. It monitors ESTOP, heartbe
 | 12V accessory relay | 27 | Out | Secondary power cut on ESTOP |
 | WDT toggle | 23 | Out, 20 Hz | TPS3850 external watchdog |
 
-**What SYS manipulates:** ESTOP state (from GPIO1, CAN 0x001, or RT heartbeat loss), mode state (from MODE button or START button), brake command (stroke from lever or pressure from 0x205), motor setpoint (from 0x204 or ADC pass-through), light state (from 0x302 or handlebar switches), gear state (from 0x204 or TLP281 mirroring), DC-DC enable (always ON).
+**What SYS manipulates:** ESTOP state (from GPIO1, CAN 0x001, or RT heartbeat loss), mode state (from MODE button long-press 5s for reset or short-press toggle, and START run-latch), brake command (stroke from lever or pressure from 0x205), motor setpoint (from 0x204 or ADC pass-through), light state (from 0x302 or handlebar switches), gear state (from 0x204 or TLP281 mirroring), DC-DC enable (always ON).
 
-**What SYS controls:** SEB brake actuator via `0x7B9` (Stroke Mode for lever/ESTOP, Pressure Mode for AUTO 0x205), motor throttle via MCP4725 DAC (0–5V analog), motor gear via relay module (72V D/S/R lines), DC-DC converter via `0x012`, 12V accessory relay via GPIO40 (OFF on ESTOP), signal lights via GPIO 18/19/21/22, mode indicator bulbs via GPIO 48/26.
+**What SYS controls:** SEB brake actuator via `0x7B9` (Stroke Mode for lever/ESTOP, Pressure Mode for AUTO 0x205), motor throttle via MCP4725 DAC (0–5V analog), motor gear via relay module (72V D/S/R lines), DC-DC converter via `0x012`, 12V accessory relay via GPIO40 (always ON), signal lights via GPIO 19/21, mode indicator bulbs via GPIO 10/39.
 
 ---
 

@@ -539,11 +539,13 @@ public:
 
     void operator_reset() {
         sys_safety.set_estop(false);
-        for (int i = 0; i < 6; ++i) sys_mode.tick(false, false);
-        sys_mode.tick(false, true);  // START button: ESTOP → MANUAL (via try_exit_estop)
-        sys_mode.tick(false, false);
+        for (int i = 0; i < 7; ++i) sys_mode.tick(false, false, hw_estop_button);
+        for (int i = 0; i < 55; ++i) sys_mode.tick(true, false, hw_estop_button);
+        sys_mode.tick(false, false, hw_estop_button);
         // Real firmware opens the reset-grace window the moment mode leaves ESTOP.
-        sys::mark_estop_reset(now_ms);
+        if (sys_mode.mode() != can::Mode::Estop) {
+            sys::mark_estop_reset(now_ms);
+        }
     }
 
     void operator_press_mode() {

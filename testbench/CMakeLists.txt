@@ -39,6 +39,7 @@ add_executable(etrike-system-test
 
 target_include_directories(etrike-system-test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${ETRIKE_ROOT}/mtr-stm32/test/stub
     ${ETRIKE_ROOT}/native-test/hal/shadow
     ${ETRIKE_ROOT}
     ${ETRIKE_ROOT}/shared
