@@ -12,11 +12,12 @@ Prior bench testing of the SES subsystem relied on manual RC remote transmitter 
 2. **Solving the "RMT_14 vs rm-esp32 Smoothness" Phenomenon**: Determine the mathematical and firmware root cause behind why legacy 5 Hz broadcasts appeared smooth while unfiltered 50 Hz broadcasts induced stick snap chatter.
 3. **Hardware-Protected Automated Batteries**: Execute repeatable, non-destructive test sequences that safeguard bench power supplies and mechanical rack gears against brownout trips, plug-braking shock loads, and stator coil thermal runaway.
 
-Four distinct versions were developed for progressive benchmarking:
+Five distinct versions were developed for progressive benchmarking:
 * **V1** (`ses_characterization_bench.py`): Rapid 4-group baseline sweep (~51s runtime).
 * **V2** (`ses_characterization_bench_v2.py`): Comprehensive 35-test physical battery with independent numerical velocity verification ($\Delta\theta/\Delta t$) (~80s runtime).
 * **V3** (`ses_characterization_bench_v3.py`): Full 41-test suite incorporating frequency sweeps, alpha filtering, and deadband suppression (~89s runtime).
 * **V4** (`ses_characterization_bench_v4.py`): 60-test combinatorial state-space, configuration discovery, timing sweeps, buffer evaluation, and fault injection battery (~190s runtime).
+* **V5** (`ses_characterization_bench_v5.py`): 42-test bare-metal wire-framing, zero-security bypass (`[0x02, val_h, val_l, 0x00, 0x7E, 0x00, 0x00, 0x00]`), and parametric configuration matrix suite (~25-160s runtime).
 
 ---
 
@@ -29,11 +30,11 @@ The SES actuator interfaces over **Low-CAN at 500 kbps** with an 8-byte frame pr
 * **Bytes 1–2 (`VCU_SES_Tgt_StrAngle`)**: Target angle (Motorola Big-Endian, $0.1^\circ/\text{LSB}$).
   * Standard DBC Offset (-700°): $\text{Raw} = (\theta_{\text{deg}} + 700.0) \times 10$ (Neutral $0.0^\circ = 7000$ / `0x1B58`).
   * Legacy 3000 Offset: $\text{Raw} = (\theta_{\text{deg}} + 3000.0) \times 10$ (Neutral $0.0^\circ = 30000$ / `0x7530`).
-  * *V4 automatically detects the active firmware offset at boot.*
-* **Bytes 3–4 (`VCU_SES_Tgt_StrSpd`)**: Target slew rate (Motorola Big-Endian, $1^\circ/\text{s}/\text{LSB}$). Hardware clamp: $[125^\circ/\text{s}, 525^\circ/\text{s}]$.
-* **Byte 5 (`Rolling_Counter_Enable` & `Checksum_Enable`)**: Life-signal validation bits (`0x03` = both enabled) + 4-bit alive counter in upper nibble.
+  * *V4/V5 automatically detects the active firmware offset at boot.*
+* **Bytes 3–4 (`VCU_SES_Tgt_StrSpd`)**: Target slew rate (Motorola Big-Endian, $1^\circ/\text{s}/\text{LSB}$). Hardware clamp: $[125^\circ/\text{s}, 525^\circ/\text{s}]$; legacy minimal uses `0x007E` (126 deg/s).
+* **Byte 5 (`Rolling_Counter_Enable` & `Checksum_Enable`)**: Life-signal validation bits (`0x03` = both enabled, `0x00` = security bypass) + 4-bit alive counter in upper nibble.
 * **Byte 6 (`VCU_Veh_Spd_Value`)**: Simulated vehicle speed ($1\text{ km/h}/\text{LSB}$). **Must be set $\ge 5\text{ km/h}$** (bench uses $10\text{ km/h}$ / `0x0A`). Setting $0\text{ km/h}$ when at $0.0^\circ$ center triggers low-power motor sleep.
-* **Byte 7 (`Checksum`)**: Checksum byte using `xor8_ff_v1` profile (`XOR(Byte 0..6) ^ 0xFF`) with additive sum fallback.
+* **Byte 7 (`Checksum`)**: Checksum byte using `xor8_ff_v1` profile (`XOR(Byte 0..6) ^ 0xFF`), additive sum fallback, or `0x00` in zero-security mode.
 
 ### B. 0x201 Status Feedback Frame (SES $\to$ VCU @ 100 Hz)
 * **Byte 0 Bit 0 (`SES_INF_Angle_Status`)**: Alignment bit. `1` = Aligned & calibrated; `0` = Mechanical zero reference unaligned.
@@ -53,17 +54,17 @@ Monitors 25 discrete hardware error flags across Bytes 0–3, including L3 criti
 
 ## 3. Comparison of the Test Scripts
 
-All four scripts reside in `control-toolkit/backend/scripts/ses/`:
+All five scripts reside in `control-toolkit/backend/scripts/ses/`:
 
-| Specification | V1 (`ses_characterization_bench.py`) | V2 (`ses_characterization_bench_v2.py`) | V3 (`ses_characterization_bench_v3.py`) | V4 (`ses_characterization_bench_v4.py`) |
-| :--- | :--- | :--- | :--- | :--- |
-| **Primary Scope** | Fast baseline bench sweep & Autoware extraction | Full 35-test physical battery with velocity derivative | Full 41-test suite + frequency, filtering & slew sweeps | Full 60-test combinatorial state-space, timing & fault battery |
-| **Target Audience** | Quick validation / factory acceptance check | Detailed mechanical kinematic & control diagnostics | Control engineer tuning 50 Hz Autoware smoothing pipeline | Complete protocol qualification before vehicle Autoware integration |
-| **Total Test Count** | 4 Sweep Groups | 35 Active Tests | 41 Active Tests | 60 Active Tests (11 Groups) |
-| **Physical Runtime** | **~51 seconds** | **~80 seconds** | **~89 seconds** | **~18-190 seconds** (`discover` to `safe-core`) |
-| **Auto-Detection** | Fixed (30000 offset) | Fixed (30000 offset) | Fixed (30000 offset) | **Dynamic (-700 vs 3000 offset, SW/HW ver, 0x6FA)** |
-| **Timing Sweeps** | None | Fixed 50 Hz | 5, 20, 50, 100 Hz sweeps | **20, 50, 100 Hz + Jitter + Bursts + Gaps** |
-| **Fault Injection** | None | None | Stubs | **Counter Freeze/Skip, Checksum Corrupt, Mode Debounce** |
+| Specification | V1 (`ses_bench.py`) | V2 (`ses_bench_v2.py`) | V3 (`ses_bench_v3.py`) | V4 (`ses_bench_v4.py`) | V5 (`ses_bench_v5.py`) |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **Primary Scope** | Fast baseline bench sweep | Full 35-test physical battery | 41-test suite + filter/slew sweeps | Full 60-test combinatorial battery | **Bare-metal wire frames & settings matrix** |
+| **Target Audience** | Quick validation | Kinematic diagnostics | Control tuning (50 Hz MPC) | Vehicle integration sign-off | **Factory bypass & raw wire verification** |
+| **Total Test Count** | 4 Sweep Groups | 35 Active Tests | 41 Active Tests | 60 Active Tests (11 Groups) | **42 Active Tests (8 Groups)** |
+| **Physical Runtime** | **~51 seconds** | **~80 seconds** | **~89 seconds** | **~18-190 seconds** | **~25-160 seconds** |
+| **Wire Frame Mode** | Standard Encoded | Standard Encoded | Standard Encoded | Standard Encoded | **Bare-metal `[02,val,00,7E,00,00,00]`** |
+| **Auto-Detection** | Fixed (30000) | Fixed (30000) | Fixed (30000) | Dynamic (7000 vs 30000) | **Dynamic (7000 vs 30000)** |
+| **Security Flags** | Fixed Enabled | Fixed Enabled | Fixed Enabled | Fault-Injected | **Matrix (0b00, 0b01, 0b10, 0b11)** |
 | **Velocity Derivative** | Relies on reported 0x201 speed | Computes backward-difference $\Delta\theta/\Delta t$ | Computes $\Delta\theta/\Delta t$ + filter alpha tracking |
 | **Frequency Sweep** | None (fixed 50 Hz) | None (fixed 50 Hz) | Sweeps 5 Hz, 20 Hz, 50 Hz, 100 Hz |
 | **Filter Emulation** | None | None | Sweeps $\alpha = 0.08 - 0.25$ + 90°/s rate limiting |
