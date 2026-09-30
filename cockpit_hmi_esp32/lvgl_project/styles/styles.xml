@@ -1,0 +1,245 @@
+<styles>
+    <!-- Base dark cockpit background -->
+    <style name="cockpit_bg"
+           bg_color="#050505"
+           bg_opa="255"
+           border_width="0"
+           pad_all="0"
+           radius="0" />
+
+    <!-- Glassmorphic floating HUD panel -->
+    <style name="hud_card"
+           bg_color="#0a0a0a"
+           bg_opa="230"
+           border_color="#262626"
+           border_width="1"
+           border_opa="180"
+           radius="12"
+           pad_all="12"
+           shadow_width="16"
+           shadow_color="#000000"
+           shadow_opa="140" />
+
+    <!-- Header bar pod -->
+    <style name="header_pod"
+           bg_color="#080808"
+           bg_opa="240"
+           border_color="#262626"
+           border_width="1"
+           radius="12"
+           pad_hor="8"
+           pad_ver="6" />
+
+    <!-- Category Header Labels -->
+    <style name="text_category_title"
+           text_color="#a3a3a3"
+           text_font="montserrat_12"
+           text_letter_space="1" />
+
+    <!-- Cyan Accent / Autonomous Glow -->
+    <style name="accent_badge_cyan"
+           bg_color="#083344"
+           bg_opa="160"
+           border_color="#0891b2"
+           border_width="1"
+           radius="6"
+           pad_hor="6"
+           pad_ver="2"
+           text_color="#22d3ee"
+           text_font="montserrat_10" />
+
+    <!-- Emerald Accent / Active System -->
+    <style name="accent_badge_green"
+           bg_color="#064e3b"
+           bg_opa="160"
+           border_color="#059669"
+           border_width="1"
+           radius="6"
+           pad_hor="6"
+           pad_ver="2"
+           text_color="#34d399"
+           text_font="montserrat_10" />
+
+    <!-- Primary Speedometer Digits -->
+    <style name="text_speed_hero"
+           text_color="#ffffff"
+           text_font="montserrat_48"
+           text_align="center" />
+
+    <style name="text_speed_unit"
+           text_color="#a3a3a3"
+           text_font="montserrat_14"
+           text_letter_space="2" />
+
+    <!-- Metric Readouts -->
+    <style name="text_metric_label"
+           text_color="#d4d4d4"
+           text_font="montserrat_14" />
+
+    <style name="text_metric_value_emerald"
+           text_color="#34d399"
+           text_font="montserrat_20" />
+
+    <style name="text_metric_value_cyan"
+           text_color="#22d3ee"
+           text_font="montserrat_20" />
+
+    <style name="text_metric_value_rose"
+           text_color="#fb7185"
+           text_font="montserrat_20" />
+
+    <style name="text_metric_value_white"
+           text_color="#ffffff"
+           text_font="montserrat_20" />
+
+    <style name="text_metric_sub"
+           text_color="#737373"
+           text_font="montserrat_10" />
+
+    <!-- Turn Indicator Styles -->
+    <style name="turn_indicator_inactive"
+           bg_color="#080808"
+           border_color="#262626"
+           border_width="2"
+           radius="28"
+           text_color="#404040" />
+
+    <style name="turn_indicator_active"
+           bg_color="#10b981"
+           border_color="#6ee7b7"
+           border_width="2"
+           radius="28"
+           text_color="#000000"
+           shadow_width="24"
+           shadow_color="#10b981"
+           shadow_opa="220" />
+
+    <!-- Telltale Container Styles -->
+    <style name="telltale_off"
+           bg_color="#0a0a0a"
+           bg_opa="140"
+           border_color="#171717"
+           border_width="1"
+           radius="8"
+           text_color="#262626" />
+
+    <style name="telltale_park_on"
+           bg_color="#4c0519"
+           bg_opa="220"
+           border_color="#f43f5e"
+           border_width="1"
+           radius="8"
+           text_color="#f43f5e"
+           shadow_width="12"
+           shadow_color="#f43f5e"
+           shadow_opa="160" />
+
+    <style name="telltale_brake_on"
+           bg_color="#4c0519"
+           bg_opa="220"
+           border_color="#f43f5e"
+           border_width="1"
+           radius="8"
+           text_color="#f43f5e"
+           shadow_width="12"
+           shadow_color="#f43f5e"
+           shadow_opa="160" />
+
+    <style name="telltale_hold_on"
+           bg_color="#064e3b"
+           bg_opa="220"
+           border_color="#10b981"
+           border_width="1"
+           radius="8"
+           text_color="#34d399"
+           shadow_width="12"
+           shadow_color="#10b981"
+           shadow_opa="160" />
+
+    <style name="telltale_ready_on"
+           bg_color="#064e3b"
+           bg_opa="220"
+           border_color="#10b981"
+           border_width="1"
+           radius="8"
+           text_color="#34d399"
+           shadow_width="12"
+           shadow_color="#10b981"
+           shadow_opa="160" />
+
+    <style name="telltale_eps_warn"
+           bg_color="#451a03"
+           bg_opa="220"
+           border_color="#f59e0b"
+           border_width="1"
+           radius="8"
+           text_color="#fbbf24"
+           shadow_width="14"
+           shadow_color="#f59e0b"
+           shadow_opa="180" />
+
+    <style name="telltale_estop_on"
+           bg_color="#881337"
+           bg_opa="240"
+           border_color="#f43f5e"
+           border_width="2"
+           radius="8"
+           text_color="#ffffff"
+           shadow_width="20"
+           shadow_color="#f43f5e"
+           shadow_opa="220" />
+
+    <style name="telltale_highbeam_on"
+           bg_color="#172554"
+           bg_opa="220"
+           border_color="#3b82f6"
+           border_width="1"
+           radius="8"
+           text_color="#60a5fa"
+           shadow_width="14"
+           shadow_color="#3b82f6"
+           shadow_opa="180" />
+
+    <!-- Gauge Track & Indicator Styles -->
+    <style name="gauge_track"
+           bg_color="#171717"
+           border_color="#404040"
+           border_width="1"
+           radius="8" />
+
+    <style name="gauge_indicator_emerald"
+           bg_color="#10b981"
+           radius="6" />
+
+    <style name="gauge_indicator_cyan"
+           bg_color="#06b6d4"
+           radius="6" />
+
+    <style name="gauge_indicator_gradient_brake"
+           bg_color="#e11d48"
+           bg_grad_color="#f59e0b"
+           bg_grad_dir="hor"
+           radius="6" />
+
+    <!-- Interactive Touch Button Styles (44px target) -->
+    <style name="btn_touch_default"
+           bg_color="#171717"
+           border_color="#404040"
+           border_width="1"
+           radius="8"
+           text_color="#d4d4d4"
+           text_font="montserrat_12"
+           min_width="44"
+           min_height="40" />
+
+    <style name="btn_touch_active"
+           bg_color="#262626"
+           border_color="#06b6d4"
+           border_width="1"
+           radius="8"
+           text_color="#22d3ee"
+           text_font="montserrat_12"
+           shadow_width="8"
+           shadow_color="#06b6d4"
+           shadow_opa="120" />
+</styles>

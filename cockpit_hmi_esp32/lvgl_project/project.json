@@ -1,0 +1,41 @@
+{
+  "name": "waveshare_cockpit_hmi",
+  "version": "1.0.0",
+  "editor_version": "1.0.0",
+  "display": {
+    "width": 800,
+    "height": 480,
+    "color_depth": 16,
+    "rotation": 0,
+    "fps": 60,
+    "default_font": "montserrat_14"
+  },
+  "target": {
+    "board": "Waveshare ESP32-S3-Touch-LCD-4.3B-BOX",
+    "sku": "28141",
+    "mcu": "ESP32-S3-WROOM-1-N16R8",
+    "flash_size_mb": 16,
+    "psram_size_mb": 8,
+    "display_controller": "ST7262_RGB",
+    "touch_controller": "GT911"
+  },
+  "styles": [
+    "styles/styles.xml"
+  ],
+  "components": [
+    "components/telltale.xml",
+    "components/turn_signal.xml",
+    "components/prnds_bar.xml",
+    "components/center_steer_bar.xml",
+    "components/metric_bar.xml"
+  ],
+  "views": [
+    "views/cockpit_main.xml",
+    "views/diagnostics_view.xml"
+  ],
+  "initial_view": "cockpit_main",
+  "export": {
+    "c_output_dir": "../firmware/main/ui",
+    "prefix": "cockpit_ui"
+  }
+}

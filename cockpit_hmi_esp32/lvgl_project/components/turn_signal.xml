@@ -1,0 +1,14 @@
+<component>
+    <api>
+        <prop name="direction" type="string" default="left"/>
+        <prop name="symbol" type="string" default="&lt;"/>
+        <prop name="active" type="boolean" default="false"/>
+    </api>
+    <view extends="lv_obj" width="52" height="52" style="turn_indicator_inactive">
+        <lv_label name="arrow_label"
+                  text="$symbol"
+                  align="center"
+                  text_align="center"
+                  text_font="montserrat_24" />
+    </view>
+</component>

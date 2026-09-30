@@ -73,6 +73,8 @@ CMakeLists.txt
 !rm-esp32-legacy/CMakeLists.txt
 !rm-esp32-legacy/src/CMakeLists.txt
 !mtr-stm32/CMakeLists.txt
+!cockpit_hmi_esp32/firmware/CMakeLists.txt
+!cockpit_hmi_esp32/firmware/main/CMakeLists.txt
 
 # ── Coverage & profiling ─────────────────────────────────────────────
 *.gcda

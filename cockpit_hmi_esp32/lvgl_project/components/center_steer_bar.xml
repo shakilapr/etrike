@@ -1,0 +1,17 @@
+<component>
+    <api>
+        <prop name="steer_act" type="float" default="0.0"/>
+        <prop name="steer_cmd" type="float" default="0.0"/>
+    </api>
+    <view extends="lv_obj" width="240" height="28" bg_color="#0a0a0a" border_width="0" pad_all="0">
+        <!-- Background track -->
+        <lv_obj name="track" width="240" height="14" align="center" style="gauge_track">
+            <!-- Center zero detent line -->
+            <lv_obj name="center_detent" width="2" height="14" align="center" bg_color="#d4d4d4" border_width="0"/>
+            <!-- Dynamic actual steering fill bar -->
+            <lv_bar name="bar_actual" width="240" height="14" align="center" range_min="-45" range_max="45" value="0" style="gauge_indicator_emerald"/>
+            <!-- Target steer command needle -->
+            <lv_obj name="cmd_marker" width="3" height="16" align="left_mid" x="120" bg_color="#22d3ee" border_width="0"/>
+        </lv_obj>
+    </view>
+</component>

@@ -1,0 +1,217 @@
+<view name="cockpit_main" extends="lv_obj" width="800" height="480" style="cockpit_bg">
+    <!-- ================= SAFETY OVERLAYS ================= -->
+    <!-- Fullscreen E-Stop Emergency Red Strobe Border (Toggled in ESTOP mode) -->
+    <lv_obj name="estop_overlay_frame" width="800" height="480" align="center"
+            bg_opa="0" border_color="#e11d48" border_width="6" radius="0"
+            flags="hidden" />
+
+    <!-- ================= TOP HORIZON (TELLTALES & GLANCE SIGHTLINE) ================= -->
+    <lv_obj name="top_horizon" width="776" height="80" align="top_mid" y="8"
+            bg_opa="0" border_width="0" pad_all="0">
+
+        <!-- Top Left: Turn Left Indicator & ISO Bank 1 -->
+        <lv_obj name="left_cluster" width="240" height="74" align="left_mid"
+                bg_opa="0" border_width="0" pad_all="0"
+                layout="flex" flex_flow="row" flex_align_main="start" flex_align_cross="center" pad_column="8">
+            <!-- Left Turn Indicator 52px Round -->
+            <turn_signal name="turn_left" direction="left" symbol="&lt;" active="false" />
+            <!-- ISO Telltales: PARK, BRAKE, HOLD, READY -->
+            <lv_obj name="iso_pod_left" style="header_pod" layout="flex" flex_flow="row" pad_column="4">
+                <telltale name="tt_park" code="P" label="PARK" active="true" style_active_name="telltale_park_on" />
+                <telltale name="tt_brake" code="!" label="BRAKE" active="false" style_active_name="telltale_brake_on" />
+                <telltale name="tt_hold" code="H" label="HOLD" active="false" style_active_name="telltale_hold_on" />
+                <telltale name="tt_ready" code="RDY" label="READY" active="true" style_active_name="telltale_ready_on" />
+            </lv_obj>
+        </lv_obj>
+
+        <!-- Top Center: PRNDS Selector -->
+        <lv_obj name="center_prnds_container" width="260" height="42" align="top_mid" y="4"
+                bg_opa="0" border_width="0" pad_all="0">
+            <prnds_bar name="prnds_selector" gear="N" align="center" />
+        </lv_obj>
+
+        <!-- Top Right: ISO Bank 2 & Turn Right Indicator -->
+        <lv_obj name="right_cluster" width="260" height="74" align="right_mid"
+                bg_opa="0" border_width="0" pad_all="0"
+                layout="flex" flex_flow="row" flex_align_main="end" flex_align_cross="center" pad_column="8">
+            <!-- ISO Telltales: EPS, ESTOP, TEMP, CAN, HIGH BEAM, HAZARD -->
+            <lv_obj name="iso_pod_right" style="header_pod" layout="flex" flex_flow="row" pad_column="4">
+                <telltale name="tt_eps" code="EPS" label="EPS" active="false" style_active_name="telltale_eps_warn" />
+                <telltale name="tt_estop" code="STP" label="ESTOP" active="false" style_active_name="telltale_estop_on" />
+                <telltale name="tt_temp" code="TMP" label="TEMP" active="false" style_active_name="telltale_eps_warn" />
+                <telltale name="tt_can" code="CAN" label="CAN" active="true" style_active_name="telltale_ready_on" />
+                <telltale name="tt_highbeam" code="HB" label="HI-BEAM" active="false" style_active_name="telltale_highbeam_on" />
+                <telltale name="tt_hazard" code="/\" label="HAZARD" active="false" style_active_name="telltale_estop_on" />
+            </lv_obj>
+            <!-- Right Turn Indicator 52px Round -->
+            <turn_signal name="turn_right" direction="right" symbol="&gt;" active="false" />
+        </lv_obj>
+    </lv_obj>
+
+    <!-- ================= MIDDLE ROW: CHASSIS, SPEEDOMETER, POWERTRAIN ================= -->
+
+    <!-- Left Wing: Chassis & Steering Dynamics (800x480 optimized: W: 254px, H: 300px) -->
+    <lv_obj name="chassis_pod" width="254" height="310" align="top_left" x="12" y="94" style="hud_card">
+        <!-- Title Header -->
+        <lv_obj name="chassis_header" width="230" height="26" bg_opa="0" border_width="0" pad_all="0"
+                layout="flex" flex_flow="row" flex_align_main="space_between" flex_align_cross="center">
+            <lv_label text="CHASSIS DYNAMICS" style="text_category_title" />
+            <lv_label text="3-WHEELER" style="accent_badge_cyan" />
+        </lv_obj>
+
+        <!-- Steering Angle Readout -->
+        <lv_obj name="steer_row" width="230" height="32" y="32" bg_opa="0" border_width="0" pad_all="0"
+                layout="flex" flex_flow="row" flex_align_main="space_between" flex_align_cross="baseline">
+            <lv_label text="Steering" style="text_metric_label" />
+            <lv_label name="val_steer_act" text="+0.0°" style="text_metric_value_emerald" />
+        </lv_obj>
+
+        <!-- Bi-Directional Steering Light-Tube Gauge -->
+        <center_steer_bar name="steer_bar" steer_act="0.0" steer_cmd="0.0" y="66" />
+        <lv_obj name="steer_labels" width="230" height="18" y="96" bg_opa="0" border_width="0" pad_all="0"
+                layout="flex" flex_flow="row" flex_align_main="space_between">
+            <lv_label text="-45°" style="text_metric_sub" />
+            <lv_label name="val_steer_cmd" text="CMD: 0.0°" style="text_metric_sub" text_color="#22d3ee" />
+            <lv_label text="+45°" style="text_metric_sub" />
+        </lv_obj>
+
+        <!-- EPS Diagnostics Row -->
+        <lv_obj name="eps_diag_row" width="230" height="24" y="118" bg_opa="0" border_color="#262626" border_width="1"
+                border_side="bottom" pad_all="0" layout="flex" flex_flow="row" flex_align_main="space_between">
+            <lv_label name="val_eps_current" text="EPS: 0.0A" style="text_metric_sub" />
+            <lv_label name="val_eps_temp" text="ECU: 38°C" style="text_metric_sub" />
+        </lv_obj>
+
+        <!-- Yaw Rate Readout -->
+        <lv_obj name="yaw_row" width="230" height="28" y="146" bg_opa="0" border_width="0" pad_all="0"
+                layout="flex" flex_flow="row" flex_align_main="space_between" flex_align_cross="baseline">
+            <lv_label text="Yaw Rate" style="text_metric_label" />
+            <lv_label name="val_yaw_rate" text="0 mrad/s" style="text_metric_value_white" />
+        </lv_obj>
+
+        <!-- Hydraulic Brake System -->
+        <lv_obj name="brake_row" width="230" height="28" y="180" bg_opa="0" border_width="0" pad_all="0"
+                layout="flex" flex_flow="row" flex_align_main="space_between" flex_align_cross="baseline">
+            <lv_label text="Hydraulic Brake" style="text_metric_label" />
+            <lv_label name="val_brake_kpa" text="0 kPa" style="text_metric_value_rose" />
+        </lv_obj>
+        <metric_bar name="brake_bar" min_val="0" max_val="1500" current_val="0" y="210" indicator_style="gauge_indicator_gradient_brake" />
+        <lv_obj name="brake_labels" width="230" height="20" y="234" bg_opa="0" border_width="0" pad_all="0"
+                layout="flex" flex_flow="row" flex_align_main="space_between">
+            <lv_label name="val_brake_temp" text="ECU: 42°C" style="text_metric_sub" />
+            <lv_label name="val_brake_status" text="NORMAL" style="text_metric_sub" text_color="#34d399" />
+        </lv_obj>
+    </lv_obj>
+
+    <!-- Center Driving Horizon: Large Hero Speedometer & Target Command -->
+    <lv_obj name="center_horizon" width="256" height="310" align="top_mid" y="94"
+            bg_opa="0" border_width="0" pad_all="0"
+            layout="flex" flex_flow="column" flex_align_main="center" flex_align_cross="center">
+
+        <!-- Speed Digits + Unit -->
+        <lv_obj name="speed_box" width="240" height="110" bg_opa="0" border_width="0" pad_all="0"
+                layout="flex" flex_flow="column" flex_align_main="center" flex_align_cross="center">
+            <lv_label name="speed_val_label" text="0" style="text_speed_hero" text_font="montserrat_48" />
+            <lv_label name="speed_unit_label" text="KM/H" style="text_speed_unit" />
+        </lv_obj>
+
+        <!-- Commanded Target Speed Pill -->
+        <lv_obj name="cmd_speed_pill" width="160" height="28" radius="14" bg_color="#080808" border_color="#262626" border_width="1"
+                layout="flex" flex_flow="row" flex_align_main="center" flex_align_cross="center">
+            <lv_label name="target_speed_label" text="CMD: 0.0 KM/H" style="text_metric_sub" text_color="#22d3ee" />
+        </lv_obj>
+
+        <!-- Drive Mode Indicator Banner -->
+        <lv_obj name="mode_banner" width="244" height="42" y="20" radius="10" bg_color="#083344" border_color="#0891b2" border_width="1"
+                layout="flex" flex_flow="column" flex_align_main="center" flex_align_cross="center">
+            <lv_label name="mode_title" text="AUTONOMOUS DRIVE" text_color="#22d3ee" text_font="montserrat_12" />
+            <lv_label name="mode_subtitle" text="DRIVE-BY-WIRE ACTIVE" text_color="#a5f3fc" text_font="montserrat_10" />
+        </lv_obj>
+    </lv_obj>
+
+    <!-- Right Wing: Powertrain & CAN Bus Telemetry (W: 254px, H: 300px) -->
+    <lv_obj name="powertrain_pod" width="254" height="310" align="top_right" x="-12" y="94" style="hud_card">
+        <!-- Title Header -->
+        <lv_obj name="pwt_header" width="230" height="26" bg_opa="0" border_width="0" pad_all="0"
+                layout="flex" flex_flow="row" flex_align_main="space_between" flex_align_cross="center">
+            <lv_label text="POWERTRAIN &amp; BUS" style="text_category_title" />
+            <lv_label text="ACTIVE" style="accent_badge_green" />
+        </lv_obj>
+
+        <!-- Motor RPM -->
+        <lv_obj name="motor_row" width="230" height="32" y="32" bg_opa="0" border_width="0" pad_all="0"
+                layout="flex" flex_flow="row" flex_align_main="space_between" flex_align_cross="baseline">
+            <lv_label text="Electric Motor" style="text_metric_label" />
+            <lv_label name="val_motor_rpm" text="0 RPM" style="text_metric_value_cyan" />
+        </lv_obj>
+
+        <!-- Throttle Demand Bar -->
+        <metric_bar name="throttle_bar" min_val="0" max_val="100" current_val="0" y="66" indicator_style="gauge_indicator_cyan" />
+        <lv_obj name="throttle_labels" width="230" height="18" y="96" bg_opa="0" border_width="0" pad_all="0"
+                layout="flex" flex_flow="row" flex_align_main="space_between">
+            <lv_label text="IDLE" style="text_metric_sub" />
+            <lv_label name="val_throttle_pct" text="0% DEMAND" style="text_metric_sub" text_color="#d4d4d4" />
+            <lv_label text="PEAK" style="text_metric_sub" />
+        </lv_obj>
+
+        <!-- CAN Bus Update Rate -->
+        <lv_obj name="bus_rate_row" width="230" height="28" y="122" bg_opa="0" border_color="#262626" border_width="1"
+                border_side="top" pad_all="0" layout="flex" flex_flow="row" flex_align_main="space_between" flex_align_cross="baseline">
+            <lv_label text="Bus Rate" style="text_metric_label" />
+            <lv_label name="val_bus_hz" text="28.0 Hz" style="text_metric_value_emerald" />
+        </lv_obj>
+
+        <!-- CAN Controller Counters (TEC / REC) -->
+        <lv_obj name="can_diag_row" width="230" height="24" y="156" bg_opa="0" border_color="#262626" border_width="1"
+                border_side="bottom" pad_all="0" layout="flex" flex_flow="row" flex_align_main="space_between">
+            <lv_label name="val_can_tec" text="TEC: 0" style="text_metric_sub" />
+            <lv_label name="val_can_rec" text="REC: 0" style="text_metric_sub" />
+            <lv_label name="val_can_state" text="HEALTHY" style="text_metric_sub" text_color="#34d399" />
+        </lv_obj>
+
+        <!-- Total Ingested CAN Frames -->
+        <lv_obj name="can_frames_row" width="230" height="28" y="190" bg_opa="0" border_width="0" pad_all="0"
+                layout="flex" flex_flow="row" flex_align_main="space_between" flex_align_cross="baseline">
+            <lv_label text="CAN Frames" style="text_metric_label" />
+            <lv_label name="val_total_frames" text="0" style="text_metric_value_white" />
+        </lv_obj>
+    </lv_obj>
+
+    <!-- ================= BOTTOM CONSOLE (TOUCH NAVIGATION & PREFERENCES) ================= -->
+    <lv_obj name="bottom_console" width="776" height="52" align="bottom_mid" y="-10"
+            bg_opa="0" border_width="0" pad_all="0"
+            layout="flex" flex_flow="row" flex_align_main="space_between" flex_align_cross="center">
+
+        <!-- Bottom Left: Page Selection Tabs (44px min touch target) -->
+        <lv_obj name="tabs_group" width="300" height="46" style="header_pod"
+                layout="flex" flex_flow="row" flex_align_main="start" flex_align_cross="center" pad_column="6">
+            <lv_button name="tab_cockpit" style="btn_touch_active" width="90" height="38">
+                <lv_label text="COCKPIT" align="center" />
+            </lv_button>
+            <lv_button name="tab_diag" style="btn_touch_default" width="90" height="38">
+                <lv_label text="DIAGNOSTICS" align="center" />
+            </lv_button>
+            <lv_button name="tab_canlog" style="btn_touch_default" width="80" height="38">
+                <lv_label text="CAN LOG" align="center" />
+            </lv_button>
+        </lv_obj>
+
+        <!-- Bottom Center: Drive Status Footer -->
+        <lv_label name="lbl_footer_status" text="AUTONOMOUS DRIVING SYSTEM • DRIVE-BY-WIRE ACTIVE"
+                  style="text_metric_sub" text_color="#737373" />
+
+        <!-- Bottom Right: Unit Switcher & Trip Reset -->
+        <lv_obj name="controls_group" width="220" height="46" style="header_pod"
+                layout="flex" flex_flow="row" flex_align_main="end" flex_align_cross="center" pad_column="8">
+            <lv_button name="btn_unit_kmh" style="btn_touch_active" width="55" height="38">
+                <lv_label text="KM/H" align="center" />
+            </lv_button>
+            <lv_button name="btn_unit_mph" style="btn_touch_default" width="55" height="38">
+                <lv_label text="MPH" align="center" />
+            </lv_button>
+            <lv_button name="btn_reset_trip" style="btn_touch_default" width="75" height="38">
+                <lv_label text="RESET" align="center" />
+            </lv_button>
+        </lv_obj>
+    </lv_obj>
+</view>

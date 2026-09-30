@@ -1,0 +1,18 @@
+<component>
+    <api>
+        <prop name="min_val" type="int" default="0"/>
+        <prop name="max_val" type="int" default="100"/>
+        <prop name="current_val" type="int" default="0"/>
+        <prop name="indicator_style" type="string" default="gauge_indicator_cyan"/>
+    </api>
+    <view extends="lv_obj" width="240" height="16" bg_color="#0a0a0a" border_width="0" pad_all="0">
+        <lv_bar name="progress_bar"
+                width="240"
+                height="14"
+                align="center"
+                range_min="$min_val"
+                range_max="$max_val"
+                value="$current_val"
+                style="gauge_track"/>
+    </view>
+</component>

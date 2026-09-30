@@ -1,0 +1,85 @@
+<view name="diagnostics_view" extends="lv_obj" width="800" height="480" style="cockpit_bg">
+    <!-- Top Header -->
+    <lv_obj name="diag_header" width="776" height="50" align="top_mid" y="10" style="header_pod"
+            layout="flex" flex_flow="row" flex_align_main="space_between" flex_align_cross="center">
+        <lv_label text="ECU &amp; VEHICLE HARDWARE DIAGNOSTICS" style="text_category_title" />
+        <lv_button name="btn_back_to_cockpit" style="btn_touch_active" width="120" height="36">
+            <lv_label text="&lt; COCKPIT" align="center" />
+        </lv_button>
+    </lv_obj>
+
+    <!-- 3-Column Diagnostics Layout -->
+    <lv_obj name="diag_grid" width="776" height="390" align="bottom_mid" y="-15"
+            bg_opa="0" border_width="0" pad_all="0"
+            layout="flex" flex_flow="row" flex_align_main="space_between">
+
+        <!-- Column 1: Power & Isolated I/O (CH422G Expander) -->
+        <lv_obj name="col_io" width="248" height="390" style="hud_card">
+            <lv_label text="TERMINAL I/O (ISOLATED)" style="text_category_title" />
+            <lv_obj width="220" height="2" y="24" bg_color="#262626" border_width="0" />
+
+            <lv_label text="Power Rail (7-36V)" y="34" style="text_metric_label" />
+            <lv_label name="val_vin_volts" text="12.4 V" y="54" style="text_metric_value_cyan" />
+
+            <lv_label text="Digital Input DI0 (Ignition)" y="86" style="text_metric_label" />
+            <lv_label name="val_di0_state" text="HIGH (ACTIVE)" y="106" style="text_metric_value_emerald" />
+
+            <lv_label text="Digital Input DI1 (Aux/Horn)" y="138" style="text_metric_label" />
+            <lv_label name="val_di1_state" text="LOW (INACTIVE)" y="158" style="text_metric_sub" />
+
+            <lv_label text="Digital Output DO0 (Buzzer)" y="190" style="text_metric_label" />
+            <lv_label name="val_do0_state" text="OFF" y="210" style="text_metric_sub" />
+
+            <lv_label text="Digital Output DO1 (Relay)" y="242" style="text_metric_label" />
+            <lv_label name="val_do1_state" text="OFF" y="262" style="text_metric_sub" />
+
+            <lv_label text="RTC Time (PCF85063)" y="294" style="text_metric_label" />
+            <lv_label name="val_rtc_time" text="12:45:08 UTC" y="314" style="text_metric_value_white" />
+        </lv_obj>
+
+        <!-- Column 2: Actuator & ECU Thermal Health -->
+        <lv_obj name="col_ecus" width="248" height="390" style="hud_card">
+            <lv_label text="ACTUATOR HEALTH" style="text_category_title" />
+            <lv_obj width="220" height="2" y="24" bg_color="#262626" border_width="0" />
+
+            <lv_label text="Steering EPS Controller (0x310)" y="34" style="text_metric_label" />
+            <lv_label name="val_steer_diag_status" text="NORMAL • NO FAULT" y="54" style="text_metric_value_emerald" />
+            <lv_label name="val_steer_temp_detail" text="Current: 2.8A  |  Temp: 38°C" y="76" style="text_metric_sub" />
+
+            <lv_label text="Hydraulic Brake ECU (0x311)" y="110" style="text_metric_label" />
+            <lv_label name="val_brake_diag_status" text="NORMAL • NO FAULT" y="130" style="text_metric_value_emerald" />
+            <lv_label name="val_brake_temp_detail" text="Pressure: 0 kPa  |  Temp: 42°C" y="152" style="text_metric_sub" />
+
+            <lv_label text="Safety System SYS (0x011/0x600)" y="186" style="text_metric_label" />
+            <lv_label name="val_sys_diag_status" text="HEARTBEAT OK" y="206" style="text_metric_value_emerald" />
+            <lv_label name="val_sys_estop_detail" text="ESTOP: INACTIVE (0)" y="228" style="text_metric_sub" />
+
+            <lv_label text="Real-Time Node RT (0x210)" y="262" style="text_metric_label" />
+            <lv_label name="val_rt_mode_status" text="MODE: AUTONOMOUS" y="282" style="text_metric_value_cyan" />
+            <lv_label name="val_rt_reason_detail" text="ESTOP Reason: 0 (NONE)" y="304" style="text_metric_sub" />
+        </lv_obj>
+
+        <!-- Column 3: CAN Controller & SD Card Flight Logger -->
+        <lv_obj name="col_bus" width="248" height="390" style="hud_card">
+            <lv_label text="CAN CONTROLLER &amp; SD" style="text_category_title" />
+            <lv_obj width="220" height="2" y="24" bg_color="#262626" border_width="0" />
+
+            <lv_label text="TWAI Controller (GPIO15/16)" y="34" style="text_metric_label" />
+            <lv_label name="val_twai_state" text="RUNNING (500 kbps)" y="54" style="text_metric_value_emerald" />
+
+            <lv_label text="Error Counters (TEC / REC)" y="90" style="text_metric_label" />
+            <lv_label name="val_tec_rec_full" text="TEC: 0   |   REC: 0" y="110" style="text_metric_value_white" />
+
+            <lv_label text="Bus-Off / Error Warning" y="146" style="text_metric_label" />
+            <lv_label name="val_bus_alerts" text="NONE (HEALTHY)" y="166" style="text_metric_value_emerald" />
+
+            <lv_label text="MicroSD Flight Logger" y="202" style="text_metric_label" />
+            <lv_label name="val_sd_status" text="CARD MOUNTED • 32GB" y="222" style="text_metric_value_cyan" />
+            <lv_label name="val_log_file" text="LOG_20260924_01.CAN" y="244" style="text_metric_sub" />
+
+            <lv_button name="btn_toggle_logging" style="btn_touch_active" width="220" height="38" y="280">
+                <lv_label text="LOGGING ACTIVE" align="center" />
+            </lv_button>
+        </lv_obj>
+    </lv_obj>
+</view>
