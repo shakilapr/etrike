@@ -162,7 +162,7 @@ def test_high_rate_gateway_load_recovers(auto_ready):
     bench.send_lights()
 
     # The Low unit stream must be alive and drive must re-establish.
-    assert signal_of(bench.message(LOW, 0x011), "estop_active") == 0, "load latched ESTOP"
+    assert signal_of(bench.message(LOW, 0x011), "estop_source") == 0, "load latched ESTOP"
     state = {}
     engaged = False
     for _ in range(3):

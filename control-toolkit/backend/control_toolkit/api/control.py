@@ -122,12 +122,9 @@ def clear_estop(request: Request) -> dict:
 
 
 _SYS_SAFETY_CLEAR = {
-    "estop_active": 0,
-    "heartbeat_ok": 1,
-    "light_left": 0,
-    "light_right": 0,
-    "light_brake": 0,
-    "light_head": 0,
+    "estop_source": 0,
+    "node_presence": 0x3F,
+    "estop_reason": 0,
 }
 
 

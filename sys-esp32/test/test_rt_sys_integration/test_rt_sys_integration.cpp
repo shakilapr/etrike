@@ -27,13 +27,15 @@ static void assert_estop_bit(uint32_t id, bool latched, bool expect_bit) {
     bool encoded = false;
     if (id == can::kIdSysSafetySts) {
         can::gen::SysSafetySts s{};
-        s.estop_active = sm.estop_active();
+        s.estop_source = sm.estop_active() ? 1u : 0u;
+        s.estop_reason = sm.estop_active() ? 1u : 0u;
+        s.node_presence = 0x3Fu;
         encoded = (can::gen::encode_sys_safety_sts(s, fr) == can::gen::CodecStatus::Ok);
         TEST_ASSERT_TRUE(encoded);
         can::gen::SysSafetySts d{};
         TEST_ASSERT_EQUAL(can::gen::CodecStatus::Ok,
                           can::gen::decode_sys_safety_sts(fr.view(), d));
-        TEST_ASSERT_EQUAL(expect_bit ? 1 : 0, d.estop_active);
+        TEST_ASSERT_EQUAL(expect_bit ? 1 : 0, d.estop_source != 0 ? 1 : 0);
     } else {  // SYS_HEARTBEAT 0x7FE (RT also reads estop_active here)
         can::gen::SysHeartbeat s{};
         s.estop_active = sm.estop_active();

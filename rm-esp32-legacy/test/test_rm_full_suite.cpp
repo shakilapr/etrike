@@ -588,8 +588,9 @@ public:
             // needs to enable ignition and to clear a latched ESTOP. E2E CRC is computed
             // over bytes[0..3] (encoder does not auto-fill it).
             can::gen::SysSafetySts ssts{};
-            ssts.estop_active = estop_or_signal_loss;
-            ssts.heartbeat_ok = true;
+            ssts.estop_source = estop_or_signal_loss ? 1u : 0u;
+            ssts.estop_reason = estop_or_signal_loss ? 1u : 0u;
+            ssts.node_presence = 0x3Fu;
             ssts.rolling_counter = roll_sys_safety++;
             can::Frame ssts_fr;
             if (can::gen::encode_sys_safety_sts(ssts, ssts_fr) == can::gen::CodecStatus::Ok) {

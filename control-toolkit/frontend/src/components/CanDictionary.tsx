@@ -181,6 +181,24 @@ const SIGNAL_DOCS: Record<string, SignalDoc> = {
     dataType: 'Boolean-like unsigned (0/1, often full byte).',
     examples: ['0 = motion allowed', '1 = ESTOP latched · stop / no drive'],
   },
+  estop_source: {
+    meaning: 'ESTOP source on 0x011 (0 None · 1 Local SYS · 2 CAN 0x001 · 3 Peer fault).',
+    why: 'Lets every node identify WHO triggered the global E-STOP.',
+    dataType: 'Unsigned enum 0..3.',
+    examples: ['0 = clear', '1 = SYS local', '2 = external 0x001', '3 = peer fault'],
+  },
+  node_presence: {
+    meaning: 'Live node bitmask (b0 RT · b1 MTR · b2 SEB · b3 SES · b4 HOST · b5 SYS).',
+    why: 'Single-glance bus health; replaces the old heartbeat_ok byte on 0x011.',
+    dataType: '8-bit bitmask (0..63).',
+    examples: ['0x3F = all nodes online', 'bit clear = node silent'],
+  },
+  estop_reason: {
+    meaning: 'ESTOP cause (0 None,1 HW_BUTTON,2 RT_HB_LOST,3 CAN_001,4 MTR_FAULT,5 EGAS_FAULT,6 TASK_DEADLINE,7 CAN_BUSOFF).',
+    why: 'Deterministic diagnosis of WHY the E-STOP fired, synchronously on 0x011.',
+    dataType: 'Unsigned enum 0..7.',
+    examples: ['1 = mushroom button', '4 = MTR fault'],
+  },
   heartbeat_ok: {
     meaning: 'Safety heartbeat healthy flag from SYS.',
     why: 'If the safety node stops ticking healthy, peers treat the link as degraded.',

@@ -52,7 +52,7 @@ def health(bench) -> dict[str, Any]:
 
     snapshot = {
         "map": s,
-        "sys_estop": g(CAN_SYS_SAFETY_STS, "estop_active"),
+        "sys_estop": g(CAN_SYS_SAFETY_STS, "estop_source"),
         "rt_estop": g(CAN_RT_NODE_STATUS, "estop_active"),
         "rt_degraded": g(CAN_RT_NODE_STATUS, "degraded"),
         "rt_mode": g(CAN_RT_STATE_RPT, "mode"),

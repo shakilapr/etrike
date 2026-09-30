@@ -83,12 +83,9 @@ static uint8_t g_safe_ctr = 0;
 static void send_safety(mtr::MotorManager& mgr, bool estop, uint32_t now) {
     for (int i = 0; i < 2; ++i) {
         can::gen::SysSafetySts msg{};
-        msg.estop_active = estop;
-        msg.heartbeat_ok = true;
-        msg.light_left = false;
-        msg.light_right = false;
-        msg.light_brake = false;
-        msg.light_head = false;
+        msg.estop_source = estop ? 1u : 0u;
+        msg.estop_reason = estop ? 1u : 0u;
+        msg.node_presence = 0x3Fu;
         msg.rolling_counter = g_safe_ctr++;
         msg.e2e_crc = 0;
         can::Frame tmp;
@@ -104,12 +101,9 @@ static void send_safety(mtr::MotorManager& mgr, bool estop, uint32_t now) {
 static void send_safety_frames(mtr::MotorManager& mgr, bool estop, int n, uint32_t now) {
     for (int i = 0; i < n; ++i) {
         can::gen::SysSafetySts msg{};
-        msg.estop_active = estop;
-        msg.heartbeat_ok = true;
-        msg.light_left = false;
-        msg.light_right = false;
-        msg.light_brake = false;
-        msg.light_head = false;
+        msg.estop_source = estop ? 1u : 0u;
+        msg.estop_reason = estop ? 1u : 0u;
+        msg.node_presence = 0x3Fu;
         msg.rolling_counter = g_safe_ctr++;
         msg.e2e_crc = 0;
         can::Frame tmp;
@@ -125,12 +119,9 @@ static void send_safety_frames(mtr::MotorManager& mgr, bool estop, int n, uint32
 static void send_safety_corrupt(mtr::MotorManager& mgr, bool estop, uint32_t now) {
     for (int i = 0; i < 2; ++i) {
         can::gen::SysSafetySts msg{};
-        msg.estop_active = estop;
-        msg.heartbeat_ok = true;
-        msg.light_left = false;
-        msg.light_right = false;
-        msg.light_brake = false;
-        msg.light_head = false;
+        msg.estop_source = estop ? 1u : 0u;
+        msg.estop_reason = estop ? 1u : 0u;
+        msg.node_presence = 0x3Fu;
         msg.rolling_counter = g_safe_ctr++;
         msg.e2e_crc = 0;
         can::Frame tmp;

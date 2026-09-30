@@ -425,6 +425,28 @@ bool CanDecoder::decode_diagnostics(const struct can_frame & frame,
   add("rec", rec,
       rec >= 128 ? DiagnosticStatus::ERROR : (rec >= 96 ? DiagnosticStatus::WARN : DiagnosticStatus::OK),
       rec >= 128 ? "error-passive threshold" : (rec >= 96 ? "elevated" : "OK"));
+
+  // Light state feedback now travels on 0x600 (moved off the ASIL-D 0x011).
+  {
+    const uint8_t lights = (value.light_left ? 1u : 0u) | (value.light_right ? 2u : 0u) |
+                           (value.light_brake ? 4u : 0u) | (value.light_head ? 8u : 0u);
+    autoware_vehicle_msgs::msg::TurnIndicatorsReport turn;
+    if ((lights & 0x03) == 0x03)
+      turn.report = autoware_vehicle_msgs::msg::TurnIndicatorsReport::DISABLE;  // hazard: both
+    else if (lights & 0x01)
+      turn.report = autoware_vehicle_msgs::msg::TurnIndicatorsReport::ENABLE_LEFT;
+    else if (lights & 0x02)
+      turn.report = autoware_vehicle_msgs::msg::TurnIndicatorsReport::ENABLE_RIGHT;
+    else
+      turn.report = autoware_vehicle_msgs::msg::TurnIndicatorsReport::DISABLE;
+    if (pub_turn_status_->is_activated()) pub_turn_status_->publish(turn);
+
+    autoware_vehicle_msgs::msg::HazardLightsReport hazard;
+    hazard.report = ((lights & 0x03) == 0x03)
+      ? autoware_vehicle_msgs::msg::HazardLightsReport::ENABLE
+      : autoware_vehicle_msgs::msg::HazardLightsReport::DISABLE;
+    if (pub_hazard_status_->is_activated()) pub_hazard_status_->publish(hazard);
+  }
   return true;
 }
 
@@ -1012,34 +1034,13 @@ void VehicleBridgeNode::publish_vehicle_reports(const struct can_frame & frame)
       break;
     }
 
-    case CAN_SAFETY_STS: {  // 0x011 — SYS liveness + light state (forwarded low→high)
+    case CAN_SAFETY_STS: {  // 0x011 — SYS liveness + ESTOP source/reason (low→high)
       messages::SysSafetySts value{};
       if (messages::decode(protocol_view(frame), value) != protocol::CodecStatus::Ok) break;
-      sys_estop_active_.store(value.estop_active, std::memory_order_relaxed);
-      sys_heartbeat_ok_.store(value.heartbeat_ok, std::memory_order_relaxed);
+      sys_estop_active_.store(value.estop_source != 0, std::memory_order_relaxed);
+      // node_presence bit0 = RT online (replaces the old heartbeat_ok byte).
+      sys_heartbeat_ok_.store((value.node_presence & 0x01u) != 0, std::memory_order_relaxed);
       sys_status_.observe(now());
-
-      // Light state feedback (present when DLC ≥ 3, v0.0.5)
-      {
-        uint8_t lights = (value.light_left ? 1u : 0u) | (value.light_right ? 2u : 0u) |
-                         (value.light_brake ? 4u : 0u) | (value.light_head ? 8u : 0u);
-        autoware_vehicle_msgs::msg::TurnIndicatorsReport turn;
-        if ((lights & 0x03) == 0x03)
-          turn.report = autoware_vehicle_msgs::msg::TurnIndicatorsReport::DISABLE;  // hazard: both
-        else if (lights & 0x01)
-          turn.report = autoware_vehicle_msgs::msg::TurnIndicatorsReport::ENABLE_LEFT;
-        else if (lights & 0x02)
-          turn.report = autoware_vehicle_msgs::msg::TurnIndicatorsReport::ENABLE_RIGHT;
-        else
-          turn.report = autoware_vehicle_msgs::msg::TurnIndicatorsReport::DISABLE;
-        if (pub_turn_status_->is_activated()) pub_turn_status_->publish(turn);
-
-        autoware_vehicle_msgs::msg::HazardLightsReport hazard;
-        hazard.report = ((lights & 0x03) == 0x03)
-          ? autoware_vehicle_msgs::msg::HazardLightsReport::ENABLE
-          : autoware_vehicle_msgs::msg::HazardLightsReport::DISABLE;
-        if (pub_hazard_status_->is_activated()) pub_hazard_status_->publish(hazard);
-      }
       break;
     }
 

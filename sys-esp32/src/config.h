@@ -119,6 +119,36 @@ constexpr int kSebStartupAcquireMs    = 1000;  // startup deadline to detect SEB
 // (it is now a latching run/enable control).
 constexpr int kEstopLongPressMs       = 5000;  // held 5s → validated reset
 
+// ── 0x011 ESTOP source/reason catalog (SYS-local; protocol/contracts/sys.yaml) ──
+// Independent from RT's 0x210 estop_reason nibble.
+constexpr uint8_t kEstopSourceNone      = 0;  // no ESTOP
+constexpr uint8_t kEstopSourceLocalSys  = 1;  // SYS-internal trigger
+constexpr uint8_t kEstopSourceCan001    = 2;  // external 0x001 SAFETY_ESTOP
+constexpr uint8_t kEstopSourcePeerFault = 3;  // peer node reported fault
+
+constexpr uint8_t kEstopReasonNone         = 0;
+constexpr uint8_t kEstopReasonHwButton     = 1;
+constexpr uint8_t kEstopReasonRtHbLost     = 2;
+constexpr uint8_t kEstopReasonCan001       = 3;
+constexpr uint8_t kEstopReasonMtrFault     = 4;
+constexpr uint8_t kEstopReasonEgasFault    = 5;
+constexpr uint8_t kEstopReasonTaskDeadline = 6;
+constexpr uint8_t kEstopReasonCanBusoff    = 7;
+
+inline const char* estop_reason_name(uint8_t r) {
+    switch (r) {
+        case kEstopReasonNone:         return "NONE";
+        case kEstopReasonHwButton:     return "HW_BUTTON";
+        case kEstopReasonRtHbLost:     return "RT_HB_LOST";
+        case kEstopReasonCan001:       return "CAN_001";
+        case kEstopReasonMtrFault:     return "MTR_FAULT";
+        case kEstopReasonEgasFault:    return "EGAS_FAULT";
+        case kEstopReasonTaskDeadline: return "TASK_DEADLINE";
+        case kEstopReasonCanBusoff:    return "CAN_BUSOFF";
+    }
+    return "UNKNOWN";
+}
+
 // ── system READY indication (observational only) ─────────────────────
 // READY reports whether the whole Host→RT→SYS→{MTR,SEB} command path is up and
 // error-free. It never gates authority/ESTOP/commands (see system_ready.h).

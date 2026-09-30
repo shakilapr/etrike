@@ -69,7 +69,8 @@ export function evaluateActivationGates(
   const sysPwrVal = useSim ? 1 : (signalNum(sysPwr, 'power_state') ?? (signalText(sysPwr, 'power_state') === 'ON' ? 1 : 0))
   const sysPwrMet = sysPwrVal === 1
 
-  const estopVal = useSim ? 0 : (signalNum(sysSafety, 'estop_active') ?? (signalIsOn(sysSafety, 'estop_active') ? 1 : 0))
+  // 0x011 carries estop_source (0=None, nonzero=active).
+  const estopVal = useSim ? 0 : (signalIsOn(sysSafety, 'estop_source') ? 1 : 0)
   const estopMet = estopVal === 0
 
   const brakeLeverVal = useSim ? 0 : (signalNum(sysDiag, 'brake_engaged') ?? (signalIsOn(sysDiag, 'brake_engaged') ? 1 : 0))
@@ -108,7 +109,7 @@ export function evaluateActivationGates(
       canId: '0x011',
       bus: 'low',
       msgName: 'SYS_SAFETY_STS',
-      signalKey: 'estop_active',
+      signalKey: 'estop_source',
       description: 'Global system safety status clear of ESTOP latch',
       condition: '== 0 (Clear)',
       liveValue: estopMet ? '0 (Clear)' : '1 (ACTIVE)',

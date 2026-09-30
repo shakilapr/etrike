@@ -288,12 +288,9 @@ class TestSilWholeVehicle(unittest.TestCase):
         # Helper to encode SYS_SAFETY_STS with authentic AUTOSAR E2E CRC-8
         def encode_0x011(estop: int, hb_ok: int, counter: int):
             msg = {
-                "estop_active": estop,
-                "heartbeat_ok": hb_ok,
-                "light_left": 0,
-                "light_right": 0,
-                "light_brake": 0,
-                "light_head": 0,
+                "estop_source": estop,
+                "node_presence": 0x3F if hb_ok else 0x3E,
+                "estop_reason": estop,
                 "rolling_counter": counter & 0xFF,
                 "e2e_crc": 0
             }

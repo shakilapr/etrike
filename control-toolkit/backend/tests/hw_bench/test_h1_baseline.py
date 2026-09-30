@@ -45,12 +45,12 @@ def test_sys_safety_status_clean(bench):
     # the clear to actually be broadcast before asserting.
     bench.ensure_operational()
     ok, state = bench.wait_for(
-        lambda s: signal_of(s.get((LOW, CAN_SYS_SAFETY_STS)), "estop_active") == 0,
+        lambda s: signal_of(s.get((LOW, CAN_SYS_SAFETY_STS)), "estop_source") == 0,
         timeout_s=6.0,
     )
-    assert ok, f"SYS 0x011 never reported estop_active=0: {state.get((LOW, CAN_SYS_SAFETY_STS))}"
+    assert ok, f"SYS 0x011 never reported estop_source=0: {state.get((LOW, CAN_SYS_SAFETY_STS))}"
     msg = state[(LOW, CAN_SYS_SAFETY_STS)]
-    assert signal_of(msg, "heartbeat_ok") == 1, f"SYS 0x011 heartbeat_ok != 1: {msg}"
+    assert (signal_of(msg, "node_presence") or 0) & 0x20, f"SYS 0x011 node_presence missing SYS bit: {msg}"
 
     ok, state = bench.wait_live(HIGH, CAN_SYS_SAFETY_STS, timeout_s=4.0)
     assert ok, "SYS 0x011 was never forwarded Low->High by RT"

@@ -112,7 +112,7 @@ void RtCore::feed_safety_sts(int64_t now_us, const can::Frame& raw,
     if (!ssts_roll_.advance(sts.rolling_counter)) return;
     last_sys_safety_sts_us_ = now_us;
 
-    if (sts.estop_active) {
+    if (sts.estop_source != 0u) {
         // Assert frame: (re)start the clear sequence + (re)latch.
         ssts_latched_ = true;
         ssts_clear_confirm_ = 0;

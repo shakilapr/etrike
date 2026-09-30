@@ -61,13 +61,11 @@ generated::HostObstacleDist ro;generated::decode(f.view(),ro);CHECK_EQ(ro.distan
 CHECK(ro.distance_mm<2000u,"500mm<threshold?brake");CHECK(true,"chain: obstacle?ESTOP,speed?0");}
 
 static void t8(){printf("\n=== Chain 8: 0x011 Safety Status ===\n");
-generated::SysSafetySts sts;sts.estop_active=true;sts.heartbeat_ok=true;
-sts.light_left=sts.light_right=sts.light_brake=sts.light_head=true;
+generated::SysSafetySts sts;sts.estop_source=2;sts.estop_reason=5;sts.node_presence=0x2A;
 protocol::Frame f;generated::encode(sts,f);CHECK_EQ(f.dlc,5,"DLC=5");
 generated::SysSafetySts ds;generated::decode(f.view(),ds);
-CHECK_EQ(ds.estop_active,true,"estop_active=true");CHECK_EQ(ds.heartbeat_ok,true,"heartbeat_ok=true");
-uint8_t light_state=static_cast<uint8_t>(ds.light_left)|(static_cast<uint8_t>(ds.light_right)<<1)|(static_cast<uint8_t>(ds.light_brake)<<2)|(static_cast<uint8_t>(ds.light_head)<<3);
-CHECK_EQ(light_state,0x0F,"light_state=0x0F");}
+CHECK_EQ(ds.estop_source,2,"estop_source=2");CHECK_EQ(ds.estop_reason,5,"estop_reason=5");
+CHECK_EQ(ds.node_presence,0x2A,"node_presence=0x2A");}
 
 int main(){printf("=== Stage 2: CAN Signal Chain Tests ===\n");
 t1();t2();t3();t4();t5();t6();t7();t8();

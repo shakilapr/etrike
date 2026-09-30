@@ -2,8 +2,10 @@
   "schema_version": 1,
   "messages": [
     {"key":"sys_safety_sts","owner":"sys","protocol":"etrike.application.v1","name":"SYS_SAFETY_STS","dlc":5,"byte_order":"big","codec":{"strategy":"generated"},"layout":{"kind":"signals","fields":[
-      {"key":"estop_active","byte":0,"bit":0,"bits":8,"min":0,"max":1},{"key":"heartbeat_ok","byte":1,"bit":0,"bits":8,"min":0,"max":1},
-      {"key":"light_left","byte":2,"bit":0,"bits":1},{"key":"light_right","byte":2,"bit":1,"bits":1},{"key":"light_brake","byte":2,"bit":2,"bits":1},{"key":"light_head","byte":2,"bit":3,"bits":1},{"key":"rolling_counter","byte":3,"bit":0,"bits":8,"counter":{"kind":"wrapping","reset_scope":"ecu_restart","increment":1}},{"key":"e2e_crc","byte":4,"bit":0,"bits":8,"max":255}
+      {"key":"estop_source","byte":0,"bit":0,"bits":8,"min":0,"max":3,"enum":{"0":"NONE","1":"LOCAL_SYS","2":"CAN_001","3":"PEER_FAULT"}},
+      {"key":"node_presence","byte":1,"bit":0,"bits":8,"min":0,"max":63},
+      {"key":"estop_reason","byte":2,"bit":0,"bits":8,"min":0,"max":7,"enum":{"0":"NONE","1":"HW_BUTTON","2":"RT_HB_LOST","3":"CAN_001","4":"MTR_FAULT","5":"EGAS_FAULT","6":"TASK_DEADLINE","7":"CAN_BUSOFF"}},
+      {"key":"rolling_counter","byte":3,"bit":0,"bits":8,"counter":{"kind":"wrapping","reset_scope":"ecu_restart","increment":1}},{"key":"e2e_crc","byte":4,"bit":0,"bits":8,"max":255}
     ]},"instances":[
       {"bus":"low","id":"0x011","frame_format":"standard","sender":"SYS","receivers":["RT","MTR"],"cycle_ms":200,"semantics":"independent"},
       {"bus":"high","id":"0x011","frame_format":"standard","sender":"SYS","receivers":["Host"],"cycle_ms":200,"semantics":"same_frame"}
@@ -18,6 +20,7 @@
     ]},"instances":[{"bus":"low","id":"0x113","frame_format":"standard","sender":"SYS","receivers":["MTR"],"cycle_ms":100,"semantics":"independent"}]},
     {"key":"sys_diag_rpt","owner":"sys","protocol":"etrike.application.v1","name":"SYS_DIAG_RPT","dlc":8,"byte_order":"big","codec":{"strategy":"generated"},"layout":{"kind":"signals","fields":[
       {"key":"mode","byte":0,"bit":0,"bits":8,"min":0,"max":2,"enum":{"0":"MANUAL","1":"AUTO","2":"ESTOP"}},{"key":"brake_engaged","byte":1,"bit":0,"bits":1},{"key":"brake_fault","byte":1,"bit":1,"bits":1},
+      {"key":"light_left","byte":1,"bit":2,"bits":1},{"key":"light_right","byte":1,"bit":3,"bits":1},{"key":"light_brake","byte":1,"bit":4,"bits":1},{"key":"light_head","byte":1,"bit":5,"bits":1},
       {"key":"heartbeat_ok","byte":2,"bit":0,"bits":1},{"key":"rx_overflow","byte":2,"bit":1,"bits":6,"max":63},{"key":"estop_active","byte":3,"bit":0,"bits":8,"min":0,"max":1},
       {"key":"free_heap_kb","byte":4,"bit":0,"bits":16},{"key":"tec","byte":6,"bit":0,"bits":8},{"key":"rec","byte":7,"bit":0,"bits":8}
     ]},"instances":[

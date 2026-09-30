@@ -343,7 +343,7 @@ class HardwareBenchRunner:
         return TestResult("baseline", "1.3 SYS Low Bus Heartbeat", "PASS", dt, f"Rate: {hb['observed_rate_hz']:.1f} Hz, Task Health OK", sigs)
 
     def test_1_4_sys_low_safety_sts(self) -> TestResult:
-        """SYS 0x011 observed on Low Bus with estop_active=0, heartbeat_ok=1."""
+        """SYS 0x011 observed on Low Bus with estop_source=0 and SYS present."""
         t0 = time.monotonic()
         ok, state = self.wait_until(
             lambda s: "low:SYS_SAFETY_STS" in s and s["low:SYS_SAFETY_STS"]["freshness"] == "live",
@@ -353,9 +353,9 @@ class HardwareBenchRunner:
         if not ok:
             return TestResult("baseline", "1.4 SYS Low Bus Safety Status", "FAIL", dt, "SYS 0x011 not live on Low Bus")
         sigs = state["low:SYS_SAFETY_STS"]["signals"]
-        if sigs.get("estop_active") != 0 or sigs.get("heartbeat_ok") != 1:
-            return TestResult("baseline", "1.4 SYS Low Bus Safety Status", "FAIL", dt, f"SYS estop_active={sigs.get('estop_active')}, heartbeat_ok={sigs.get('heartbeat_ok')}", sigs)
-        return TestResult("baseline", "1.4 SYS Low Bus Safety Status", "PASS", dt, "ESTOP clear, Heartbeat OK", sigs)
+        if sigs.get("estop_source") != 0 or not ((sigs.get("node_presence") or 0) & 0x20):
+            return TestResult("baseline", "1.4 SYS Low Bus Safety Status", "FAIL", dt, f"SYS estop_source={sigs.get('estop_source')}, node_presence={sigs.get('node_presence')}", sigs)
+        return TestResult("baseline", "1.4 SYS Low Bus Safety Status", "PASS", dt, "ESTOP clear, SYS presence set", sigs)
 
     def test_1_5_rt_low_drive_cmd_idle(self) -> TestResult:
         """RT 0x204 observed on Low Bus at ~100 Hz with speed=0, gear=N."""
@@ -452,7 +452,7 @@ class HardwareBenchRunner:
         t0 = time.monotonic()
         self.client.inject_single("high", key="host:host_light_cmd", values={"headlight": 1, "left_turn": 1, "right_turn": 0, "brake_light": 0})
         ok, state = self.wait_until(
-            lambda s: "low:SYS_SAFETY_STS" in s and s["low:SYS_SAFETY_STS"]["signals"].get("light_head") == 1 and s["low:SYS_SAFETY_STS"]["signals"].get("light_left") == 1,
+            lambda s: "low:SYS_DIAG_RPT" in s and s["low:SYS_DIAG_RPT"]["signals"].get("light_head") == 1 and s["low:SYS_DIAG_RPT"]["signals"].get("light_left") == 1,
             timeout_s=2.0,
         )
         # Reset lights
@@ -483,7 +483,7 @@ class HardwareBenchRunner:
         t0 = time.monotonic()
         self.client.inject_raw("high", can_id=0x001, data_hex="")
         ok, state = self.wait_until(
-            lambda s: "low:SYS_SAFETY_STS" in s and s["low:SYS_SAFETY_STS"]["signals"].get("estop_active") == 1,
+            lambda s: "low:SYS_SAFETY_STS" in s and (s["low:SYS_SAFETY_STS"]["signals"].get("estop_source") or 0) != 0,
             timeout_s=2.0,
         )
         dt = (time.monotonic() - t0) * 1000
@@ -546,7 +546,7 @@ class HardwareBenchRunner:
         self.client.rearm_estop()
         self.client.clear_host_estop()
         ok, state = self.wait_until(
-            lambda s: "low:SYS_SAFETY_STS" in s and s["low:SYS_SAFETY_STS"]["signals"].get("estop_active") == 0,
+            lambda s: "low:SYS_SAFETY_STS" in s and s["low:SYS_SAFETY_STS"]["signals"].get("estop_source") == 0,
             timeout_s=3.0,
         )
         dt = (time.monotonic() - t0) * 1000
@@ -619,7 +619,7 @@ class HardwareBenchRunner:
         job1 = self.client.inject_periodic("high", key="host:host_drive_cmd", values={"speed_mmps": 1500, "yaw_rate_mrad_s": 400, "gear": 1}, period_ms=10.0)
         self.client.inject_single("high", key="host:host_light_cmd", values={"left_turn": 1, "right_turn": 0, "headlight": 0, "brake_light": 0})
         ok1, state1 = self.wait_until(
-            lambda s: "low:SYS_SAFETY_STS" in s and s["low:SYS_SAFETY_STS"]["signals"].get("light_left") == 1,
+            lambda s: "low:SYS_DIAG_RPT" in s and s["low:SYS_DIAG_RPT"]["signals"].get("light_left") == 1,
             timeout_s=1.5,
         )
         if job1:
@@ -631,7 +631,7 @@ class HardwareBenchRunner:
         job2 = self.client.inject_periodic("high", key="host:host_drive_cmd", values={"speed_mmps": 1500, "yaw_rate_mrad_s": -400, "gear": 1}, period_ms=10.0)
         self.client.inject_single("high", key="host:host_light_cmd", values={"left_turn": 0, "right_turn": 1, "headlight": 0, "brake_light": 0})
         ok2, state2 = self.wait_until(
-            lambda s: "low:SYS_SAFETY_STS" in s and s["low:SYS_SAFETY_STS"]["signals"].get("light_right") == 1,
+            lambda s: "low:SYS_DIAG_RPT" in s and s["low:SYS_DIAG_RPT"]["signals"].get("light_right") == 1,
             timeout_s=1.5,
         )
         if job2:

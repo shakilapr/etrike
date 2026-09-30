@@ -1652,10 +1652,18 @@
           },
           {
             "bit": 0,
-            "bits": 16,
+            "bits": 8,
             "byte": 4,
+            "key": "node_presence",
+            "max": 63,
+            "min": 0
+          },
+          {
+            "bit": 0,
+            "bits": 8,
+            "byte": 5,
             "constant": 0,
-            "key": "reserved_b4"
+            "key": "reserved_b5"
           },
           {
             "bit": 0,
@@ -2502,6 +2510,30 @@
             "key": "brake_fault"
           },
           {
+            "bit": 2,
+            "bits": 1,
+            "byte": 1,
+            "key": "light_left"
+          },
+          {
+            "bit": 3,
+            "bits": 1,
+            "byte": 1,
+            "key": "light_right"
+          },
+          {
+            "bit": 4,
+            "bits": 1,
+            "byte": 1,
+            "key": "light_brake"
+          },
+          {
+            "bit": 5,
+            "bits": 1,
+            "byte": 1,
+            "key": "light_head"
+          },
+          {
             "bit": 0,
             "bits": 1,
             "byte": 2,
@@ -3025,41 +3057,41 @@
             "bit": 0,
             "bits": 8,
             "byte": 0,
-            "key": "estop_active",
-            "max": 1,
+            "enum": {
+              "0": "NONE",
+              "1": "LOCAL_SYS",
+              "2": "CAN_001",
+              "3": "PEER_FAULT"
+            },
+            "key": "estop_source",
+            "max": 3,
             "min": 0
           },
           {
             "bit": 0,
             "bits": 8,
             "byte": 1,
-            "key": "heartbeat_ok",
-            "max": 1,
+            "key": "node_presence",
+            "max": 63,
             "min": 0
           },
           {
             "bit": 0,
-            "bits": 1,
+            "bits": 8,
             "byte": 2,
-            "key": "light_left"
-          },
-          {
-            "bit": 1,
-            "bits": 1,
-            "byte": 2,
-            "key": "light_right"
-          },
-          {
-            "bit": 2,
-            "bits": 1,
-            "byte": 2,
-            "key": "light_brake"
-          },
-          {
-            "bit": 3,
-            "bits": 1,
-            "byte": 2,
-            "key": "light_head"
+            "enum": {
+              "0": "NONE",
+              "1": "HW_BUTTON",
+              "2": "RT_HB_LOST",
+              "3": "CAN_001",
+              "4": "MTR_FAULT",
+              "5": "EGAS_FAULT",
+              "6": "TASK_DEADLINE",
+              "7": "CAN_BUSOFF"
+            },
+            "key": "estop_reason",
+            "max": 7,
+            "min": 0
           },
           {
             "bit": 0,
@@ -3087,7 +3119,7 @@
       "protocol": "etrike.application.v1"
     }
   ],
-  "network_hash": "381b049e2b4426cff71982b37c92f9cd1c06ed390a846353bb3966916df66d44",
+  "network_hash": "297a72dec33e7840d5caab0d70733b73c0085558a1d883ae2e89519d72f9abf9",
   "routes": [
     {
       "from": "low",
@@ -3196,6 +3228,6 @@
     }
   ],
   "schema_version": 1,
-  "semantic_hash": "ad2e52255a457025c9961683c434fd42af1c3a074e39f61127c00e243bf29ea5",
-  "wire_hash": "ad2e52255a457025c9961683c434fd42af1c3a074e39f61127c00e243bf29ea5"
+  "semantic_hash": "702d13133fc277541f7a24d0b3fc0fa90a3686dff031790d75eb15b0f5896fb1",
+  "wire_hash": "702d13133fc277541f7a24d0b3fc0fa90a3686dff031790d75eb15b0f5896fb1"
 }

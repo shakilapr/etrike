@@ -33,6 +33,7 @@ bool g_bypass_mtr_absent = false;
 #include "can_rx_router.h"
 #include "brake_arbitration.h"
 #include "seb_request.h"
+#include "estop_status.h"
 #include "encoder_pcnt.h"
 #include "phase2_motion.h"
 
@@ -80,6 +81,7 @@ std::atomic<int32_t>  g_direct_steer_angle_0_1deg{0};
 std::atomic<bool>     g_direct_steer_valid{false};
 std::atomic<int64_t>  g_last_direct_steer_us{-1};
 std::atomic<int64_t>  g_last_mtr_feedback_us{-1};
+std::atomic<int64_t>  g_last_seb_status_us{-1};
 std::atomic<int64_t>  g_last_ses_feedback_us{-1};
 std::atomic<int64_t>  g_last_0x7B9_rx_us{-1};
 std::atomic<int64_t>  g_last_nonzero_cmd_us{-1};
@@ -300,6 +302,25 @@ static can::gen::RtNodeStatus build_rt_node_status() {
     const uint8_t cur_mask = g_ready_mask.load(std::memory_order_relaxed);
     ns.recovery_pending = !estop && !no_auth && rt::is_sys_authority_ready(cur_mask)
                           && !rt::is_motion_ready(cur_mask);
+    // node_presence: RT fills every bit it observes directly (SYS reads SES from
+    // here — SYS has no SES_STATUS receiver). See shared/estop_status.h.
+    {
+        using namespace shared;
+        const int64_t now_us = esp_timer_get_time();
+        auto fresh = [now_us](const std::atomic<int64_t>& t, int64_t win_us) {
+            const int64_t last = t.load(std::memory_order_relaxed);
+            return last > 0 && (now_us - last) <= win_us;
+        };
+        const int64_t win = int64_t(kNodePresenceFreshMs) * 1000;
+        uint8_t pres = kNodePresenceRt;
+        if (fresh(g_last_sys_safety_sts_us, win)) pres |= kNodePresenceSys;
+        if (fresh(g_last_mtr_feedback_us,   win)) pres |= kNodePresenceMtr;
+        if (fresh(g_last_seb_status_us,     win)) pres |= kNodePresenceSeb;
+        if (fresh(g_last_ses_feedback_us,   win)) pres |= kNodePresenceSes;
+        if (fresh(g_last_host_hb_us, int64_t(shared::kHeartbeatTimeoutMsHost) * 1000))
+            pres |= kNodePresenceHost;
+        ns.node_presence = pres;
+    }
     return ns;
 }
 
@@ -763,7 +784,7 @@ static uint8_t task_health_snapshot() {
                             static uint8_t ssts_clear_confirm = 0;
                             static bool ssts_last_zero = false;
                             static uint8_t ssts_clear_last_ctr = 0;
-                            if (ssts.estop_active) {
+                            if (ssts.estop_source != 0u) {
                                 g_sys_clear_in_progress.store(false, std::memory_order_relaxed);
                                 if (!ssts_latched) {
                                     ssts_latched = true;
@@ -894,6 +915,7 @@ static uint8_t task_health_snapshot() {
                     uint16_t pres = (value.control_mode == 1 ? value.pressure_value_raw : 0);
                     g_seb_pressure_raw.store(pres);
                     g_seb_error_status.store(seb_err);
+                    g_last_seb_status_us.store(now_us);
 
                     fbk_snap.seb_pressure_raw = pres;
                     fbk_snap.seb_error_status = seb_err;

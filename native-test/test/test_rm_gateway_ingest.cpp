@@ -158,8 +158,9 @@ int main() {
         // 0x011 (SYS_SAFETY_STS) with a valid E2E CRC. On the HIGH bus it is
         // neither consumed nor forwarded by the router.
         can::gen::SysSafetySts ssts{};
-        ssts.estop_active = 0;
-        ssts.heartbeat_ok = 1;
+        ssts.estop_source = 0;
+        ssts.estop_reason = 0;
+        ssts.node_presence = 0x3F;
         ssts.rolling_counter = 0;
         can::Frame s011{};
         CHECK(can::gen::encode_sys_safety_sts(ssts, s011) == can::gen::CodecStatus::Ok);

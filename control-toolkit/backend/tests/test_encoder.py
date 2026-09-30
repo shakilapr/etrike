@@ -43,23 +43,20 @@ def test_encode_out_of_range():
     assert not r.ok
 
 
-def test_encode_sys_safety_sts_needs_counter_and_crc():
+def test_encode_sys_safety_sts_rejects_out_of_range_source():
     r = encode_message(
         key="sys:sys_safety_sts",
         bus="low",
-        values={"estop_active": 0, "heartbeat_ok": 1},
+        values={"estop_source": 9, "node_presence": 0, "estop_reason": 0},
     )
     assert not r.ok
     assert r.status == "value_out_of_range"
 
 
 _SYS_SAFETY_BASE = {
-    "estop_active": 0,
-    "heartbeat_ok": 1,
-    "light_left": 0,
-    "light_right": 0,
-    "light_brake": 0,
-    "light_head": 0,
+    "estop_source": 0,
+    "node_presence": 0x3F,
+    "estop_reason": 0,
 }
 
 
@@ -121,7 +118,10 @@ def test_encode_node_status_auto_e2e():
         ("rt:rt_node_status", 0x501),
         ("mtr:mtr_node_status", 0x502),
     ):
-        r = encode_message(key=key, bus="low", values=dict(_NODE_STATUS_BASE), auto_e2e=True)
+        values = dict(_NODE_STATUS_BASE)
+        if key == "rt:rt_node_status":
+            values["node_presence"] = 0
+        r = encode_message(key=key, bus="low", values=values, auto_e2e=True)
         assert r.ok, (key, r.status)
         assert r.can_id == can_id
         assert r.dlc == 8

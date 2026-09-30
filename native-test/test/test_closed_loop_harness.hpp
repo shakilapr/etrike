@@ -126,8 +126,9 @@ struct PhysicalPlantModel {
 struct CanManipulator {
     static can::Frame make_safety_frame(uint8_t rolling_counter, bool estop_active, bool heartbeat_ok = true) {
         can::gen::SysSafetySts msg{};
-        msg.estop_active = estop_active;
-        msg.heartbeat_ok = heartbeat_ok;
+        msg.estop_source = estop_active ? 1u : 0u;
+        msg.estop_reason = estop_active ? 1u : 0u;
+        msg.node_presence = heartbeat_ok ? 0x3Fu : 0x3Eu;
         msg.rolling_counter = rolling_counter;
         msg.e2e_crc = 0;
         can::Frame f;
@@ -484,7 +485,7 @@ public:
                 // RT safety stream observation
                 can::gen::SysSafetySts smsg{};
                 if (can::gen::decode_sys_safety_sts(f.view(), smsg) == can::gen::CodecStatus::Ok) {
-                    if (!smsg.estop_active) {
+                    if (smsg.estop_source == 0u) {
                         rt_sys_clear_in_progress = true;
                         rt_clear_confirm_count++;
                         if (rt_clear_confirm_count >= 2) {
@@ -596,8 +597,9 @@ public:
         if (now_us - last_sys_safety_us >= 200000) {
             last_sys_safety_us = now_us;
             can::gen::SysSafetySts smsg{};
-            smsg.estop_active = estop;
-            smsg.heartbeat_ok = sys_safety.heartbeat_ok();
+            smsg.estop_source = estop ? 1u : 0u;
+            smsg.estop_reason = estop ? 1u : 0u;
+            smsg.node_presence = sys_safety.heartbeat_ok() ? 0x3Fu : 0x3Eu;
             smsg.rolling_counter = sys_safety_ctr++;
             smsg.e2e_crc = 0;
             can::Frame tmp; can::gen::encode_sys_safety_sts(smsg, tmp);

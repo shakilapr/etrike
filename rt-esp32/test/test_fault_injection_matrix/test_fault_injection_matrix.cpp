@@ -111,8 +111,9 @@ void test_estop_reset_counter_rollover_255_to_0(void) {
 
     auto make_safe_frame = [](uint8_t ctr, bool estop) {
         can::gen::SysSafetySts s{};
-        s.estop_active = estop;
-        s.heartbeat_ok = true;
+        s.estop_source = estop ? 1u : 0u;
+        s.estop_reason = estop ? 1u : 0u;
+        s.node_presence = 0x3Fu;
         s.rolling_counter = ctr;
         can::Frame f{};
         can::gen::encode_sys_safety_sts(s, f);
@@ -146,8 +147,9 @@ void test_estop_reset_gap_and_duplicate_rejection(void) {
 
     auto make_safe_frame = [](uint8_t ctr, bool estop) {
         can::gen::SysSafetySts s{};
-        s.estop_active = estop;
-        s.heartbeat_ok = true;
+        s.estop_source = estop ? 1u : 0u;
+        s.estop_reason = estop ? 1u : 0u;
+        s.node_presence = 0x3Fu;
         s.rolling_counter = ctr;
         can::Frame f{};
         can::gen::encode_sys_safety_sts(s, f);
@@ -191,8 +193,9 @@ void test_estop_reset_assert_mid_sequence_aborts_clear(void) {
 
     auto make_safe_frame = [](uint8_t ctr, bool estop) {
         can::gen::SysSafetySts s{};
-        s.estop_active = estop;
-        s.heartbeat_ok = true;
+        s.estop_source = estop ? 1u : 0u;
+        s.estop_reason = estop ? 1u : 0u;
+        s.node_presence = 0x3Fu;
         s.rolling_counter = ctr;
         can::Frame f{};
         can::gen::encode_sys_safety_sts(s, f);
@@ -239,8 +242,9 @@ void test_rearm_protocol_sequence_and_violations(void) {
     };
     auto make_safe_frame = [](uint8_t ctr, bool estop) {
         can::gen::SysSafetySts s{};
-        s.estop_active = estop;
-        s.heartbeat_ok = true;
+        s.estop_source = estop ? 1u : 0u;
+        s.estop_reason = estop ? 1u : 0u;
+        s.node_presence = 0x3Fu;
         s.rolling_counter = ctr;
         can::Frame f{};
         can::gen::encode_sys_safety_sts(s, f);
@@ -650,8 +654,9 @@ void test_reverse_speed_sign_protection(void) {
     };
     auto make_safe_frame = [](uint8_t ctr, bool estop) {
         can::gen::SysSafetySts s{};
-        s.estop_active = estop;
-        s.heartbeat_ok = true;
+        s.estop_source = estop ? 1u : 0u;
+        s.estop_reason = estop ? 1u : 0u;
+        s.node_presence = 0x3Fu;
         s.rolling_counter = ctr;
         can::Frame f{};
         can::gen::encode_sys_safety_sts(s, f);

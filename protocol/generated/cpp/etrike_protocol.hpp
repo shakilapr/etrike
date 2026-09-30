@@ -10,9 +10,9 @@
 #include "protocol/core/frame.hpp"
 
 namespace etrike::protocol {
-inline constexpr std::string_view kSemanticHash = "ad2e52255a457025c9961683c434fd42af1c3a074e39f61127c00e243bf29ea5";
+inline constexpr std::string_view kSemanticHash = "702d13133fc277541f7a24d0b3fc0fa90a3686dff031790d75eb15b0f5896fb1";
 inline constexpr std::string_view kWireHash = kSemanticHash;
-inline constexpr std::string_view kNetworkHash = "381b049e2b4426cff71982b37c92f9cd1c06ed390a846353bb3966916df66d44";
+inline constexpr std::string_view kNetworkHash = "297a72dec33e7840d5caab0d70733b73c0085558a1d883ae2e89519d72f9abf9";
 enum class CodecStrategy : std::uint8_t { Generated, Profile, Custom };
 enum class RouteSemantics : std::uint8_t { SameFrame, Regenerated };
 struct MessageMetadata { std::string_view key; std::string_view bus; std::uint32_t id; std::uint8_t dlc; bool extended; CodecStrategy strategy; };
@@ -2213,7 +2213,8 @@ struct RtNodeStatus {
     bool estop_latched{};
     bool recovery_pending{};
     bool degraded{};
-    std::uint16_t reserved_b4{0};
+    std::uint8_t node_presence{};
+    std::uint8_t reserved_b5{0};
     std::uint8_t rolling_counter{};
     std::uint8_t e2e_crc{};
     static constexpr std::uint8_t kNodeStateInit = 0;
@@ -2291,12 +2292,18 @@ struct RtNodeStatus {
         static constexpr std::uint8_t kWidth = 1u;
         static constexpr std::uint64_t kMask = 0x1ull;
     };
-    static constexpr std::uint16_t kReservedB4 = 0;
-    struct ReservedB4Meta {
+    struct NodePresenceMeta {
         static constexpr std::size_t kByte = 4u;
         static constexpr std::uint8_t kBitOffset = 0u;
-        static constexpr std::uint8_t kWidth = 16u;
-        static constexpr std::uint64_t kMask = 0xFFFFull;
+        static constexpr std::uint8_t kWidth = 8u;
+        static constexpr std::uint64_t kMask = 0xFFull;
+    };
+    static constexpr std::uint8_t kReservedB5 = 0;
+    struct ReservedB5Meta {
+        static constexpr std::size_t kByte = 5u;
+        static constexpr std::uint8_t kBitOffset = 0u;
+        static constexpr std::uint8_t kWidth = 8u;
+        static constexpr std::uint64_t kMask = 0xFFull;
     };
     struct RollingCounterMeta {
         static constexpr std::size_t kByte = 6u;
@@ -2315,7 +2322,8 @@ struct RtNodeStatus {
         if (length != kDlc) return CodecStatus::UnexpectedLength;
         if (destination == nullptr && kDlc != 0u) return CodecStatus::NullData;
         if (reserved_b0 != 0) return CodecStatus::ConstantMismatch;
-        if (reserved_b4 != 0) return CodecStatus::ConstantMismatch;
+        if (node_presence > 63) return CodecStatus::ValueOutOfRange;
+        if (reserved_b5 != 0) return CodecStatus::ConstantMismatch;
         std::array<std::uint8_t, kDlc> payload{};
         detail::insert(payload.data(), 0u, 0u, 4u, false, static_cast<std::uint64_t>(node_state));
         detail::insert(payload.data(), 0u, 4u, 4u, false, static_cast<std::uint64_t>(reserved_b0));
@@ -2328,7 +2336,8 @@ struct RtNodeStatus {
         detail::insert(payload.data(), 3u, 5u, 1u, false, static_cast<std::uint64_t>(estop_latched));
         detail::insert(payload.data(), 3u, 6u, 1u, false, static_cast<std::uint64_t>(recovery_pending));
         detail::insert(payload.data(), 3u, 7u, 1u, false, static_cast<std::uint64_t>(degraded));
-        detail::insert(payload.data(), 4u, 0u, 16u, false, static_cast<std::uint64_t>(reserved_b4));
+        detail::insert(payload.data(), 4u, 0u, 8u, false, static_cast<std::uint64_t>(node_presence));
+        detail::insert(payload.data(), 5u, 0u, 8u, false, static_cast<std::uint64_t>(reserved_b5));
         detail::insert(payload.data(), 6u, 0u, 8u, false, static_cast<std::uint64_t>(rolling_counter));
         detail::insert(payload.data(), 7u, 0u, 8u, false, static_cast<std::uint64_t>(e2e_crc));
         for (std::size_t index = 0; index < kDlc; ++index) destination[index] = payload[index];
@@ -2362,9 +2371,12 @@ struct RtNodeStatus {
         value.recovery_pending = raw_recovery_pending != 0u;
         const std::uint64_t raw_degraded = detail::extract(source, 3u, 7u, 1u, false);
         value.degraded = raw_degraded != 0u;
-        const std::uint64_t raw_reserved_b4 = detail::extract(source, 4u, 0u, 16u, false);
-        if (raw_reserved_b4 != 0u) return CodecStatus::ConstantMismatch;
-        value.reserved_b4 = static_cast<std::uint16_t>(raw_reserved_b4);
+        const std::uint64_t raw_node_presence = detail::extract(source, 4u, 0u, 8u, false);
+        value.node_presence = static_cast<std::uint8_t>(raw_node_presence);
+        if (value.node_presence > 63) return CodecStatus::ValueOutOfRange;
+        const std::uint64_t raw_reserved_b5 = detail::extract(source, 5u, 0u, 8u, false);
+        if (raw_reserved_b5 != 0u) return CodecStatus::ConstantMismatch;
+        value.reserved_b5 = static_cast<std::uint8_t>(raw_reserved_b5);
         const std::uint64_t raw_rolling_counter = detail::extract(source, 6u, 0u, 8u, false);
         value.rolling_counter = static_cast<std::uint8_t>(raw_rolling_counter);
         const std::uint64_t raw_e2e_crc = detail::extract(source, 7u, 0u, 8u, false);
@@ -2983,6 +2995,10 @@ struct SysDiagRpt {
     std::uint8_t mode{};
     bool brake_engaged{};
     bool brake_fault{};
+    bool light_left{};
+    bool light_right{};
+    bool light_brake{};
+    bool light_head{};
     bool heartbeat_ok{};
     std::uint8_t rx_overflow{};
     bool estop_active{};
@@ -3007,6 +3023,30 @@ struct SysDiagRpt {
     struct BrakeFaultMeta {
         static constexpr std::size_t kByte = 1u;
         static constexpr std::uint8_t kBitOffset = 1u;
+        static constexpr std::uint8_t kWidth = 1u;
+        static constexpr std::uint64_t kMask = 0x1ull;
+    };
+    struct LightLeftMeta {
+        static constexpr std::size_t kByte = 1u;
+        static constexpr std::uint8_t kBitOffset = 2u;
+        static constexpr std::uint8_t kWidth = 1u;
+        static constexpr std::uint64_t kMask = 0x1ull;
+    };
+    struct LightRightMeta {
+        static constexpr std::size_t kByte = 1u;
+        static constexpr std::uint8_t kBitOffset = 3u;
+        static constexpr std::uint8_t kWidth = 1u;
+        static constexpr std::uint64_t kMask = 0x1ull;
+    };
+    struct LightBrakeMeta {
+        static constexpr std::size_t kByte = 1u;
+        static constexpr std::uint8_t kBitOffset = 4u;
+        static constexpr std::uint8_t kWidth = 1u;
+        static constexpr std::uint64_t kMask = 0x1ull;
+    };
+    struct LightHeadMeta {
+        static constexpr std::size_t kByte = 1u;
+        static constexpr std::uint8_t kBitOffset = 5u;
         static constexpr std::uint8_t kWidth = 1u;
         static constexpr std::uint64_t kMask = 0x1ull;
     };
@@ -3056,6 +3096,10 @@ struct SysDiagRpt {
         detail::insert(payload.data(), 0u, 0u, 8u, false, static_cast<std::uint64_t>(mode));
         detail::insert(payload.data(), 1u, 0u, 1u, false, static_cast<std::uint64_t>(brake_engaged));
         detail::insert(payload.data(), 1u, 1u, 1u, false, static_cast<std::uint64_t>(brake_fault));
+        detail::insert(payload.data(), 1u, 2u, 1u, false, static_cast<std::uint64_t>(light_left));
+        detail::insert(payload.data(), 1u, 3u, 1u, false, static_cast<std::uint64_t>(light_right));
+        detail::insert(payload.data(), 1u, 4u, 1u, false, static_cast<std::uint64_t>(light_brake));
+        detail::insert(payload.data(), 1u, 5u, 1u, false, static_cast<std::uint64_t>(light_head));
         detail::insert(payload.data(), 2u, 0u, 1u, false, static_cast<std::uint64_t>(heartbeat_ok));
         detail::insert(payload.data(), 2u, 1u, 6u, false, static_cast<std::uint64_t>(rx_overflow));
         detail::insert(payload.data(), 3u, 0u, 8u, false, static_cast<std::uint64_t>(estop_active));
@@ -3078,6 +3122,14 @@ struct SysDiagRpt {
         value.brake_engaged = raw_brake_engaged != 0u;
         const std::uint64_t raw_brake_fault = detail::extract(source, 1u, 1u, 1u, false);
         value.brake_fault = raw_brake_fault != 0u;
+        const std::uint64_t raw_light_left = detail::extract(source, 1u, 2u, 1u, false);
+        value.light_left = raw_light_left != 0u;
+        const std::uint64_t raw_light_right = detail::extract(source, 1u, 3u, 1u, false);
+        value.light_right = raw_light_right != 0u;
+        const std::uint64_t raw_light_brake = detail::extract(source, 1u, 4u, 1u, false);
+        value.light_brake = raw_light_brake != 0u;
+        const std::uint64_t raw_light_head = detail::extract(source, 1u, 5u, 1u, false);
+        value.light_head = raw_light_head != 0u;
         const std::uint64_t raw_heartbeat_ok = detail::extract(source, 2u, 0u, 1u, false);
         value.heartbeat_ok = raw_heartbeat_ok != 0u;
         const std::uint64_t raw_rx_overflow = detail::extract(source, 2u, 1u, 6u, false);
@@ -3696,49 +3748,40 @@ struct SysSafetySts {
     static constexpr std::uint32_t kLowId = 0x11u;
     static constexpr std::uint32_t kLowCycleMs = 200u;
     static constexpr bool kLowExtended = false;
-    bool estop_active{};
-    bool heartbeat_ok{};
-    bool light_left{};
-    bool light_right{};
-    bool light_brake{};
-    bool light_head{};
+    std::uint8_t estop_source{};
+    std::uint8_t node_presence{};
+    std::uint8_t estop_reason{};
     std::uint8_t rolling_counter{};
     std::uint8_t e2e_crc{};
-    struct EstopActiveMeta {
+    static constexpr std::uint8_t kEstopSourceNone = 0;
+    static constexpr std::uint8_t kEstopSourceLocalSys = 1;
+    static constexpr std::uint8_t kEstopSourceCan001 = 2;
+    static constexpr std::uint8_t kEstopSourcePeerFault = 3;
+    struct EstopSourceMeta {
         static constexpr std::size_t kByte = 0u;
         static constexpr std::uint8_t kBitOffset = 0u;
         static constexpr std::uint8_t kWidth = 8u;
         static constexpr std::uint64_t kMask = 0xFFull;
     };
-    struct HeartbeatOkMeta {
+    struct NodePresenceMeta {
         static constexpr std::size_t kByte = 1u;
         static constexpr std::uint8_t kBitOffset = 0u;
         static constexpr std::uint8_t kWidth = 8u;
         static constexpr std::uint64_t kMask = 0xFFull;
     };
-    struct LightLeftMeta {
+    static constexpr std::uint8_t kEstopReasonNone = 0;
+    static constexpr std::uint8_t kEstopReasonHwButton = 1;
+    static constexpr std::uint8_t kEstopReasonRtHbLost = 2;
+    static constexpr std::uint8_t kEstopReasonCan001 = 3;
+    static constexpr std::uint8_t kEstopReasonMtrFault = 4;
+    static constexpr std::uint8_t kEstopReasonEgasFault = 5;
+    static constexpr std::uint8_t kEstopReasonTaskDeadline = 6;
+    static constexpr std::uint8_t kEstopReasonCanBusoff = 7;
+    struct EstopReasonMeta {
         static constexpr std::size_t kByte = 2u;
         static constexpr std::uint8_t kBitOffset = 0u;
-        static constexpr std::uint8_t kWidth = 1u;
-        static constexpr std::uint64_t kMask = 0x1ull;
-    };
-    struct LightRightMeta {
-        static constexpr std::size_t kByte = 2u;
-        static constexpr std::uint8_t kBitOffset = 1u;
-        static constexpr std::uint8_t kWidth = 1u;
-        static constexpr std::uint64_t kMask = 0x1ull;
-    };
-    struct LightBrakeMeta {
-        static constexpr std::size_t kByte = 2u;
-        static constexpr std::uint8_t kBitOffset = 2u;
-        static constexpr std::uint8_t kWidth = 1u;
-        static constexpr std::uint64_t kMask = 0x1ull;
-    };
-    struct LightHeadMeta {
-        static constexpr std::size_t kByte = 2u;
-        static constexpr std::uint8_t kBitOffset = 3u;
-        static constexpr std::uint8_t kWidth = 1u;
-        static constexpr std::uint64_t kMask = 0x1ull;
+        static constexpr std::uint8_t kWidth = 8u;
+        static constexpr std::uint64_t kMask = 0xFFull;
     };
     struct RollingCounterMeta {
         static constexpr std::size_t kByte = 3u;
@@ -3756,13 +3799,15 @@ struct SysSafetySts {
     CodecStatus pack(std::uint8_t* destination, std::size_t length) const noexcept {
         if (length != kDlc) return CodecStatus::UnexpectedLength;
         if (destination == nullptr && kDlc != 0u) return CodecStatus::NullData;
+        if (estop_source > 3) return CodecStatus::ValueOutOfRange;
+        if (estop_source != 0 && estop_source != 1 && estop_source != 2 && estop_source != 3) return CodecStatus::InvalidEnum;
+        if (node_presence > 63) return CodecStatus::ValueOutOfRange;
+        if (estop_reason > 7) return CodecStatus::ValueOutOfRange;
+        if (estop_reason != 0 && estop_reason != 1 && estop_reason != 2 && estop_reason != 3 && estop_reason != 4 && estop_reason != 5 && estop_reason != 6 && estop_reason != 7) return CodecStatus::InvalidEnum;
         std::array<std::uint8_t, kDlc> payload{};
-        detail::insert(payload.data(), 0u, 0u, 8u, false, static_cast<std::uint64_t>(estop_active));
-        detail::insert(payload.data(), 1u, 0u, 8u, false, static_cast<std::uint64_t>(heartbeat_ok));
-        detail::insert(payload.data(), 2u, 0u, 1u, false, static_cast<std::uint64_t>(light_left));
-        detail::insert(payload.data(), 2u, 1u, 1u, false, static_cast<std::uint64_t>(light_right));
-        detail::insert(payload.data(), 2u, 2u, 1u, false, static_cast<std::uint64_t>(light_brake));
-        detail::insert(payload.data(), 2u, 3u, 1u, false, static_cast<std::uint64_t>(light_head));
+        detail::insert(payload.data(), 0u, 0u, 8u, false, static_cast<std::uint64_t>(estop_source));
+        detail::insert(payload.data(), 1u, 0u, 8u, false, static_cast<std::uint64_t>(node_presence));
+        detail::insert(payload.data(), 2u, 0u, 8u, false, static_cast<std::uint64_t>(estop_reason));
         detail::insert(payload.data(), 3u, 0u, 8u, false, static_cast<std::uint64_t>(rolling_counter));
         detail::insert(payload.data(), 4u, 0u, 8u, false, static_cast<std::uint64_t>(e2e_crc));
         for (std::size_t index = 0; index < kDlc; ++index) destination[index] = payload[index];
@@ -3773,20 +3818,17 @@ struct SysSafetySts {
         if (length != kDlc) return CodecStatus::UnexpectedLength;
         if (source == nullptr && kDlc != 0u) return CodecStatus::NullData;
         SysSafetySts value{};
-        const std::uint64_t raw_estop_active = detail::extract(source, 0u, 0u, 8u, false);
-        if (raw_estop_active > 1u) return CodecStatus::ValueOutOfRange;
-        value.estop_active = raw_estop_active != 0u;
-        const std::uint64_t raw_heartbeat_ok = detail::extract(source, 1u, 0u, 8u, false);
-        if (raw_heartbeat_ok > 1u) return CodecStatus::ValueOutOfRange;
-        value.heartbeat_ok = raw_heartbeat_ok != 0u;
-        const std::uint64_t raw_light_left = detail::extract(source, 2u, 0u, 1u, false);
-        value.light_left = raw_light_left != 0u;
-        const std::uint64_t raw_light_right = detail::extract(source, 2u, 1u, 1u, false);
-        value.light_right = raw_light_right != 0u;
-        const std::uint64_t raw_light_brake = detail::extract(source, 2u, 2u, 1u, false);
-        value.light_brake = raw_light_brake != 0u;
-        const std::uint64_t raw_light_head = detail::extract(source, 2u, 3u, 1u, false);
-        value.light_head = raw_light_head != 0u;
+        const std::uint64_t raw_estop_source = detail::extract(source, 0u, 0u, 8u, false);
+        value.estop_source = static_cast<std::uint8_t>(raw_estop_source);
+        if (value.estop_source > 3) return CodecStatus::ValueOutOfRange;
+        if (value.estop_source != 0 && value.estop_source != 1 && value.estop_source != 2 && value.estop_source != 3) return CodecStatus::InvalidEnum;
+        const std::uint64_t raw_node_presence = detail::extract(source, 1u, 0u, 8u, false);
+        value.node_presence = static_cast<std::uint8_t>(raw_node_presence);
+        if (value.node_presence > 63) return CodecStatus::ValueOutOfRange;
+        const std::uint64_t raw_estop_reason = detail::extract(source, 2u, 0u, 8u, false);
+        value.estop_reason = static_cast<std::uint8_t>(raw_estop_reason);
+        if (value.estop_reason > 7) return CodecStatus::ValueOutOfRange;
+        if (value.estop_reason != 0 && value.estop_reason != 1 && value.estop_reason != 2 && value.estop_reason != 3 && value.estop_reason != 4 && value.estop_reason != 5 && value.estop_reason != 6 && value.estop_reason != 7) return CodecStatus::InvalidEnum;
         const std::uint64_t raw_rolling_counter = detail::extract(source, 3u, 0u, 8u, false);
         value.rolling_counter = static_cast<std::uint8_t>(raw_rolling_counter);
         const std::uint64_t raw_e2e_crc = detail::extract(source, 4u, 0u, 8u, false);

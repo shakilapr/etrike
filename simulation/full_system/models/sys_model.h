@@ -96,8 +96,9 @@ public:
         if (now_us >= next_sts_us_) {
             next_sts_us_ += 200'000;
             can::gen::SysSafetySts sts{};
-            sts.estop_active = estop_latched_;
-            sts.heartbeat_ok = true;
+            sts.estop_source = estop_latched_ ? 1u : 0u;
+            sts.estop_reason = estop_latched_ ? 1u : 0u;
+            sts.node_presence = 0x3Fu;
             sts.rolling_counter = roll_sts_++;
             sts.e2e_crc = 0;
             can::Frame tmp;

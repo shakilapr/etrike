@@ -269,8 +269,12 @@ private:
             // ignites. estop_active=0 emulates an all-clear supervisor; safe-stop
             // is achieved via 0x204 speed=0 + 0x110 MANUAL on link loss.
             can::gen::SysSafetySts safety_sts{};
-            safety_sts.estop_active   = 0;
-            safety_sts.heartbeat_ok   = snap.signal_valid ? 1 : 0;
+            safety_sts.estop_source   = 0;   // all-clear supervisor
+            safety_sts.estop_reason   = 0;
+            // node_presence: report SYS (self-emulated) plus SES when the RC link
+            // is valid (bit layout: shared/estop_status.h).
+            safety_sts.node_presence  = static_cast<std::uint8_t>(
+                0x20u | (snap.signal_valid ? 0x08u : 0u));
             safety_sts.rolling_counter = roll_sys_safety_++;
             can::Frame safety_fr;
             if (can::gen::encode_sys_safety_sts(safety_sts, safety_fr) == can::gen::CodecStatus::Ok) {

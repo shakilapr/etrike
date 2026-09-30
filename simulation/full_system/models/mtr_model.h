@@ -66,7 +66,7 @@ public:
             if (crc != sts.e2e_crc) return;
             if (!ssts_roll_.advance(sts.rolling_counter)) return;
 
-            if (sts.estop_active) {
+            if (sts.estop_source != 0u) {
                 ssts_latched_ = true;
                 ssts_clear_confirm_ = 0;
                 ssts_last_zero_ = false;

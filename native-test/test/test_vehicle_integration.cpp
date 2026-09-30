@@ -162,8 +162,10 @@ struct Vehicle {
     // 0x011 SYS_SAFETY_STS with real E2E CRC-8.
     void send_sys_safety_sts() {
         can::gen::SysSafetySts msg{};
-        msg.estop_active = (sys_mode.mode() == can::Mode::Estop) || hw_estop_pressed;
-        msg.heartbeat_ok = sys_safety.heartbeat_ok();
+        const bool es = (sys_mode.mode() == can::Mode::Estop) || hw_estop_pressed;
+        msg.estop_source = es ? 1u : 0u;
+        msg.estop_reason = es ? 1u : 0u;
+        msg.node_presence = sys_safety.heartbeat_ok() ? 0x3Fu : 0x3Eu;
         msg.rolling_counter = sc.next();
         msg.e2e_crc = 0;
         can::Frame tmp; can::gen::encode_sys_safety_sts(msg, tmp);

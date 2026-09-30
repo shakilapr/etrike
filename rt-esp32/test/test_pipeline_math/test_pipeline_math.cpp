@@ -30,8 +30,9 @@ static void mtr_send_power(MotorManager& mgr, bool on, uint32_t now) {
 static void mtr_send_safety(MotorManager& mgr, bool estop, uint32_t now) {
     for (int i = 0; i < 2; ++i) {
         can::gen::SysSafetySts msg{};
-        msg.estop_active = estop;
-        msg.heartbeat_ok = true;
+        msg.estop_source = estop ? 1u : 0u;
+        msg.estop_reason = estop ? 1u : 0u;
+        msg.node_presence = 0x3Fu;
         msg.rolling_counter = g_safe_ctr++;
         can::Frame tmp; can::gen::encode_sys_safety_sts(msg, tmp);
         msg.e2e_crc = static_cast<std::uint8_t>(can::e2e::sys_safety_sts_crc(tmp.data.data()));

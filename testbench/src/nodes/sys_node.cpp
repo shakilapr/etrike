@@ -284,8 +284,9 @@ void SysNode::step(uint32_t now_ms, uint32_t dt_ms) {
 void SysNode::publish_safety_status(uint32_t now_ms) {
     (void)now_ms;
     can::gen::SysSafetySts msg{};
-    msg.estop_active = is_estop_latched();
-    msg.heartbeat_ok = safety_.heartbeat_ok();
+    msg.estop_source = is_estop_latched() ? 1u : 0u;
+    msg.estop_reason = is_estop_latched() ? 1u : 0u;
+    msg.node_presence = 0x3Fu;
     msg.rolling_counter = safety_seq_ctr_++;
     msg.e2e_crc = 0;
 

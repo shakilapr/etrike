@@ -118,8 +118,8 @@ export const ECU_PROBES: readonly EcuProbe[] = [
           bus: 'low',
           can_id: 0x11,
           names: ['SYS_SAFETY_STS'],
-          onIfTruthy: ['estop_active'],
-          onIfFalsy: ['heartbeat_ok'],
+          onIfTruthy: ['estop_source'],
+          onIfFalsy: [],
         },
         {
           bus: 'low',

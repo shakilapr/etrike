@@ -85,12 +85,9 @@ static void send_drive(mtr::MotorManager& mgr, int32_t speed, can::Gear gear, ui
 // Single SYS_SAFETY_STS frame at an explicit rolling counter.
 static void send_safety(mtr::MotorManager& mgr, bool estop, uint8_t ctr, uint32_t now) {
     can::gen::SysSafetySts msg{};
-    msg.estop_active = estop;
-    msg.heartbeat_ok = true;
-    msg.light_left = false;
-    msg.light_right = false;
-    msg.light_brake = false;
-    msg.light_head = false;
+    msg.estop_source = estop ? 1u : 0u;
+    msg.estop_reason = estop ? 1u : 0u;
+    msg.node_presence = 0x3Fu;
     msg.rolling_counter = ctr;
     msg.e2e_crc = 0;
     can::Frame tmp;
@@ -104,8 +101,9 @@ static void send_safety(mtr::MotorManager& mgr, bool estop, uint8_t ctr, uint32_
 // Deliberately corrupted CRC frame (rejected before the clear logic runs).
 static void send_safety_corrupt(mtr::MotorManager& mgr, bool estop, uint8_t ctr, uint32_t now) {
     can::gen::SysSafetySts msg{};
-    msg.estop_active = estop;
-    msg.heartbeat_ok = true;
+    msg.estop_source = estop ? 1u : 0u;
+    msg.estop_reason = estop ? 1u : 0u;
+    msg.node_presence = 0x3Fu;
     msg.rolling_counter = ctr;
     msg.e2e_crc = 0;
     can::Frame tmp;

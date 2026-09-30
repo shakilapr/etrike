@@ -219,7 +219,7 @@ public:
         }
         last_safety_ms_ = now_ms;
 
-        if (msg.estop_active) {
+        if (msg.estop_source != 0u) {
             if (!estop_active_) trigger_estop();
             // Assert frame: reset the clear sequence (last_estop_zero_/clear_confirm_
             // were cleared by trigger_estop; keep them cleared if already latched).
@@ -228,7 +228,7 @@ public:
             return;
         }
 
-        // estop_active == 0.
+        // estop_source == 0.
         //
         // Asymmetric clear: an authorized clear requires TWO consecutive zero
         // frames whose rolling counters advance by exactly +1 (mod 256) from the

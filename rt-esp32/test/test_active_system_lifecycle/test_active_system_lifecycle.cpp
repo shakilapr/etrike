@@ -43,8 +43,9 @@ public:
     // SYS sends 0x011 SYS_SAFETY_STS (CRC-8 protected, rolling counter)
     void send_sys_safety_status(bool estop_active, bool heartbeat_ok = true) {
         can::gen::SysSafetySts msg{};
-        msg.estop_active = estop_active;
-        msg.heartbeat_ok = heartbeat_ok;
+        msg.estop_source = estop_active ? 1u : 0u;
+        msg.estop_reason = estop_active ? 1u : 0u;
+        msg.node_presence = heartbeat_ok ? 0x3Fu : 0x3Eu;
         msg.rolling_counter = sys_safety_ctr++;
         msg.e2e_crc = 0;
 

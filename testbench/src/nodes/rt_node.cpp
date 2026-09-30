@@ -144,8 +144,8 @@ void RtNode::receive_can(const std::string& bus_name, const etrike::protocol::Fr
                 } else if (safety_val_.observe(smsg.rolling_counter, last_now_ms_)) {
                     // Valid AND counter advancing: authoritative (main.cpp:712-715).
                     last_safety_sts_ms_ = last_now_ms_;
-                    sys_estop_ = smsg.estop_active;
-                    if (smsg.estop_active) {
+                    sys_estop_ = (smsg.estop_source != 0u);
+                    if (smsg.estop_source != 0u) {
                         estop_latched_ = true;
                         rt_clear_confirm_count_ = 0;
                         commanded_speed_mmps_ = 0;

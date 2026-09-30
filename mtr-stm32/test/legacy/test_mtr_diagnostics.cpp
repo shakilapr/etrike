@@ -55,11 +55,9 @@ using namespace etrike::diagnostics;
 // so the recompute check fails (decoder still accepts the frame structurally).
 can::Frame make_safety_sts(bool estop, bool bad_crc, int counter) {
     can::gen::SysSafetySts msg{};
-    msg.estop_active = estop;
-    msg.heartbeat_ok = true;
-    msg.light_left = false;
-    msg.light_brake = false;
-    msg.light_head = false;
+    msg.estop_source = estop ? 1u : 0u;
+    msg.estop_reason = estop ? 1u : 0u;
+    msg.node_presence = 0x3Fu;
     msg.rolling_counter = static_cast<std::uint8_t>(counter);
     can::Frame fr{};
     can::gen::encode_sys_safety_sts(msg, fr);

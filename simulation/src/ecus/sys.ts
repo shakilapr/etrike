@@ -231,12 +231,9 @@ export class SysEcu implements SimulatedEcu {
     // ?? 0x011 SYS_SAFETY_STS (5 Hz) ?????????????????????????????
     if (nowMs % 200 === 0) {
       out.push(encodeSimFrame("sys:sys_safety_sts", {
-        estop_active: effectiveEstop ? 1 : 0,
-        heartbeat_ok: this.safety.heartbeatOk(nowMs) ? 1 : 0,
-        light_left: this.lights & 1,
-        light_right: (this.lights >> 1) & 1,
-        light_brake: (this.lights >> 2) & 1,
-        light_head: (this.lights >> 3) & 1,
+        estop_source: effectiveEstop ? 1 : 0,
+        node_presence: 0x3f,
+        estop_reason: effectiveEstop ? 1 : 0,
       }, "low", "sys", nowMs));
     }
 
@@ -255,6 +252,10 @@ export class SysEcu implements SimulatedEcu {
         mode: ctx.mode === "auto" ? 1 : ctx.mode === "estop" ? 2 : 0,
         brake_engaged: this.brake.state === BrakeState.ACTIVE ? 1 : 0,
         brake_fault: this.brake.getDiagnostics().brakeFollowingError ? 1 : 0,
+        light_left: this.lights & 1,
+        light_right: (this.lights >> 1) & 1,
+        light_brake: (this.lights >> 2) & 1,
+        light_head: (this.lights >> 3) & 1,
         heartbeat_ok: this.safety.heartbeatOk(nowMs) ? 1 : 0,
         rx_overflow: 0,
         estop_active: effectiveEstop ? 1 : 0,

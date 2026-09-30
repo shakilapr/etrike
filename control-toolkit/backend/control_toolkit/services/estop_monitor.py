@@ -305,10 +305,14 @@ class EstopEventMonitor:
     def _observe_sys_state(self, message: MessageState, frame: RawFrameEnvelope) -> None:
         bus = message.bus
 
-        # Check estop_active
+        # Check estop_active (0x7FE/0x600) or estop_source (0x011, nonzero=active)
         estop_act = _signal_bool(message, "estop_active")
         if estop_act is None:
             estop_act = _signal_bool(message, "estop")
+        if estop_act is None:
+            src = _signal_number(message, "estop_source")
+            if src is not None:
+                estop_act = src != 0
         prev_estop = self._sys_estop_by_bus.get(bus)
         if estop_act is not None:
             self._sys_estop_by_bus[bus] = estop_act
@@ -343,8 +347,13 @@ class EstopEventMonitor:
                 )
                 self._diagnostics.recover("safety.sys_estop", scope=bus, force=True)
 
-        # Check heartbeat_ok
+        # Check heartbeat_ok (0x7FE/0x600). 0x011 no longer carries it; derive
+        # from node_presence bit0 (RT online) when present.
         hb_ok = _signal_bool(message, "heartbeat_ok")
+        if hb_ok is None and message.name == "SYS_SAFETY_STS":
+            pres = _signal_number(message, "node_presence")
+            if pres is not None:
+                hb_ok = (int(pres) & 0x01) != 0
         if hb_ok is not None:
             prev_hb = self._sys_hb_ok_by_bus.get(bus)
             self._sys_hb_ok_by_bus[bus] = hb_ok

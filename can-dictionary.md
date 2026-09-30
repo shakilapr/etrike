@@ -57,17 +57,18 @@ Presence of this frame = emergency stop. Motor stop, brake engage, steering disa
 |----------|-------|
 | **Sender** | SYS |
 | **Receiver(s)** | RT (? Jetson) |
-| **DLC** | 3 |
+| **DLC** | 5 |
 | **Period** | 5 Hz |
 
 | Signal | Start bit | Len | Type | Scale | Offset | Min | Max | Unit |
 |--------|-----------|-----|------|-------|--------|-----|-----|------|
-| `SYS_EstopActive` | 0 | 8 | u8 | 1 | 0 | 0 | 1 | ? |
-| `SYS_HeartbeatOk` | 8 | 8 | u8 | 1 | 0 | 0 | 1 | ? | 0 = RT alive counter frozen >1000ms, 1 = alive counter incrementing |
-| `SYS_LightLeft` | 16 | 1 | bool | 1 | 0 | 0 | 1 | ? | Left turn indicator |
-| `SYS_LightRight` | 17 | 1 | bool | 1 | 0 | 0 | 1 | ? | Right turn indicator |
-| `SYS_LightBrake` | 18 | 1 | bool | 1 | 0 | 0 | 1 | ? | Brake light |
-| `SYS_LightHead` | 19 | 1 | bool | 1 | 0 | 0 | 1 | ? | Headlight |
+| `SYS_EstopSource` | 0 | 8 | u8 | 1 | 0 | 0 | 3 | ? | 0 None, 1 Local SYS, 2 CAN 0x001, 3 Peer fault |
+| `SYS_NodePresence` | 8 | 8 | u8 | 1 | 0 | 0 | 63 | ? | bit0 RT, bit1 MTR, bit2 SEB, bit3 SES, bit4 HOST, bit5 SYS |
+| `SYS_EstopReason` | 16 | 8 | u8 | 1 | 0 | 0 | 7 | ? | 0 None,1 HW_BUTTON,2 RT_HB_LOST,3 CAN_001,4 MTR_FAULT,5 EGAS_FAULT,6 TASK_DEADLINE,7 CAN_BUSOFF |
+| `SYS_RollingCounter` | 24 | 8 | u8 | 1 | 0 | 0 | 255 | ? | Wrapping |
+| `SYS_E2eCrc` | 32 | 8 | u8 | 1 | 0 | 0 | 255 | ? | CRC-8 over bytes 0..3 |
+
+> Lighting status moved off `0x011` onto `0x600 SYS_DIAG_RPT` (byte 1, bits 2..5). `0x011` is now a pure ASIL-D authority frame: ESTOP source + reason + node presence.
 
 ---
 

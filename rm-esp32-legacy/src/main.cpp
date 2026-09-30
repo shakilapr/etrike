@@ -236,8 +236,9 @@ static bool send_can_frame(can::Frame& fr, const char* name) {
             // computed over bytes[0..3] here (same scheme MTR validates, motor_manager.h:137).
 #if defined(TESTING)
             can::gen::SysSafetySts ssts{};
-            ssts.estop_active    = estop_or_signal_loss;
-            ssts.heartbeat_ok    = true;
+            ssts.estop_source    = estop_or_signal_loss ? 1u : 0u;
+            ssts.estop_reason    = estop_or_signal_loss ? 1u : 0u;
+            ssts.node_presence   = 0x3Fu;  // all nodes present (bench emulation)
             ssts.rolling_counter = g_roll_sys_safety++;
             can::Frame ssts_fr;
             if (can::gen::encode_sys_safety_sts(ssts, ssts_fr) == can::gen::CodecStatus::Ok) {

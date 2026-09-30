@@ -59,11 +59,10 @@ generated::SysModeCmd d;generated::decode(f.view(),d);CHECK_EQ(d.mode,ms[i],"mod
 static void t5(){T("=== 5. 0x011 Safety ===");
 bool es[]={false,true,false,false,false};
 bool hb[]={true,true,false,true,true};
-uint8_t lt[]={0,0,0,0x0F,0x01};
-for(int i=0;i<5;i++){generated::SysSafetySts s;s.estop_active=es[i];s.heartbeat_ok=hb[i];
-s.light_left=lt[i]&1;s.light_right=lt[i]&2;s.light_brake=lt[i]&4;s.light_head=lt[i]&8;
+for(int i=0;i<5;i++){generated::SysSafetySts s;
+s.estop_source=es[i]?1:0;s.estop_reason=es[i]?1:0;s.node_presence=hb[i]?0x3F:0x3E;
 protocol::Frame f;generated::encode(s,f);generated::SysSafetySts d;generated::decode(f.view(),d);
-CHECK_EQ(d.estop_active,es[i],"estop");CHECK_EQ(d.heartbeat_ok,hb[i],"hb");}}
+CHECK_EQ(d.estop_source,es[i]?1:0,"estop");CHECK_EQ(d.node_presence,hb[i]?0x3F:0x3E,"presence");}}
 
 static void t6(){T("=== 6. 0x206 Motor ===");
 int16_t sp[]={1500,0,1500,2000};uint8_t fl[]={0,0,1,0};
@@ -157,8 +156,8 @@ uint8_t v=0;for(int i=0;i<8;i++)v^=f3.data[i];CHECK_EQ(v,0xFF,"[3]0x169");
 generated::MtrMotorFbk m;m.motor_command_speed_mmps=1500;m.gear_state=1;m.fault_flags=0;
 protocol::Frame f4;generated::encode(m,f4);generated::MtrMotorFbk d4;generated::decode(f4.view(),d4);
 CHECK_EQ(d4.motor_command_speed_mmps,1500,"[4]0x206");CHECK_EQ(d4.fault_flags,0,"no faults");
-generated::SysSafetySts st;st.estop_active=false;st.heartbeat_ok=true;protocol::Frame f5;generated::encode(st,f5);
-generated::SysSafetySts d5;generated::decode(f5.view(),d5);CHECK_EQ(d5.estop_active,false,"[5]safety OK");
+generated::SysSafetySts st;st.estop_source=0;st.estop_reason=0;st.node_presence=0x3F;protocol::Frame f5;generated::encode(st,f5);
+generated::SysSafetySts d5;generated::decode(f5.view(),d5);CHECK_EQ(d5.estop_source,0,"[5]safety OK");
 T("  Full chain: Host(0x300)->RT->0x204->SYS->MTR->0x206->RT->HOST verified");}
 
 int main(){printf("=== Stage 4: Component I/O Tests ===\n");

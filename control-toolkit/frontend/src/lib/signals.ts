@@ -493,6 +493,7 @@ export function getAuthorityPipeline(messages: MessageState[]) {
   const sysMode = findMsg(messages, 'SYS_MODE_CMD')
   const sysPwr = findMsg(messages, 'SYS_PWR_CMD')
   const sysSafety = findMsg(messages, 'SYS_SAFETY_STS')
+  const sysDiag = findMsg(messages, 'SYS_DIAG_RPT')
 
   const hmiReqMode = signalText(hmiMode, 'req_mode')
   const hmiReqStart = signalText(hmiPwr, 'req_start')
@@ -500,11 +501,12 @@ export function getAuthorityPipeline(messages: MessageState[]) {
   const sysCommandedMode = signalText(sysMode, 'mode')
   const sysCommandedPower = signalText(sysPwr, 'power_state')
 
-  const safetyEstop = signalIsOn(sysSafety, 'estop_active')
-  const lightBrake = signalIsOn(sysSafety, 'light_brake')
-  const lightHead = signalIsOn(sysSafety, 'light_head')
-  const lightLeft = signalIsOn(sysSafety, 'light_left')
-  const lightRight = signalIsOn(sysSafety, 'light_right')
+  // 0x011 carries estop_source (nonzero = active); lights moved to 0x600.
+  const safetyEstop = signalIsOn(sysSafety, 'estop_source') || signalIsOn(sysSafety, 'estop_active')
+  const lightBrake = signalIsOn(sysDiag, 'light_brake')
+  const lightHead = signalIsOn(sysDiag, 'light_head')
+  const lightLeft = signalIsOn(sysDiag, 'light_left')
+  const lightRight = signalIsOn(sysDiag, 'light_right')
 
   return {
     hmiMode,

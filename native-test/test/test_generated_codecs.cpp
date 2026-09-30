@@ -13,21 +13,20 @@ int main() {
     using etrike::protocol::CodecStatus;
     using etrike::protocol::Frame;
 
-    // Independently reviewed 0x011 vector: two byte-wide booleans, four light bits, roll, crc.
-    const uint8_t safety_raw[] = {1, 1, 0x0D, 0, 0};
+    // Independently reviewed 0x011 vector: estop_source, node_presence, estop_reason, roll, crc.
+    const uint8_t safety_raw[] = {2, 0x2A, 3, 7, 0};
     generated::SysSafetySts safety{};
     CHECK(generated::SysSafetySts::unpack(safety_raw, sizeof(safety_raw), safety) == CodecStatus::Ok);
-    CHECK(safety.estop_active && safety.heartbeat_ok);
-    CHECK(safety.light_left && !safety.light_right && safety.light_brake && safety.light_head);
+    CHECK(safety.estop_source == 2 && safety.node_presence == 0x2A && safety.estop_reason == 3);
     uint8_t safety_roundtrip[5]{};
     CHECK(safety.pack(safety_roundtrip, sizeof(safety_roundtrip)) == CodecStatus::Ok);
     CHECK(std::memcmp(safety_raw, safety_roundtrip, sizeof(safety_raw)) == 0);
 
-    // A symmetric but corrupt boolean representation must not decode as true.
-    const uint8_t corrupt_bool[] = {2, 1, 0, 0, 0};
+    // Out-of-range estop_source (max 3) must not decode and must leave output unchanged.
+    const uint8_t corrupt_bool[] = {4, 0x2A, 3, 0, 0};
     auto previous = safety;
     CHECK(generated::SysSafetySts::unpack(corrupt_bool, sizeof(corrupt_bool), safety) == CodecStatus::ValueOutOfRange);
-    CHECK(safety.estop_active == previous.estop_active); // output is unchanged on error
+    CHECK(safety.estop_source == previous.estop_source); // output is unchanged on error
 
     // Reviewed 0x300 big-endian i32 + signed i24 + enum vector.
     const uint8_t drive_raw[] = {0x00, 0x00, 0x05, 0xDC, 0xFF, 0xFC, 0x18, 0x01};

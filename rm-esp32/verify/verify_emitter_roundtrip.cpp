@@ -89,8 +89,8 @@ void run_mode(rm::OperatingMode mode, const char* mode_name,
         } else if (fr.id == 0x011u) {
             can::gen::SysSafetySts c{};
             auto st = can::gen::decode_sys_safety_sts(fr, c);
-            check(st == can::gen::CodecStatus::Ok && c.estop_active == 0,
-                  "BARE 0x011 SYS_SAFETY_STS", "decode OK + estop_active=0 (E2E CRC valid)");
+            check(st == can::gen::CodecStatus::Ok && c.estop_source == 0,
+                  "BARE 0x011 SYS_SAFETY_STS", "decode OK + estop_source=0 (E2E CRC valid)");
         } else if (fr.id == 0x111u) {
             can::gen::HmiModeReq c{};
             auto st = can::gen::decode_hmi_mode_req(fr, c);

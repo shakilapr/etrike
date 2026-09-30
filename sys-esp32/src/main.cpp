@@ -42,6 +42,7 @@ bool g_bypass_mtr_absent = false;
 #include "indicator_control.h"
 #include "sys_status_led.h"
 #include "system_ready.h"
+#include "estop_status.h"
 // #include "wdt_toggle.h"
 
 
@@ -157,6 +158,7 @@ static std::atomic<uint8_t>  g_mtr_gear_state{0};     // gear state from 0x206 M
 // Peer node-status (observational READY inputs): 0x501 RT / 0x502 MTR.
 static std::atomic<bool>     g_rt_node_ready{false};
 static std::atomic<bool>     g_rt_node_degraded{false};
+static std::atomic<uint8_t>  g_rt_node_presence{0};  // RT's node_presence (SES source)
 static std::atomic<uint32_t> g_last_rt_node_tick{0};
 static std::atomic<bool>     g_mtr_node_ready{false};
 static std::atomic<bool>     g_mtr_node_degraded{false};
@@ -220,19 +222,28 @@ static std::atomic<bool>     g_seb_version_logged{false};
 static std::atomic<uint32_t> g_last_estop_trigger_tick{0};
 static sys::MtrEstopAckWatchdog g_mtr_ack_watchdog;
 
+// 0x011 ESTOP source/reason (SYS catalog, config.h). Latched with the mode; the
+// values are only reported while sys_estop_latched() is true, so a validated
+// reset implicitly clears them on the wire.
+static std::atomic<uint8_t> g_estop_source{0};
+static std::atomic<uint8_t> g_estop_reason{0};
+
 // Authoritative ESTOP entry helper.
-static void enter_estop(const char* reason) {
+static void enter_estop(uint8_t reason, uint8_t source, const char* note = nullptr) {
     const bool was_estop = (g_mode_mgr.mode() == can::Mode::Estop);
     if (!was_estop) {
+        g_estop_reason.store(reason, std::memory_order_relaxed);
+        g_estop_source.store(source, std::memory_order_relaxed);
         g_mode_mgr.force_estop();
         const uint32_t now_ms = static_cast<uint32_t>(pdTICKS_TO_MS(xTaskGetTickCount()));
         g_last_estop_trigger_tick.store(now_ms, std::memory_order_relaxed);
         g_mtr_ack_watchdog.trigger(now_ms, g_motor_fault_flags.load(std::memory_order_relaxed));
-        ESP_LOGE(TAG, "ESTOP entered [edge]: %s", reason);
+        ESP_LOGE(TAG, "ESTOP entered [edge]: %s%s%s", sys::estop_reason_name(reason),
+                 note ? " — " : "", note ? note : "");
     }
     // Broadcast 0x001 on CAN (rate-limited by can_send_estop)
     if (can_send_estop()) {
-        send_estop_frame(reason);
+        send_estop_frame(note ? note : sys::estop_reason_name(reason));
     }
 }
 
@@ -302,6 +313,28 @@ static sys::SystemReadyInputs sys_system_ready_inputs() {
 
 static sys::SystemReadyLevel sys_system_ready_level() {
     return sys::evaluate_system_ready(sys_system_ready_inputs());
+}
+
+// ── 0x011 node_presence (observational) ─────────────────────────────────
+// SYS's view of which nodes are live. SES is taken from RT 0x501 (SYS has no
+// direct SES_STATUS receiver); every other bit is SYS's own observation.
+static uint8_t sys_node_presence() {
+    using namespace shared;
+    const TickType_t now = xTaskGetTickCount();
+    auto fresh = [now](const std::atomic<uint32_t>& t) {
+        const uint32_t last = t.load(std::memory_order_relaxed);
+        return last != 0 && (now - last) <= pdMS_TO_TICKS(kNodePresenceFreshMs);
+    };
+    uint8_t p = kNodePresenceSys;
+    if (g_safety.heartbeat_ok())                                   p |= kNodePresenceRt;
+    if (fresh(g_last_mtr_fbk_tick) || fresh(g_last_mtr_node_tick)) p |= kNodePresenceMtr;
+    if (fresh(g_last_seb_status_tick))                             p |= kNodePresenceSeb;
+    if (g_rt_node_presence.load(std::memory_order_relaxed) & kNodePresenceSes)
+        p |= kNodePresenceSes;
+    if (g_mode_request_valid.load(std::memory_order_relaxed)
+        && g_power_request_valid.load(std::memory_order_relaxed))
+        p |= kNodePresenceHost;
+    return p;
 }
 
 // Queues
@@ -471,7 +504,8 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
                 && g_mode_mgr.mode() != can::Mode::Estop
                 && !sys::rx_estop_suppressed(now_ms)) {
                 ESP_LOGW(TAG, "MTR reports ESTOP_ACTIVE in 0x206 fault_flags — propagating");
-                enter_estop("MTR ESTOP_ACTIVE propagated");
+                enter_estop(sys::kEstopReasonMtrFault, sys::kEstopSourcePeerFault,
+                            "MTR ESTOP_ACTIVE propagated");
             }
             break;
         }
@@ -511,7 +545,7 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
                 }
                 break;
             }
-            enter_estop("CAN 0x001");
+            enter_estop(sys::kEstopReasonCan001, sys::kEstopSourceCan001, "CAN 0x001");
             if (within_limit) {
                 ESP_LOGW(TAG, "ESTOP via CAN 0x001");
             }
@@ -646,6 +680,7 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
             if (can::gen::decode_rt_node_status(fr.view(), st) != can::gen::CodecStatus::Ok) break;
             g_rt_node_ready.store(st.ready, std::memory_order_relaxed);
             g_rt_node_degraded.store(st.degraded, std::memory_order_relaxed);
+            g_rt_node_presence.store(st.node_presence, std::memory_order_relaxed);
             g_last_rt_node_tick.store(xTaskGetTickCount(), std::memory_order_relaxed);
             break;
         }
@@ -690,10 +725,10 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
 
         // Developer bypass suppresses only missing-dependency faults. The
         // physical ESTOP remains unbypassable.
-        bool estop_triggered = g_safety.estop_active()
-            || (!g_bench_solo_mode && !g_safety.heartbeat_ok());
-        if (estop_triggered) {
-            enter_estop("Hardware ESTOP or Heartbeat Loss");
+        if (g_safety.estop_active()) {
+            enter_estop(sys::kEstopReasonHwButton, sys::kEstopSourceLocalSys, "Hardware ESTOP button");
+        } else if (!g_bench_solo_mode && !g_safety.heartbeat_ok()) {
+            enter_estop(sys::kEstopReasonRtHbLost, sys::kEstopSourceLocalSys, "RT heartbeat loss");
         }
 
         // Toggle external watchdog + per-task alive counter
@@ -836,7 +871,7 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
                 ESP_LOGE(TAG, "Physical EGAS trip (%d): cmd=%d measured=%d state=%u",
                          static_cast<int>(phys_verdict), pin.commanded_mmps,
                          pin.measured_mmps, pin.sensor_state);
-                enter_estop("Physical EGAS trip");
+                enter_estop(sys::kEstopReasonEgasFault, sys::kEstopSourceLocalSys, "Physical EGAS trip");
             }
         }
 
@@ -1168,18 +1203,15 @@ static can::gen::SysNodeStatus build_sys_node_status() {
     while (1) {
         g_alive_can_tx.store(xTaskGetTickCount(), std::memory_order_relaxed);
         can::Frame fr;
-        const uint8_t lights = g_light_state.load(std::memory_order_relaxed);
         can::gen::SysSafetySts message{};
-        // ESTOP authority is reported here as a latched safety state, separate
-        // from 0x110 SYS_MODE_CMD (which is clamped to MANUAL/AUTO). While the
-        // E-stop is latched the mode may read MANUAL, but estop_active stays
-        // set until a validated REARM clears it.
-        message.estop_active = sys_estop_latched();
-        message.heartbeat_ok = g_safety.heartbeat_ok();
-        message.light_left = lights & 0x01;
-        message.light_right = lights & 0x02;
-        message.light_brake = lights & 0x04;
-        message.light_head = lights & 0x08;
+        // ESTOP authority is reported as a latched safety state, separate from
+        // 0x110 SYS_MODE_CMD (clamped to MANUAL/AUTO). estop_source/estop_reason
+        // identify WHO/WHY; both are reported only while the ESTOP is latched, so
+        // a validated REARM implicitly returns them to NONE on the wire.
+        const bool estop = sys_estop_latched();
+        message.estop_source    = estop ? g_estop_source.load(std::memory_order_relaxed) : 0u;
+        message.estop_reason    = estop ? g_estop_reason.load(std::memory_order_relaxed) : 0u;
+        message.node_presence   = sys_node_presence();
         message.rolling_counter = safety_roll++;
         // E2E: CRC-8 over protected payload bytes [0..3]; fill the CRC field
         // before the final encode.
@@ -1254,7 +1286,7 @@ static can::gen::SysNodeStatus build_sys_node_status() {
             if (++critical_miss_count >= 2) {   // persistent >= 2 s miss
                 ESP_LOGE(TAG, "SYS critical task(s) dead (mask=0x%X need 0x%02X) — "
                               "forcing ESTOP", task_health, kCriticalTaskMask);
-                enter_estop("Critical task dead");
+                enter_estop(sys::kEstopReasonTaskDeadline, sys::kEstopSourceLocalSys, "Critical task dead");
             }
         } else {
             critical_miss_count = 0;
@@ -1271,6 +1303,14 @@ static can::gen::SysNodeStatus build_sys_node_status() {
                        || sys::traction_fault_present();
         rpt.heartbeat_ok  = g_safety.heartbeat_ok();
         rpt.estop_active = (g_mode_mgr.mode() == can::Mode::Estop);
+        // Light status moved off 0x011 (ASIL-D authority) onto this 1 Hz body diag.
+        {
+            const uint8_t lights = g_light_state.load(std::memory_order_relaxed);
+            rpt.light_left  = lights & 0x01;
+            rpt.light_right = lights & 0x02;
+            rpt.light_brake = lights & 0x04;
+            rpt.light_head  = lights & 0x08;
+        }
         rpt.free_heap_kb = static_cast<uint16_t>(esp_get_free_heap_size() / 1024);
         rpt.tec = tec; rpt.rec = rec;
         // Report CAN RX overflow count (6-bit, saturated at 63)
@@ -1290,7 +1330,7 @@ static can::gen::SysNodeStatus build_sys_node_status() {
             bus_off_count++;
             if (bus_off_count >= 5) {
                 ESP_LOGE(TAG, "CAN bus-off persistent — forcing ESTOP");
-                enter_estop("CAN bus-off persistent");
+                enter_estop(sys::kEstopReasonCanBusoff, sys::kEstopSourceLocalSys, "CAN bus-off persistent");
             }
         } else { bus_off_count = 0; }
 

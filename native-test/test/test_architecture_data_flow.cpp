@@ -70,8 +70,9 @@ static void auth_power(mtr::MotorManager& m, bool on, uint32_t now) {
 static void auth_safety(mtr::MotorManager& m, bool estop, uint32_t now) {
     for (int i = 0; i < 2; ++i) {
         can::gen::SysSafetySts msg{};
-        msg.estop_active = estop;
-        msg.heartbeat_ok = true;
+        msg.estop_source = estop ? 1u : 0u;
+        msg.estop_reason = estop ? 1u : 0u;
+        msg.node_presence = 0x3Fu;
         msg.rolling_counter = g_tam_safe_ctr++;
         msg.e2e_crc = 0;
         can::Frame tmp;

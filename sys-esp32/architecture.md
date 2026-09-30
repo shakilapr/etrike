@@ -139,7 +139,7 @@ Low CAN Bus (500 kbit/s, 11-bit Standard ID)
 │ CAN ID    │ Name                 │ Dir     │ Period   │ Payload & Function                       │
 ├───────────┼──────────────────────┼─────────┼──────────┼──────────────────────────────────────────┤
 │ 0x001     │ SAFETY_ESTOP         │ RX/TX   │ Event    │ DLC 0. Hard emergency stop broadcast     │
-│ 0x011     │ SYS_SAFETY_STS       │ TX      │ 200 ms   │ DLC 5. estop_active, hb_ok, lights, CRC  │
+│ 0x011     │ SYS_SAFETY_STS       │ TX      │ 200 ms   │ DLC 5. estop_source, node_presence, reason│
 │ 0x110     │ SYS_MODE_CMD         │ TX      │ 100 ms   │ DLC 2. Mode authority (0=MANUAL, 1=AUTO) │
 │ 0x111     │ HMI_MODE_REQ         │ RX      │ 1000 ms  │ DLC 2. Host requested mode (StreamValid) │
 │ 0x112     │ HMI_PWR_REQ          │ RX      │ 1000 ms  │ DLC 2. Host requested power state        │
@@ -155,7 +155,7 @@ Low CAN Bus (500 kbit/s, 11-bit Standard ID)
 │ 0x500     │ SYS_NODE_STATUS      │ TX      │ 200 ms   │ DLC 8. System-ready, node state, block   │
 │ 0x501     │ RT_NODE_STATUS       │ RX      │ 20 ms    │ DLC 8. RT ready/degraded (covers SES)    │
 │ 0x502     │ MTR_NODE_STATUS      │ RX      │ 20 ms    │ DLC 8. MTR ready/output/ignition proof   │
-│ 0x600     │ SYS_DIAG_RPT         │ TX      │ 1000 ms  │ DLC 8. Heap, TEC/REC, RX overflow        │
+│ 0x600     │ SYS_DIAG_RPT         │ TX      │ 1000 ms  │ DLC 8. Lights, heap, TEC/REC, overflow   │
 │ 0x6FB     │ SEB_TEST             │ RX      │ 10 ms    │ DLC 8. Motor current & ECU temperature   │
 │ 0x721     │ SEB_STATUS           │ RX      │ 10 ms    │ DLC 8. Stroke raw, error status, roll    │
 │ 0x731     │ SEB_ERR_INFO         │ RX      │ 100 ms   │ DLC 8. 16 Level-3 vendor fault bits      │

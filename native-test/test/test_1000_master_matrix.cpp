@@ -314,15 +314,17 @@ void test_t1_211_to_250_rearm_sequencing(void) {
 
         // Clear sequence: prime with assert then 2 advancing 0x011=0 frames
         can::gen::SysSafetySts s_clr{};
-        s_clr.estop_active = true;
-        s_clr.heartbeat_ok = true;
+        s_clr.estop_source = 1u;
+        s_clr.estop_reason = 1u;
+        s_clr.node_presence = 0x3Fu;
         s_clr.rolling_counter = static_cast<uint8_t>(g_harness.sys_safety_ctr++);
         can::Frame fs0{}; can::gen::encode_sys_safety_sts(s_clr, fs0);
         s_clr.e2e_crc = static_cast<uint8_t>(can::e2e::sys_safety_sts_crc(fs0.data.data()));
         can::gen::encode_sys_safety_sts(s_clr, fs0);
         g_harness.mtr_mgr.handle_frame(fs0, g_harness.now_ms + 15);
 
-        s_clr.estop_active = false;
+        s_clr.estop_source = 0u;
+        s_clr.estop_reason = 0u;
         s_clr.rolling_counter = static_cast<uint8_t>(g_harness.sys_safety_ctr++);
         can::Frame fs1{}; can::gen::encode_sys_safety_sts(s_clr, fs1);
         s_clr.e2e_crc = static_cast<uint8_t>(can::e2e::sys_safety_sts_crc(fs1.data.data()));
@@ -528,8 +530,9 @@ void test_t3_601_to_850_protocol_fuzzing_matrix(void) {
     // 1. 0x011 CRC-8 corruptions (50 tests)
     for (int i = 0; i < 50; ++i) {
         can::gen::SysSafetySts s{};
-        s.estop_active = false;
-        s.heartbeat_ok = true;
+        s.estop_source = 0u;
+        s.estop_reason = 0u;
+        s.node_presence = 0x3Fu;
         s.rolling_counter = static_cast<uint8_t>(i);
         can::Frame f{};
         can::gen::encode_sys_safety_sts(s, f);

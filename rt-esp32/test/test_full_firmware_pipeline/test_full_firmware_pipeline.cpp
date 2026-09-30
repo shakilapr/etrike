@@ -122,8 +122,9 @@ public:
         // 2. SYS Safety Status (0x011, 5 Hz with E2E CRC)
         if (enable_sys_safety) {
             can::gen::SysSafetySts safe{};
-            safe.estop_active = sys_estop_latch;
-            safe.heartbeat_ok = true;
+            safe.estop_source = sys_estop_latch ? 1u : 0u;
+            safe.estop_reason = sys_estop_latch ? 1u : 0u;
+            safe.node_presence = 0x3Fu;
             safe.rolling_counter = sys_safety_ctr++;
             safe.e2e_crc = 0;
             can::Frame tmp{};

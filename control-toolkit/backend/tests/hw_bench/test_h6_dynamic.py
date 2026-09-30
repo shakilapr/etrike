@@ -13,7 +13,7 @@ import pytest
 from harness import (
     CAN_RT_BRAKE_CMD,
     CAN_RT_DRIVE_CMD,
-    CAN_SYS_SAFETY_STS,
+    CAN_SYS_DIAG_RPT,
     GEAR_D,
     LOW,
     OBSTACLE_CLEAR,
@@ -51,12 +51,12 @@ def _send_lights_until(bench, *, left: int, right: int, timeout_s: float = 5.0):
     while time.monotonic() < deadline:
         bench.send_lights(left=left, right=right)
         ok, state = bench.wait_signal(
-            LOW, CAN_SYS_SAFETY_STS, "light_left", expected=left, timeout_s=1.0
+            LOW, CAN_SYS_DIAG_RPT, "light_left", expected=left, timeout_s=1.0
         )
         if not ok:
             continue
         ok, state = bench.wait_signal(
-            LOW, CAN_SYS_SAFETY_STS, "light_right", expected=right, timeout_s=1.0
+            LOW, CAN_SYS_DIAG_RPT, "light_right", expected=right, timeout_s=1.0
         )
         if ok:
             return True, state
@@ -69,10 +69,10 @@ def test_cornering_activates_turn_lights(auto_ready):
     bench.start_drive(1500, yaw_rate_mrad_s=400, gear=GEAR_D)
 
     ok, state = _send_lights_until(bench, left=1, right=0)
-    assert ok, f"SYS 0x011 light_left never asserted: {state.get((LOW, CAN_SYS_SAFETY_STS))}"
+    assert ok, f"SYS 0x600 light_left never asserted: {state.get((LOW, CAN_SYS_DIAG_RPT))}"
 
     ok, state = _send_lights_until(bench, left=0, right=1)
-    assert ok, f"SYS 0x011 light_right never asserted: {state.get((LOW, CAN_SYS_SAFETY_STS))}"
+    assert ok, f"SYS 0x600 light_right never asserted: {state.get((LOW, CAN_SYS_DIAG_RPT))}"
 
     bench.send_lights()
 

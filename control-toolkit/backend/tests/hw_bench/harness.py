@@ -398,8 +398,9 @@ class HwBench(BenchClient):
         deadline = time.monotonic() + timeout_s
         while time.monotonic() < deadline:
             self.assert_estop(bus)
-            ok, _ = self.wait_signal(
-                LOW, CAN_SYS_SAFETY_STS, "estop_active", expected=1, timeout_s=0.5
+            ok, _ = self.wait_for(
+                lambda s: (signal_of(s.get((LOW, CAN_SYS_SAFETY_STS)), "estop_source") or 0) != 0,
+                timeout_s=0.5,
             )
             if ok:
                 break
@@ -431,7 +432,7 @@ class HwBench(BenchClient):
         except Exception:  # noqa: BLE001
             pass
         ok, _ = self.wait_signal(
-            LOW, CAN_SYS_SAFETY_STS, "estop_active", expected=0, timeout_s=timeout_s
+            LOW, CAN_SYS_SAFETY_STS, "estop_source", expected=0, timeout_s=timeout_s
         )
         return ok
 

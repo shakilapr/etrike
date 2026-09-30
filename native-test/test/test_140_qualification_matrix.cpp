@@ -1424,15 +1424,15 @@ void test_103_corrupted_estop_active_payload(void) {
 }
 
 void test_104_unexpected_estop_active_value(void) {
-    // estop_active is packed as byte 0 with an 8-bit physical range of {0,1};
-    // the codec DEFENSIVELY rejects any out-of-range value (>1) as
+    // estop_source is packed as byte 0 with an 8-bit physical range of {0..3};
+    // the codec DEFENSIVELY rejects any out-of-range value (>3) as
     // ValueOutOfRange. MTR therefore only latches ESTOP on a decode-valid,
     // E2E-CRC-correct 0x011 - a corrupt "estop byte" can never be misread as a
     // clear (it is dropped, not trusted).
     ClosedLoopHarness h; h.init();
-    // (a) Codec must reject a non-canonical estop byte (spoofed "3").
+    // (a) Codec must reject a non-canonical estop_source (spoofed "4").
     can::Frame bad = CanManipulator::make_safety_frame(0, false);
-    bad.data[0] = 0x03;   // estop byte out of range {0,1}
+    bad.data[0] = 0x04;   // estop_source out of range {0..3}
     can::gen::SysSafetySts dbg{};
     TEST_ASSERT_TRUE(can::gen::decode_sys_safety_sts(bad.view(), dbg) != can::gen::CodecStatus::Ok);
     h.mtr_mgr.handle_frame(bad, 10);

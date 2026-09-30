@@ -59,14 +59,12 @@ void test_success_vectors() {
     check_vector(generated::SafetyEstop{}, std::array<std::uint8_t, 0>{});
 
     generated::SysSafetySts safety{};
-    safety.estop_active = true;
-    safety.heartbeat_ok = true;
-    safety.light_left = true;
-    safety.light_brake = true;
-    safety.light_head = true;
-    safety.rolling_counter = 0;
-    safety.e2e_crc = 0x32;  // CRC-8 over bytes [0x01,0x01,0x0D,0x00]
-    check_vector(safety, std::array<std::uint8_t, 5>{0x01, 0x01, 0x0D, 0x00, 0x32});
+    safety.estop_source = 2;       // CAN_001
+    safety.node_presence = 0x2A;   // RT|MTR|SES|SYS
+    safety.estop_reason = 3;       // CAN_001
+    safety.rolling_counter = 7;
+    safety.e2e_crc = 0x5A;
+    check_vector(safety, std::array<std::uint8_t, 5>{0x02, 0x2A, 0x03, 0x07, 0x5A});
 
     generated::HmiModeReq hmi_mode{};
     hmi_mode.req_mode = true;
