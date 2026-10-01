@@ -670,7 +670,7 @@ void test_can_frame_encoding() {
     ASSERT_EQ(ses_fr.id, 0x169u);
     ASSERT_EQ(ses_fr.dlc, 8u);
 
-    // 2. 0x7B9 VCU_SEB_REQ
+    // 2. 0x7B9 VCU_SEB_REQ (standard codec)
     can::custom::seb::Command seb_cmd{};
     seb_cmd.alignment_enable = true;
     seb_cmd.control_enable = true;
@@ -680,6 +680,13 @@ void test_can_frame_encoding() {
     can::Frame seb_fr;
     ASSERT_EQ(can::custom::seb::encode_command(seb_cmd, seb_fr), can::gen::CodecStatus::Ok);
     ASSERT_EQ(seb_fr.id, 0x7B9u);
+
+    // 2b. 0x7B9 VCU_SEB_REQ (raw zero-security bypass)
+    can::Frame seb_raw_fr;
+    ASSERT_EQ(can::custom::seb::encode_command_raw(seb_cmd, seb_raw_fr), can::gen::CodecStatus::Ok);
+    ASSERT_EQ(seb_raw_fr.id, 0x7B9u);
+    ASSERT_EQ(seb_raw_fr.data[6], 0x00u);
+    ASSERT_EQ(seb_raw_fr.data[7], 0x00u);
 
     // 3. 0x204 RT_DRIVE_CMD
     can::gen::RtDriveCmd drive_cmd{};
