@@ -55,42 +55,13 @@ inline CodecStatus encode_command(const Command& value, Frame& out) noexcept {
     return CodecStatus::Ok;
 }
 
-/// Raw wire-frame encoder (zero-security bypass mode).
-/// Byte 6 = 0x00  — rolling counter disabled, checksum disabled.
-/// Byte 7 = 0x00  — no checksum.
-/// Verified on physical hardware: actuator accepts frames without
-/// rolling counter or checksum when security flags in Byte 6 are both 0.
-inline CodecStatus encode_command_raw(const Command& value, Frame& out) noexcept {
-    const auto mode = static_cast<std::uint8_t>(value.control_mode);
-    if (mode > 1) return CodecStatus::InvalidEnum;
-    if (value.pressure_request_raw > 100)
-        return CodecStatus::ValueOutOfRange;
-
-    Frame frame = Frame::standard(kCommandId, kDlc);
-    frame.data[0] = static_cast<std::uint8_t>((value.alignment_enable ? 0x01u : 0u) |
-                                              (value.control_enable ? 0x02u : 0u) |
-                                              (mode << 2u) |
-                                              (value.auto_brake ? 0x08u : 0u));
-    write_be_u16(&frame.data[1], value.stroke_request_raw);
-    frame.data[3] = value.pressure_request_raw;
-    frame.data[4] = 0x00u;
-    frame.data[5] = 0x00u;
-    frame.data[6] = 0x00u; // Zero-security: rolling counter + checksum both disabled
-    frame.data[7] = 0x00u; // No checksum
-    out = frame;
-    return CodecStatus::Ok;
-}
-
 inline CodecStatus decode_command(FrameView frame, Command& out) noexcept {
     CodecStatus status = detail::validate_frame(frame, kCommandId, false, kDlc);
     if (status != CodecStatus::Ok) return status;
-    const bool zero_security = ((frame[6] & 0x03u) == 0x00u);
-    if (!zero_security) {
-        if (sum8_xor_ff(frame.data(), 7) != frame[7] &&
-            profiles::xor8_ff_v1(frame.data(), 7) != frame[7])
-            return CodecStatus::ChecksumMismatch;
-        if ((frame[6] & 0x03u) != 0x03u) return CodecStatus::ConstantMismatch;
-    }
+    if (sum8_xor_ff(frame.data(), 7) != frame[7] &&
+        profiles::xor8_ff_v1(frame.data(), 7) != frame[7])
+        return CodecStatus::ChecksumMismatch;
+    if ((frame[6] & 0x03u) != 0x03u) return CodecStatus::ConstantMismatch;
 
     Command value{};
     value.alignment_enable = (frame[0] & 0x01u) != 0;

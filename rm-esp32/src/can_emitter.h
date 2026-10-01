@@ -198,7 +198,6 @@ private:
         }
 
         // 2. Braking: 0x7B9 VCU_SEB_REQ (50 Hz / 20 ms per SEB specification)
-        //    Raw wire-frame encoding (Byte6=0x00, Byte7=0x00, zero-security bypass).
         if (tick_10ms % 2 == 0) {
             can::custom::seb::Command seb_cmd{};
             seb_cmd.alignment_enable = false; // Normal braking: alignment MUST be false (true resets zero datum)
@@ -212,12 +211,15 @@ private:
                 std::clamp(std::round((commanded_stroke + 30.0f) * 20.0f), 500.0f, 1140.0f));
             seb_cmd.stroke_request_raw   = stroke_raw;
             seb_cmd.pressure_request_raw = 0;
-            seb_cmd.rolling_counter      = 0;
+            seb_cmd.rolling_counter      = roll_seb_;
+            roll_seb_ = (roll_seb_ + 1) & 0x0F;
 
-            // Raw wire frame: Byte6=0x00 (no counter/checksum), Byte7=0x00
             can::Frame seb_fr;
-            can::custom::seb::encode_command_raw(seb_cmd, seb_fr);
-            send(seb_fr);
+            if (can::custom::seb::encode_command(seb_cmd, seb_fr) == can::gen::CodecStatus::Ok) {
+                // Checksum: additive sum of bytes 0..6, then XOR with 0xFF
+                seb_fr.data[7] = static_cast<uint8_t>(calc_sum8(seb_fr.data.data(), 7) ^ 0xFFu);
+                send(seb_fr);
+            }
         }
 
         // 3. Traction: 0x204 RT_DRIVE_CMD (100 Hz)
