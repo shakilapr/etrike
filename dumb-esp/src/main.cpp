@@ -368,17 +368,15 @@ static void emit_rt_node_status() {
     g_can_low.send(fr, 2);
 }
 
-// 0x500 SYS_NODE_STATUS — SYS node state (10 Hz, both buses)
+// 0x500 SYS_NODE_STATUS — SYS node state (5 Hz, both buses)
 static void emit_sys_node_status() {
-    Frame fr = Frame::standard(0x500u, 8);
-    fr.data[0] = 3u;    // node_state = ACTIVE (3)
-    fr.data[1] = 0u;    // block_mask low
-    fr.data[2] = 0u;    // block_mask high
-    fr.data[3] = 0x12u; // ready=1 (bit 1), output_enabled=1 (bit 4)
-    fr.data[4] = 0u;
-    fr.data[5] = 0u;
-    fr.data[6] = 0u;
-    fr.data[7] = 0u;
+    Frame fr = Frame::standard(0x500u, 6);
+    fr.data[0] = 0x07u; // cmd_received | cmd_nonzero | cmd_executing
+    fr.data[1] = 0x01u; // system_ready
+    fr.data[2] = 0u;    // block_mask_low
+    fr.data[3] = 0u;    // block_mask_high
+    fr.data[4] = 0u;    // hw inputs (none pressed)
+    fr.data[5] = 0x09u; // power_12v_relay_on | ready_bulb_on
     g_can_high.send(fr, 2);
     g_can_low.send(fr, 2);
 }
@@ -443,16 +441,17 @@ static void emit_sys_heartbeat() {
     g_can_low.send(fr, 20);
 }
 
-// 0x600 SYS_DIAG_RPT — Host diagnostic keepalive (1 Hz)
+// 0x600 SYS_DIAG_RPT — Host diagnostic keepalive (1 Hz, pure ECU/bus health)
 static void emit_sys_diag(bool braking) {
+    (void)braking;
     Frame fr = Frame::standard(can::kIdSysDiagRpt, 8);
-    fr.data[0] = g_mode_auto.load(std::memory_order_relaxed) ? 1u : 0u; // mode
-    fr.data[1] = braking ? 1u : 0u;
-    fr.data[2] = 1u; // heartbeat_ok = 1
-    fr.data[3] = 0u; // estop_active = 0
-    be_write_u16(&fr.data[4], 120u); // free_heap_kb
-    fr.data[6] = 0u; // tec = 0
-    fr.data[7] = 0u; // rec = 0
+    fr.data[0] = 0u;    // rx_overflow=0 | can_state=0 (ACTIVE)
+    fr.data[1] = 0u;    // tec = 0
+    fr.data[2] = 0u;    // rec = 0
+    fr.data[3] = 0xFFu; // task_health_mask = all alive
+    fr.data[4] = 120u;  // free_heap_kb
+    fr.data[5] = 0u;    // mcu_reset_reason = POWER_ON
+    be_write_u16(&fr.data[6], 0u); // uptime_seconds = 0
     g_can_high.send(fr, 2);
     g_can_low.send(fr, 2);
 }

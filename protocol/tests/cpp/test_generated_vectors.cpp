@@ -203,17 +203,16 @@ void test_success_vectors() {
     check_vector(mode, std::array<std::uint8_t, 2>{0x01, 0x00});
 
     generated::SysDiagRpt diagnostic{};
-    diagnostic.mode = 2;
-    diagnostic.brake_engaged = true;
-    diagnostic.brake_fault = true;
-    diagnostic.heartbeat_ok = true;
     diagnostic.rx_overflow = 8;
-    diagnostic.estop_active = true;
-    diagnostic.free_heap_kb = 0x1234;
+    diagnostic.can_state = 1;  // WARNING
     diagnostic.tec = 0xAA;
     diagnostic.rec = 0x55;
-    check_vector(diagnostic, std::array<std::uint8_t, 8>{0x02, 0x03, 0x11, 0x01,
-                                                         0x12, 0x34, 0xAA, 0x55});
+    diagnostic.task_health_mask = 0xFF;
+    diagnostic.free_heap_kb = 120;
+    diagnostic.mcu_reset_reason = 1;  // SW_RESET
+    diagnostic.uptime_seconds = 1234;
+    check_vector(diagnostic, std::array<std::uint8_t, 8>{0x48, 0xAA, 0x55, 0xFF,
+                                                         0x78, 0x01, 0x04, 0xD2});
 
     generated::SysHeartbeat sys_heartbeat{};
     sys_heartbeat.alive_ctr = 255;
@@ -228,15 +227,17 @@ void test_success_vectors() {
     check_vector(sys_heartbeat, std::array<std::uint8_t, 2>{0xFF, 0xFF});
 
     generated::SysNodeStatus sys_node_status{};
-    sys_node_status.node_state = 3;  // ACTIVE
-    sys_node_status.block_mask = 0x0123;
-    sys_node_status.estop_active = true;
-    sys_node_status.ready = true;
+    sys_node_status.command_received = true;
+    sys_node_status.command_nonzero = true;
+    sys_node_status.command_executing = true;
+    sys_node_status.system_ready = true;
     sys_node_status.degraded = true;
-    sys_node_status.rolling_counter = 7;
-    sys_node_status.e2e_crc = 0x5A;
-    check_vector(sys_node_status, std::array<std::uint8_t, 8>{0x03, 0x01, 0x23, 0x83,
-                                                              0x00, 0x00, 0x07, 0x5A});
+    sys_node_status.block_mask_low = 0x23;
+    sys_node_status.block_mask_high = 0x01;
+    sys_node_status.hw_estop_btn_pressed = true;
+    sys_node_status.estop_bulb_on = true;
+    check_vector(sys_node_status, std::array<std::uint8_t, 6>{0x07, 0x21, 0x23,
+                                                              0x01, 0x01, 0x08});
 
     generated::PwtDcdcCmd dcdc{};
     dcdc.control = true;

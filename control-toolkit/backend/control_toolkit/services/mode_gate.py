@@ -96,9 +96,15 @@ def derive_vehicle_mode(
     # NODE_STATUS node_state is the authoritative observational latch/inhibit
     # view: an ESTOP / INHIBITED / RECOVER node must gate motion even while the
     # older RT_STATE_RPT.mode stream still reads MANUAL/AUTO.
+    # The redesigned 0x500 SYS_NODE_STATUS carries no node_state; the SYS latch
+    # is resolved from 0x011 SYS_SAFETY_STS.estop_source instead.
+    sys_safety = _find(messages, "SYS_SAFETY_STS", "low") or _find(messages, "SYS_SAFETY_STS")
+    if _fresh(sys_safety):
+        src = _num(sys_safety, "estop_source")
+        if src is not None and src != 0:
+            return {"mode": "ESTOP", "source": "sys_safety_sts", "frame_fresh": True}
     for name, source in (
         ("RT_NODE_STATUS", "rt_node"),
-        ("SYS_NODE_STATUS", "sys_node"),
     ):
         node_msg = _find(messages, name, "low") or _find(messages, name)
         if not _fresh(node_msg):

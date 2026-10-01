@@ -541,24 +541,24 @@ export function CanAuditLogger({
         }
       }
 
-      // Check 0x600 Handlebar Brake Lever Override
-      const sysDiagMsg = findMsg(messages, "SYS_DIAG_RPT")
-      if (sysDiagMsg && frameRecent(sysDiagMsg, 2000)) {
-        const lever = signalNum(sysDiagMsg, "brake_engaged")
+      // Check 0x500 Handlebar Brake Lever Override (moved off 0x600)
+      const sysNodeMsg = findMsg(messages, "SYS_NODE_STATUS")
+      if (sysNodeMsg && frameRecent(sysNodeMsg, 2000)) {
+        const lever = signalNum(sysNodeMsg, "hw_brake_lever_pulled")
         if (lever === 1 && !obs.seenEventIds.has("refusal-lever-engaged")) {
           obs.seenEventIds.add("refusal-lever-engaged")
           newItems.push({
             id: "refusal-lever-" + Date.now(),
             timestamp: timeStr,
             category: "refusal",
-            canIdHex: "0x600",
-            msgName: "SYS_DIAG_RPT",
+            canIdHex: "0x500",
+            msgName: "SYS_NODE_STATUS",
             subsystem: "Safety",
             severity: "ERROR",
             reaction: "INHIBIT",
-            title: "Autonomous Drive Refused: Handlebar Brake Lever Engaged (0x600)",
+            title: "Autonomous Drive Refused: Handlebar Brake Lever Engaged (0x500)",
             description: "Physical brake lever sensor active (GPIO2). Hardware safety interlock immediately overrides autonomous propulsion.",
-            details: { brake_engaged: 1, action: "Release brake lever to re-engage autonomy" }
+            details: { hw_brake_lever_pulled: 1, action: "Release brake lever to re-engage autonomy" }
           })
         }
       }

@@ -40,7 +40,7 @@ from harness import (
     CAN_RT_DRIVE_CMD,
     CAN_SEB_REQ,
     CAN_SES_REQ,
-    CAN_SYS_DIAG_RPT,
+    CAN_SYS_NODE_STATUS,
     CAN_SYS_MODE_CMD,
     CAN_SYS_PWR_CMD,
     CAN_SYS_SAFETY_STS,
@@ -90,12 +90,12 @@ def _send_lights_until(bench, *, left=0, right=0, brake=0, head=0, timeout_s: fl
     """Best-effort High->Low light forward (single bounded gateway frame)."""
     deadline = time.monotonic() + timeout_s
     state = {}
-    fields = (("light_left", left), ("light_right", right),
-              ("light_brake", brake), ("light_head", head))
+    fields = (("light_left_on", left), ("light_right_on", right),
+              ("light_brake_on", brake), ("light_head_on", head))
     while time.monotonic() < deadline:
         bench.send_lights(left=left, right=right, brake=brake, head=head)
         state = bench.state_map()
-        if all(signal_of(state.get((LOW, CAN_SYS_DIAG_RPT)), f) == v for f, v in fields):
+        if all(signal_of(state.get((LOW, CAN_SYS_NODE_STATUS)), f) == v for f, v in fields):
             return True, state
         time.sleep(0.1)
     return False, state
@@ -335,10 +335,10 @@ def test_brake_and_head_lamps_follow_host(auto_ready):
     """HOST_LIGHT_CMD brake/head bits reach SYS lamp outputs (0x011)."""
     bench = auto_ready
     ok, state = _send_lights_until(bench, brake=1, head=1)
-    assert ok, f"SYS 0x600 brake/head not asserted: {state.get((LOW, CAN_SYS_DIAG_RPT))}"
+    assert ok, f"SYS 0x500 brake/head not asserted: {state.get((LOW, CAN_SYS_NODE_STATUS))}"
 
     ok, state = _send_lights_until(bench)
-    assert ok, f"SYS 0x600 brake/head did not clear: {state.get((LOW, CAN_SYS_DIAG_RPT))}"
+    assert ok, f"SYS 0x500 brake/head did not clear: {state.get((LOW, CAN_SYS_NODE_STATUS))}"
 
 
 # ── Safety-path command outputs ──────────────────────────────────────────
@@ -357,8 +357,8 @@ def test_estop_silences_steer_and_forces_brake_lamp(auto_ready):
     assert ok, "SYS never reported ESTOP"
 
     # light_control.h forces the brake lamp while in ESTOP (lamp status on 0x600).
-    ok, state = bench.wait_signal(LOW, CAN_SYS_DIAG_RPT, "light_brake", expected=1, timeout_s=3.0)
-    assert ok, f"SYS brake lamp not forced in ESTOP: {state.get((LOW, CAN_SYS_DIAG_RPT))}"
+    ok, state = bench.wait_signal(LOW, CAN_SYS_NODE_STATUS, "light_brake_on", expected=1, timeout_s=3.0)
+    assert ok, f"SYS brake lamp not forced in ESTOP: {state.get((LOW, CAN_SYS_NODE_STATUS))}"
 
     # steering ESTOP machine ramps -> holds -> silent: 0x169 must stop.
     ok, _ = bench.wait_for(lambda s: not is_live(s.get((LOW, CAN_SES_REQ))), timeout_s=6.0)

@@ -22,7 +22,7 @@ from harness import (
     CAN_RT_NODE_STATUS,
     CAN_RT_STATE_RPT,
     CAN_SYS_HEARTBEAT,
-    CAN_SYS_NODE_STATUS,
+    CAN_SYS_SAFETY_STS,
     GEAR_D,
     HIGH,
     LOW,
@@ -51,7 +51,8 @@ def test_node_health_soak(auto_ready):
         rt_state = signal_of(state.get((LOW, CAN_RT_STATE_RPT)), "mode")
         assert rt_state is not None, "RT state report missing"
         assert signal_of(state.get((LOW, CAN_RT_NODE_STATUS)), "estop_active") == 0
-        assert signal_of(state.get((LOW, CAN_SYS_NODE_STATUS)), "estop_active") == 0
+        # Redesigned 0x500 has no estop bit: SYS latch rides on 0x011.
+        assert signal_of(state.get((LOW, CAN_SYS_SAFETY_STS)), "estop_source") == 0
         assert signal_of(state.get((LOW, CAN_RT_NODE_STATUS)), "degraded") == 0
         time.sleep(0.5)
 
@@ -127,12 +128,13 @@ def test_heartbeat_counters_advance(bench):
 
 
 def test_operational_node_states(bench):
-    """Both node reports describe an operational (STANDBY/ACTIVE) state."""
+    """RT node report describes an operational (STANDBY/ACTIVE) state; SYS is
+    operational when its 0x011 stream is live with a clear ESTOP source."""
     bench.ensure_operational()
     state = bench.state_map()
 
     rt = signal_of(state.get((LOW, CAN_RT_NODE_STATUS)), "node_state")
-    sys = signal_of(state.get((LOW, CAN_SYS_NODE_STATUS)), "node_state")
     assert rt in NODE_STATES_OPERATIONAL, f"RT node_state not operational: {rt}"
-    assert sys in NODE_STATES_OPERATIONAL, f"SYS node_state not operational: {sys}"
+    sys_safety = signal_of(state.get((LOW, CAN_SYS_SAFETY_STS)), "estop_source")
+    assert sys_safety == 0, f"SYS 0x011 estop_source not clear: {sys_safety}"
     hold(bench, "operational states", 1)

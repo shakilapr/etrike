@@ -452,7 +452,7 @@ class HardwareBenchRunner:
         t0 = time.monotonic()
         self.client.inject_single("high", key="host:host_light_cmd", values={"headlight": 1, "left_turn": 1, "right_turn": 0, "brake_light": 0})
         ok, state = self.wait_until(
-            lambda s: "low:SYS_DIAG_RPT" in s and s["low:SYS_DIAG_RPT"]["signals"].get("light_head") == 1 and s["low:SYS_DIAG_RPT"]["signals"].get("light_left") == 1,
+            lambda s: "low:SYS_NODE_STATUS" in s and s["low:SYS_NODE_STATUS"]["signals"].get("light_head_on") == 1 and s["low:SYS_NODE_STATUS"]["signals"].get("light_left_on") == 1,
             timeout_s=2.0,
         )
         # Reset lights
@@ -619,7 +619,7 @@ class HardwareBenchRunner:
         job1 = self.client.inject_periodic("high", key="host:host_drive_cmd", values={"speed_mmps": 1500, "yaw_rate_mrad_s": 400, "gear": 1}, period_ms=10.0)
         self.client.inject_single("high", key="host:host_light_cmd", values={"left_turn": 1, "right_turn": 0, "headlight": 0, "brake_light": 0})
         ok1, state1 = self.wait_until(
-            lambda s: "low:SYS_DIAG_RPT" in s and s["low:SYS_DIAG_RPT"]["signals"].get("light_left") == 1,
+            lambda s: "low:SYS_NODE_STATUS" in s and s["low:SYS_NODE_STATUS"]["signals"].get("light_left_on") == 1,
             timeout_s=1.5,
         )
         if job1:
@@ -631,7 +631,7 @@ class HardwareBenchRunner:
         job2 = self.client.inject_periodic("high", key="host:host_drive_cmd", values={"speed_mmps": 1500, "yaw_rate_mrad_s": -400, "gear": 1}, period_ms=10.0)
         self.client.inject_single("high", key="host:host_light_cmd", values={"left_turn": 0, "right_turn": 1, "headlight": 0, "brake_light": 0})
         ok2, state2 = self.wait_until(
-            lambda s: "low:SYS_DIAG_RPT" in s and s["low:SYS_DIAG_RPT"]["signals"].get("light_right") == 1,
+            lambda s: "low:SYS_NODE_STATUS" in s and s["low:SYS_NODE_STATUS"]["signals"].get("light_right_on") == 1,
             timeout_s=1.5,
         )
         if job2:

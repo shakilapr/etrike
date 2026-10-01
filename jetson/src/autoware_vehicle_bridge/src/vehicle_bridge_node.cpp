@@ -58,6 +58,7 @@ constexpr canid_t CAN_DRIVE_CMD    = messages::HostDriveCmd::kHighId;
 constexpr canid_t CAN_BRAKE_REQ    = messages::HostBrakeReq::kHighId;
 constexpr canid_t CAN_LIGHT_CMD    = messages::HostLightCmd::kHighId;
 constexpr canid_t CAN_DIAG_RPT     = messages::SysDiagRpt::kHighId;
+constexpr canid_t CAN_NODE_STATUS  = messages::SysNodeStatus::kHighId;
 constexpr canid_t CAN_MOTOR_FBK    = messages::MtrMotorFbk::kHighId;
 constexpr canid_t CAN_HOST_HB      = messages::HostHeartbeat::kHighId;
 constexpr canid_t CAN_RT_HB        = messages::RtHeartbeat::kHighId;
@@ -390,63 +391,40 @@ bool CanDecoder::decode_diagnostics(const struct can_frame & frame,
   };
 
   using DiagnosticStatus = diagnostic_msgs::msg::DiagnosticStatus;
-  const uint8_t mode = value.mode;
-  const bool brake_engaged = value.brake_engaged;
-  const bool brake_fault = value.brake_fault;
-  const bool heartbeat_ok = value.heartbeat_ok;
   const uint8_t rx_overflow = value.rx_overflow;
-  const bool estop_active = value.estop_active;
-  const uint16_t free_heap_kb = value.free_heap_kb;
+  const uint8_t can_state = value.can_state;
   const uint8_t tec = value.tec;
   const uint8_t rec = value.rec;
+  const uint8_t task_health = value.task_health_mask;
+  const uint8_t free_heap_kb = value.free_heap_kb;
+  const uint8_t reset_reason = value.mcu_reset_reason;
+  const uint16_t uptime_s = value.uptime_seconds;
 
-  add("mode", mode,
-      mode <= 2 ? DiagnosticStatus::OK : DiagnosticStatus::ERROR,
-      mode <= 2 ? "valid" : "invalid mode value");
-  add("brake_engaged", brake_engaged, DiagnosticStatus::OK,
-      brake_engaged ? "engaged" : "released");
-  add("brake_fault", brake_fault,
-      brake_fault ? DiagnosticStatus::ERROR : DiagnosticStatus::OK,
-      brake_fault ? "active" : "clear");
-  add("heartbeat_ok", heartbeat_ok,
-      heartbeat_ok ? DiagnosticStatus::OK : DiagnosticStatus::ERROR,
-      heartbeat_ok ? "fresh" : "missing or frozen");
+  static const char * kCanStateName[4] = {"ACTIVE", "WARNING", "PASSIVE", "RECOVERING"};
+  static const char * kResetReasonName[6] = {
+      "POWER_ON", "SW_RESET", "TASK_WDT", "BROWNOUT", "PANIC", "UNKNOWN"};
+  add("can_state", can_state,
+      can_state == 0 ? DiagnosticStatus::OK
+      : (can_state >= 2 ? DiagnosticStatus::ERROR : DiagnosticStatus::WARN),
+      can_state <= 3 ? kCanStateName[can_state] : "invalid state value");
   add("rx_overflow", rx_overflow,
       rx_overflow == 0 ? DiagnosticStatus::OK
       : (rx_overflow == 63 ? DiagnosticStatus::ERROR : DiagnosticStatus::WARN),
       rx_overflow == 0 ? "none" : (rx_overflow == 63 ? "counter saturated" : "observed"));
-  add("estop_active", estop_active,
-      estop_active ? DiagnosticStatus::ERROR : DiagnosticStatus::OK,
-      estop_active ? "active" : "clear");
-  add("free_heap_kb", free_heap_kb, DiagnosticStatus::OK, "reported");
   add("tec", tec,
       tec >= 128 ? DiagnosticStatus::ERROR : (tec >= 96 ? DiagnosticStatus::WARN : DiagnosticStatus::OK),
       tec >= 128 ? "error-passive threshold" : (tec >= 96 ? "elevated" : "OK"));
   add("rec", rec,
       rec >= 128 ? DiagnosticStatus::ERROR : (rec >= 96 ? DiagnosticStatus::WARN : DiagnosticStatus::OK),
       rec >= 128 ? "error-passive threshold" : (rec >= 96 ? "elevated" : "OK"));
-
-  // Light state feedback now travels on 0x600 (moved off the ASIL-D 0x011).
-  {
-    const uint8_t lights = (value.light_left ? 1u : 0u) | (value.light_right ? 2u : 0u) |
-                           (value.light_brake ? 4u : 0u) | (value.light_head ? 8u : 0u);
-    autoware_vehicle_msgs::msg::TurnIndicatorsReport turn;
-    if ((lights & 0x03) == 0x03)
-      turn.report = autoware_vehicle_msgs::msg::TurnIndicatorsReport::DISABLE;  // hazard: both
-    else if (lights & 0x01)
-      turn.report = autoware_vehicle_msgs::msg::TurnIndicatorsReport::ENABLE_LEFT;
-    else if (lights & 0x02)
-      turn.report = autoware_vehicle_msgs::msg::TurnIndicatorsReport::ENABLE_RIGHT;
-    else
-      turn.report = autoware_vehicle_msgs::msg::TurnIndicatorsReport::DISABLE;
-    if (pub_turn_status_->is_activated()) pub_turn_status_->publish(turn);
-
-    autoware_vehicle_msgs::msg::HazardLightsReport hazard;
-    hazard.report = ((lights & 0x03) == 0x03)
-      ? autoware_vehicle_msgs::msg::HazardLightsReport::ENABLE
-      : autoware_vehicle_msgs::msg::HazardLightsReport::DISABLE;
-    if (pub_hazard_status_->is_activated()) pub_hazard_status_->publish(hazard);
-  }
+  add("task_health", task_health,
+      task_health == 0xFF ? DiagnosticStatus::OK : DiagnosticStatus::ERROR,
+      task_health == 0xFF ? "all 8 tasks within deadline" : "FreeRTOS task deadline missed");
+  add("free_heap_kb", free_heap_kb, DiagnosticStatus::OK, "reported");
+  add("mcu_reset_reason", reset_reason,
+      reset_reason == 0 ? DiagnosticStatus::OK : DiagnosticStatus::WARN,
+      reset_reason <= 5 ? kResetReasonName[reset_reason] : "invalid reason value");
+  add("uptime_seconds", uptime_s, DiagnosticStatus::OK, "reported");
   return true;
 }
 
@@ -1041,6 +1019,32 @@ void VehicleBridgeNode::publish_vehicle_reports(const struct can_frame & frame)
       // node_presence bit0 = RT online (replaces the old heartbeat_ok byte).
       sys_heartbeat_ok_.store((value.node_presence & 0x01u) != 0, std::memory_order_relaxed);
       sys_status_.observe(now());
+      break;
+    }
+
+    case CAN_NODE_STATUS: {  // 0x500 — SYS I/O status: executed lamp/relay outputs
+      messages::SysNodeStatus value{};
+      if (messages::decode(protocol_view(frame), value) != protocol::CodecStatus::Ok) break;
+      {
+        const uint8_t lights = (value.light_left_on ? 1u : 0u) | (value.light_right_on ? 2u : 0u) |
+                               (value.light_brake_on ? 4u : 0u) | (value.light_head_on ? 8u : 0u);
+        autoware_vehicle_msgs::msg::TurnIndicatorsReport turn;
+        if ((lights & 0x03) == 0x03)
+          turn.report = autoware_vehicle_msgs::msg::TurnIndicatorsReport::DISABLE;  // hazard: both
+        else if (lights & 0x01)
+          turn.report = autoware_vehicle_msgs::msg::TurnIndicatorsReport::ENABLE_LEFT;
+        else if (lights & 0x02)
+          turn.report = autoware_vehicle_msgs::msg::TurnIndicatorsReport::ENABLE_RIGHT;
+        else
+          turn.report = autoware_vehicle_msgs::msg::TurnIndicatorsReport::DISABLE;
+        if (pub_turn_status_->is_activated()) pub_turn_status_->publish(turn);
+
+        autoware_vehicle_msgs::msg::HazardLightsReport hazard;
+        hazard.report = ((lights & 0x03) == 0x03)
+          ? autoware_vehicle_msgs::msg::HazardLightsReport::ENABLE
+          : autoware_vehicle_msgs::msg::HazardLightsReport::DISABLE;
+        if (pub_hazard_status_->is_activated()) pub_hazard_status_->publish(hazard);
+      }
       break;
     }
 

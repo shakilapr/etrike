@@ -55,7 +55,7 @@ codecs in `protocol/codecs/`.
 | Frame | CAN ID | DLC | Direction | Signal(s) | Meaning |
 |-------|--------|-----|-----------|-----------|---------|
 | `SAFETY_ESTOP` | `0x001` | 0 | **broadcast** (any node ? all) | *(none)* | Immediate emergency stop trigger. Any node may originate; every receiver latches. |
-| `SYS_SAFETY_STS` | `0x011` | 5 | SYS ? RT, MTR (Low); SYS ? Host (High) | byte0 `estop_active` (8-bit, `SysSafetySts::EstopActiveMeta`), byte1 `heartbeat_ok`, byte2 lights, byte3 `rolling_counter`, byte4 `e2e_crc` | **Persistent ESTOP authority.** `estop_active` reflects the *system* latch (`mode==Estop \|\| hw_button`, issue #4), CRC-8 (poly 0x2F, Data-ID 0x3C11) over bytes [0..3]. 5 Hz / 200 ms. |
+| `SYS_SAFETY_STS` | `0x011` | 5 | SYS ? RT, MTR (Low); SYS ? Host (High) | byte0 `estop_source` (0=NONE,1=LOCAL_SYS,2=CAN_001,3=PEER_FAULT), byte1 `node_presence` bitmask, byte2 `estop_reason` (0=NONE..7=CAN_BUSOFF), byte3 `rolling_counter`, byte4 `e2e_crc` | **Persistent ESTOP authority.** `estop_source` nonzero means the *system* latch is engaged; `estop_reason` says why. CRC-8 (poly 0x2F, Data-ID 0x3C11) over bytes [0..3]. 5 Hz / 200 ms. |
 | `SYS_MODE_CMD` | `0x110` | 2 | SYS ? RT, MTR | `mode` (0=MANUAL,1=AUTO), `rolling_counter` | Mode authority. ESTOP is *not* encoded here ? `0x110` is clamped to MANUAL during ESTOP. |
 | `SYS_PWR_CMD` | `0x113` | 2 | SYS ? MTR | `power_state` (0=OFF,1=ON), `rolling_counter` | Power authority. OFF during ESTOP and while any traction inhibit is active. |
 | `SYS_HEARTBEAT` | `0x7FE` | 2 | SYS ? RT | byte0 `alive_ctr`, byte1 bit1 `estop_active` (`SysHeartbeat::EstopActiveMeta`), bit2 `mode_auto`, bit3 `can_ok`, bits4-7 task-health | Redundant ESTOP latch echo + RT liveness watch. |
@@ -64,7 +64,7 @@ codecs in `protocol/codecs/`.
 | `RT_DRIVE_CMD` | `0x204` | 5 | RT (or RM) ? MTR | `motor_speed_mmps`, `gear` | The propulsion command. Zeroed by every stop flavour; MTR watchdogs it separately (issue #2). |
 | `VCU_SEB_REQ` | `0x7B9` | 8 | SYS → SEB (sole producer) | stroke / pressure command, `rolling_counter`, XOR8 | Primary brake command. SYS is the sole producer; RT never emits `0x7B9`. |
 | `RT_BRAKE_CMD` | `0x205` | ? | RT → SYS | `brake_pressure_kpa` | Brake *intent*; SYS converts to the final `0x7B9`. |
-| `SYS_DIAG_RPT` | `0x600` | 8 | SYS ? RT, Host | `mode`, `brake_fault`, `heartbeat_ok`, `estop_active` (mode-based) | Diagnostic view of SYS stop state. |
+| `SYS_DIAG_RPT` | `0x600` | 8 | SYS ? RT, Host | `rx_overflow`(6b), `can_state`(2b), `tec`, `rec`, `task_health_mask`, `free_heap_kb`, `mcu_reset_reason`, `uptime_seconds` | Pure ECU/bus health. ESTOP state lives on `0x011`; execution/blockers/lamps on `0x500 SYS_NODE_STATUS`. |
 
 `0x001` rate limiting ? `shared/shared_config.h:26-33`:
 `kEstopBroadcastMinIntervalUs = 250 ms` between `0x001` broadcasts **per ECU**
@@ -345,7 +345,7 @@ operator presses ESTOP (SYS GPIO1)
 ```
 SEB L3 / persistent following-error -> SYS dispatch sets latched safety fault (kLatchedSebL3 / kLatchedBrakeFollowing)
   -> SYS resolves authority: clamps 0x110=MANUAL, drops 0x113=OFF
-  -> positive motor torque prohibited, brake fault reported in 0x600/0x500
+  -> positive motor torque prohibited, brake fault reported via 0x500 block_mask_high bit0 (kBlkSebL3 / latch)
   -> steer-by-wire (SES) and 12V auxiliary power remain ACTIVE
   -> does NOT call force_estop() and does NOT broadcast 0x001
   -> reset refused until SEB is healthy, then cleared by physical START button

@@ -15,7 +15,6 @@ from protocol.e2e import crc8_h2f  # type: ignore[import-not-found]
 #: contract yet; we fold Data-ID 0 so all three nodes agree on identical payloads.
 _E2E_DATA_IDS: dict[str, int] = {
     "sys:sys_safety_sts": 0x3C11,
-    "sys:sys_node_status": 0,
     "rt:rt_node_status": 0,
     "mtr:mtr_node_status": 0,
 }

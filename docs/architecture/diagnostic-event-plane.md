@@ -794,15 +794,14 @@ All three controller nodes broadcast both **periodic health state** and **event-
 
 #### 8.3.1 SYS Node Channels
 1. **Periodic Health Telemetry (`0x600 SYS_DIAG_RPT` @ 1 Hz):**
-   * Vehicle Mode (`mode`): `MANUAL=0, AUTO=1, ESTOP=2`
-   * Brake Lever State (`brake_engaged`): physical microswitch on GPIO 2
-   * Brake System Fault (`brake_fault`): L3 fault reported by SEB
-   * Peer RT Heartbeat Freshness (`heartbeat_ok`): 1 if fresh, 0 if timed out
-   * Latched ESTOP Status (`estop_active`): 1 if vehicle is in emergency stop
-   * Free Heap Memory (`free_heap_kb`): uint16 RAM availability
    * CAN Electrical Counters: `tec` (Transmit Error Counter), `rec` (Receive Error Counter)
-   * Buffer Health (`rx_overflow`): TWAI FIFO overflow count
-   * FreeRTOS Task Bitmask (8 tasks: safety, brake, dispatch, can_tx, can_ctrl, hb, mode, gear)
+   * Buffer Health (`rx_overflow`): TWAI FIFO overflow count (6-bit, saturating)
+   * TWAI Controller State (`can_state`): 0=ACTIVE, 1=WARNING, 2=PASSIVE, 3=RECOVERING
+   * FreeRTOS Task Bitmask (`task_health_mask`, 8 tasks: safety, brake, dispatch, can_tx, can_ctrl, hb, mode, gear)
+   * Free Heap Memory (`free_heap_kb`): uint8 RAM availability (saturating)
+   * MCU Reset Reason (`mcu_reset_reason`): 0=POWER_ON, 1=SW_RESET, 2=TASK_WDT, 3=BROWNOUT, 4=PANIC, 5=UNKNOWN
+   * Uptime (`uptime_seconds`): uint16 seconds since boot
+   * Execution/readiness/blocker state, cockpit hardware inputs, and relay/lamp outputs now live on `0x500 SYS_NODE_STATUS` @ 5 Hz (DLC 6).
 
 2. **Event-Driven Fault Reports (`0x601 SYS_DIAG_EVENT_RPT`):**
    * `diag_id` (u16): Event identifier from Table 8.1 & 8.2.1

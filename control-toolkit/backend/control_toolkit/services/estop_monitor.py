@@ -89,6 +89,7 @@ class EstopEventMonitor:
         self._node_estop_latched: dict[tuple[str, str], bool] = {}
 
         self._sys_estop_by_bus: dict[str, bool] = {}
+        self._sys_estop_source_by_bus: dict[str, int] = {}
         self._sys_hb_ok_by_bus: dict[str, bool] = {}
         self._sys_can_ok_by_bus: dict[str, bool] = {}
         self._sys_brake_fault_by_bus: dict[str, bool] = {}
@@ -118,6 +119,7 @@ class EstopEventMonitor:
         self._host_inject_source = None
         self._rt_state_by_bus.clear()
         self._sys_estop_by_bus.clear()
+        self._sys_estop_source_by_bus.clear()
         self._sys_hb_ok_by_bus.clear()
         self._sys_can_ok_by_bus.clear()
         self._sys_brake_fault_by_bus.clear()
@@ -187,18 +189,27 @@ class EstopEventMonitor:
         These frames are observational and carry the authoritative latch that the
         older per-signal frames only approximate, so a rising estop_latched must
         produce the same durable evidence as a raw 0x001 observation.
+
+        The redesigned 0x500 SYS_NODE_STATUS carries no estop/node_state fields;
+        the persistent SYS latch lives on 0x011 SYS_SAFETY_STS.estop_source, so
+        SYS is resolved from that frame instead.
         """
         node = message.name.replace("_NODE_STATUS", "").lower()
         key = (node, message.bus)
-        latched = _signal_bool(message, "estop_latched")
-        if latched is None:
-            latched = _signal_bool(message, "estop_active")
-        if latched is None:
-            return
+        if message.name == "SYS_NODE_STATUS":
+            src = self._sys_estop_source_by_bus.get(message.bus)
+            latched = src is not None and src != 0
+            state_label = None
+        else:
+            latched = _signal_bool(message, "estop_latched")
+            if latched is None:
+                latched = _signal_bool(message, "estop_active")
+            if latched is None:
+                return
+            state_label = _signal_number(message, "node_state")
         prev = self._node_estop_latched.get(key)
         self._node_estop_latched[key] = latched
 
-        state_label = _signal_number(message, "node_state")
         if latched and not prev:
             detail = (
                 f"{message.name} on {message.bus.title()} reports estop_latched "
@@ -223,6 +234,36 @@ class EstopEventMonitor:
             self._diagnostics.recover(
                 f"safety.{node}_estop_latched", scope=message.bus, force=True
             )
+
+        # The redesigned 0x600 no longer carries brake_fault; the latched brake
+        # fault is kBlkSebL3 (bit 0) in SYS_NODE_STATUS.block_mask_high.
+        if message.name == "SYS_NODE_STATUS":
+            high = _signal_number(message, "block_mask_high")
+            brake_f = None if high is None else (int(high) & 0x01) != 0
+            if brake_f is not None:
+                prev_brake = self._sys_brake_fault_by_bus.get(message.bus)
+                self._sys_brake_fault_by_bus[message.bus] = brake_f
+                if brake_f and not prev_brake:
+                    self._diagnostics.emit(
+                        code="safety.sys_brake_fault",
+                        title=f"SYS brake fault · {message.bus.title()}",
+                        detail=(
+                            f"SYS_NODE_STATUS block_mask_high bit0 (SEB L3) active on "
+                            f"{message.bus.title()} bus. Hydraulic SEB brake actuator "
+                            "or stroke sensor feedback error."
+                        ),
+                        severity="critical",
+                        bus=message.bus,
+                        can_id=message.can_id,
+                        evidence={
+                            "cause": "sys_brake_fault",
+                            "session_id": self._get_session_id(),
+                        },
+                    )
+                elif not brake_f and prev_brake:
+                    self._diagnostics.recover(
+                        "safety.sys_brake_fault", scope=message.bus, force=True
+                    )
 
     def _observe_rt_state(self, message: MessageState) -> None:
         mode = _signal_number(message, "mode")
@@ -313,6 +354,9 @@ class EstopEventMonitor:
             src = _signal_number(message, "estop_source")
             if src is not None:
                 estop_act = src != 0
+                # Remember the raw source so _observe_node_status can resolve the
+                # SYS latch from 0x011 (0x500 no longer carries estop fields).
+                self._sys_estop_source_by_bus[bus] = int(src)
         prev_estop = self._sys_estop_by_bus.get(bus)
         if estop_act is not None:
             self._sys_estop_by_bus[bus] = estop_act
@@ -404,7 +448,9 @@ class EstopEventMonitor:
             elif can_ok and prev_can is False:
                 self._diagnostics.recover("safety.sys_can_failed", scope=bus, force=True)
 
-        # Check brake_fault
+        # Check brake_fault. The redesigned 0x600 no longer carries it; the
+        # latched brake fault is visible as kBlkSebL3 (bit 0) in
+        # SYS_NODE_STATUS.block_mask_high (handled in _observe_node_status).
         brake_f = _signal_bool(message, "brake_fault")
         if brake_f is not None:
             prev_brake = self._sys_brake_fault_by_bus.get(bus)

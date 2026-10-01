@@ -125,8 +125,10 @@ export const ECU_PROBES: readonly EcuProbe[] = [
           bus: 'low',
           can_id: 0x600,
           names: ['SYS_DIAG_RPT'],
-          onIfTruthy: ['brake_fault', 'estop_active', 'rx_overflow'],
-          onIfFalsy: ['heartbeat_ok'],
+          // Redesigned 0x600: pure ECU/bus health. Brake fault rides on the
+          // 0x500 blocker mask; heartbeat_ok on 0x7FE.
+          onIfTruthy: ['rx_overflow'],
+          onIfFalsy: [],
         },
       ],
     },

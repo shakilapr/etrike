@@ -10,9 +10,9 @@
 #include "protocol/core/frame.hpp"
 
 namespace etrike::protocol {
-inline constexpr std::string_view kSemanticHash = "702d13133fc277541f7a24d0b3fc0fa90a3686dff031790d75eb15b0f5896fb1";
+inline constexpr std::string_view kSemanticHash = "88c7a78affc0a28bec6bbed9e69a46ff47bdc11703b8eb87925d9ef049124b58";
 inline constexpr std::string_view kWireHash = kSemanticHash;
-inline constexpr std::string_view kNetworkHash = "297a72dec33e7840d5caab0d70733b73c0085558a1d883ae2e89519d72f9abf9";
+inline constexpr std::string_view kNetworkHash = "23f918c9273340bdbaab68c309eb42042b890c66b681f37583452487c4fa6e63";
 enum class CodecStrategy : std::uint8_t { Generated, Profile, Custom };
 enum class RouteSemantics : std::uint8_t { SameFrame, Regenerated };
 struct MessageMetadata { std::string_view key; std::string_view bus; std::uint32_t id; std::uint8_t dlc; bool extended; CodecStrategy strategy; };
@@ -76,8 +76,8 @@ inline constexpr std::array<MessageMetadata, 63> kMessages{{
     {"sys:sys_estop_reset_rsp", "low", 0x115u, 5u, false, CodecStrategy::Generated},
     {"sys:sys_heartbeat", "low", 0x7FEu, 2u, false, CodecStrategy::Generated},
     {"sys:sys_mode_cmd", "low", 0x110u, 2u, false, CodecStrategy::Generated},
-    {"sys:sys_node_status", "high", 0x500u, 8u, false, CodecStrategy::Generated},
-    {"sys:sys_node_status", "low", 0x500u, 8u, false, CodecStrategy::Generated},
+    {"sys:sys_node_status", "high", 0x500u, 6u, false, CodecStrategy::Generated},
+    {"sys:sys_node_status", "low", 0x500u, 6u, false, CodecStrategy::Generated},
     {"sys:sys_pwr_cmd", "low", 0x113u, 2u, false, CodecStrategy::Generated},
     {"sys:sys_safety_sts", "high", 0x11u, 5u, false, CodecStrategy::Generated},
     {"sys:sys_safety_sts", "low", 0x11u, 5u, false, CodecStrategy::Generated},
@@ -2992,77 +2992,43 @@ struct SysDiagRpt {
     static constexpr std::uint32_t kLowId = 0x600u;
     static constexpr std::uint32_t kLowCycleMs = 1000u;
     static constexpr bool kLowExtended = false;
-    std::uint8_t mode{};
-    bool brake_engaged{};
-    bool brake_fault{};
-    bool light_left{};
-    bool light_right{};
-    bool light_brake{};
-    bool light_head{};
-    bool heartbeat_ok{};
     std::uint8_t rx_overflow{};
-    bool estop_active{};
-    std::uint16_t free_heap_kb{};
+    std::uint8_t can_state{};
     std::uint8_t tec{};
     std::uint8_t rec{};
-    static constexpr std::uint8_t kModeManual = 0;
-    static constexpr std::uint8_t kModeAuto = 1;
-    static constexpr std::uint8_t kModeEstop = 2;
-    struct ModeMeta {
+    std::uint8_t task_health_mask{};
+    std::uint8_t free_heap_kb{};
+    std::uint8_t mcu_reset_reason{};
+    std::uint16_t uptime_seconds{};
+    struct RxOverflowMeta {
         static constexpr std::size_t kByte = 0u;
+        static constexpr std::uint8_t kBitOffset = 0u;
+        static constexpr std::uint8_t kWidth = 6u;
+        static constexpr std::uint64_t kMask = 0x3Full;
+    };
+    static constexpr std::uint8_t kCanStateActive = 0;
+    static constexpr std::uint8_t kCanStateWarning = 1;
+    static constexpr std::uint8_t kCanStatePassive = 2;
+    static constexpr std::uint8_t kCanStateRecovering = 3;
+    struct CanStateMeta {
+        static constexpr std::size_t kByte = 0u;
+        static constexpr std::uint8_t kBitOffset = 6u;
+        static constexpr std::uint8_t kWidth = 2u;
+        static constexpr std::uint64_t kMask = 0x3ull;
+    };
+    struct TecMeta {
+        static constexpr std::size_t kByte = 1u;
         static constexpr std::uint8_t kBitOffset = 0u;
         static constexpr std::uint8_t kWidth = 8u;
         static constexpr std::uint64_t kMask = 0xFFull;
     };
-    struct BrakeEngagedMeta {
-        static constexpr std::size_t kByte = 1u;
-        static constexpr std::uint8_t kBitOffset = 0u;
-        static constexpr std::uint8_t kWidth = 1u;
-        static constexpr std::uint64_t kMask = 0x1ull;
-    };
-    struct BrakeFaultMeta {
-        static constexpr std::size_t kByte = 1u;
-        static constexpr std::uint8_t kBitOffset = 1u;
-        static constexpr std::uint8_t kWidth = 1u;
-        static constexpr std::uint64_t kMask = 0x1ull;
-    };
-    struct LightLeftMeta {
-        static constexpr std::size_t kByte = 1u;
-        static constexpr std::uint8_t kBitOffset = 2u;
-        static constexpr std::uint8_t kWidth = 1u;
-        static constexpr std::uint64_t kMask = 0x1ull;
-    };
-    struct LightRightMeta {
-        static constexpr std::size_t kByte = 1u;
-        static constexpr std::uint8_t kBitOffset = 3u;
-        static constexpr std::uint8_t kWidth = 1u;
-        static constexpr std::uint64_t kMask = 0x1ull;
-    };
-    struct LightBrakeMeta {
-        static constexpr std::size_t kByte = 1u;
-        static constexpr std::uint8_t kBitOffset = 4u;
-        static constexpr std::uint8_t kWidth = 1u;
-        static constexpr std::uint64_t kMask = 0x1ull;
-    };
-    struct LightHeadMeta {
-        static constexpr std::size_t kByte = 1u;
-        static constexpr std::uint8_t kBitOffset = 5u;
-        static constexpr std::uint8_t kWidth = 1u;
-        static constexpr std::uint64_t kMask = 0x1ull;
-    };
-    struct HeartbeatOkMeta {
+    struct RecMeta {
         static constexpr std::size_t kByte = 2u;
         static constexpr std::uint8_t kBitOffset = 0u;
-        static constexpr std::uint8_t kWidth = 1u;
-        static constexpr std::uint64_t kMask = 0x1ull;
+        static constexpr std::uint8_t kWidth = 8u;
+        static constexpr std::uint64_t kMask = 0xFFull;
     };
-    struct RxOverflowMeta {
-        static constexpr std::size_t kByte = 2u;
-        static constexpr std::uint8_t kBitOffset = 1u;
-        static constexpr std::uint8_t kWidth = 6u;
-        static constexpr std::uint64_t kMask = 0x3Full;
-    };
-    struct EstopActiveMeta {
+    struct TaskHealthMaskMeta {
         static constexpr std::size_t kByte = 3u;
         static constexpr std::uint8_t kBitOffset = 0u;
         static constexpr std::uint8_t kWidth = 8u;
@@ -3071,41 +3037,43 @@ struct SysDiagRpt {
     struct FreeHeapKbMeta {
         static constexpr std::size_t kByte = 4u;
         static constexpr std::uint8_t kBitOffset = 0u;
-        static constexpr std::uint8_t kWidth = 16u;
-        static constexpr std::uint64_t kMask = 0xFFFFull;
+        static constexpr std::uint8_t kWidth = 8u;
+        static constexpr std::uint64_t kMask = 0xFFull;
     };
-    struct TecMeta {
+    static constexpr std::uint8_t kMcuResetReasonPowerOn = 0;
+    static constexpr std::uint8_t kMcuResetReasonSwReset = 1;
+    static constexpr std::uint8_t kMcuResetReasonTaskWdt = 2;
+    static constexpr std::uint8_t kMcuResetReasonBrownout = 3;
+    static constexpr std::uint8_t kMcuResetReasonPanic = 4;
+    static constexpr std::uint8_t kMcuResetReasonUnknown = 5;
+    struct McuResetReasonMeta {
+        static constexpr std::size_t kByte = 5u;
+        static constexpr std::uint8_t kBitOffset = 0u;
+        static constexpr std::uint8_t kWidth = 8u;
+        static constexpr std::uint64_t kMask = 0xFFull;
+    };
+    struct UptimeSecondsMeta {
         static constexpr std::size_t kByte = 6u;
         static constexpr std::uint8_t kBitOffset = 0u;
-        static constexpr std::uint8_t kWidth = 8u;
-        static constexpr std::uint64_t kMask = 0xFFull;
-    };
-    struct RecMeta {
-        static constexpr std::size_t kByte = 7u;
-        static constexpr std::uint8_t kBitOffset = 0u;
-        static constexpr std::uint8_t kWidth = 8u;
-        static constexpr std::uint64_t kMask = 0xFFull;
+        static constexpr std::uint8_t kWidth = 16u;
+        static constexpr std::uint64_t kMask = 0xFFFFull;
     };
 
     CodecStatus pack(std::uint8_t* destination, std::size_t length) const noexcept {
         if (length != kDlc) return CodecStatus::UnexpectedLength;
         if (destination == nullptr && kDlc != 0u) return CodecStatus::NullData;
-        if (mode > 2) return CodecStatus::ValueOutOfRange;
-        if (mode != 0 && mode != 1 && mode != 2) return CodecStatus::InvalidEnum;
+        if (can_state != 0 && can_state != 1 && can_state != 2 && can_state != 3) return CodecStatus::InvalidEnum;
+        if (mcu_reset_reason > 5) return CodecStatus::ValueOutOfRange;
+        if (mcu_reset_reason != 0 && mcu_reset_reason != 1 && mcu_reset_reason != 2 && mcu_reset_reason != 3 && mcu_reset_reason != 4 && mcu_reset_reason != 5) return CodecStatus::InvalidEnum;
         std::array<std::uint8_t, kDlc> payload{};
-        detail::insert(payload.data(), 0u, 0u, 8u, false, static_cast<std::uint64_t>(mode));
-        detail::insert(payload.data(), 1u, 0u, 1u, false, static_cast<std::uint64_t>(brake_engaged));
-        detail::insert(payload.data(), 1u, 1u, 1u, false, static_cast<std::uint64_t>(brake_fault));
-        detail::insert(payload.data(), 1u, 2u, 1u, false, static_cast<std::uint64_t>(light_left));
-        detail::insert(payload.data(), 1u, 3u, 1u, false, static_cast<std::uint64_t>(light_right));
-        detail::insert(payload.data(), 1u, 4u, 1u, false, static_cast<std::uint64_t>(light_brake));
-        detail::insert(payload.data(), 1u, 5u, 1u, false, static_cast<std::uint64_t>(light_head));
-        detail::insert(payload.data(), 2u, 0u, 1u, false, static_cast<std::uint64_t>(heartbeat_ok));
-        detail::insert(payload.data(), 2u, 1u, 6u, false, static_cast<std::uint64_t>(rx_overflow));
-        detail::insert(payload.data(), 3u, 0u, 8u, false, static_cast<std::uint64_t>(estop_active));
-        detail::insert(payload.data(), 4u, 0u, 16u, false, static_cast<std::uint64_t>(free_heap_kb));
-        detail::insert(payload.data(), 6u, 0u, 8u, false, static_cast<std::uint64_t>(tec));
-        detail::insert(payload.data(), 7u, 0u, 8u, false, static_cast<std::uint64_t>(rec));
+        detail::insert(payload.data(), 0u, 0u, 6u, false, static_cast<std::uint64_t>(rx_overflow));
+        detail::insert(payload.data(), 0u, 6u, 2u, false, static_cast<std::uint64_t>(can_state));
+        detail::insert(payload.data(), 1u, 0u, 8u, false, static_cast<std::uint64_t>(tec));
+        detail::insert(payload.data(), 2u, 0u, 8u, false, static_cast<std::uint64_t>(rec));
+        detail::insert(payload.data(), 3u, 0u, 8u, false, static_cast<std::uint64_t>(task_health_mask));
+        detail::insert(payload.data(), 4u, 0u, 8u, false, static_cast<std::uint64_t>(free_heap_kb));
+        detail::insert(payload.data(), 5u, 0u, 8u, false, static_cast<std::uint64_t>(mcu_reset_reason));
+        detail::insert(payload.data(), 6u, 0u, 16u, false, static_cast<std::uint64_t>(uptime_seconds));
         for (std::size_t index = 0; index < kDlc; ++index) destination[index] = payload[index];
         return CodecStatus::Ok;
     }
@@ -3114,35 +3082,25 @@ struct SysDiagRpt {
         if (length != kDlc) return CodecStatus::UnexpectedLength;
         if (source == nullptr && kDlc != 0u) return CodecStatus::NullData;
         SysDiagRpt value{};
-        const std::uint64_t raw_mode = detail::extract(source, 0u, 0u, 8u, false);
-        value.mode = static_cast<std::uint8_t>(raw_mode);
-        if (value.mode > 2) return CodecStatus::ValueOutOfRange;
-        if (value.mode != 0 && value.mode != 1 && value.mode != 2) return CodecStatus::InvalidEnum;
-        const std::uint64_t raw_brake_engaged = detail::extract(source, 1u, 0u, 1u, false);
-        value.brake_engaged = raw_brake_engaged != 0u;
-        const std::uint64_t raw_brake_fault = detail::extract(source, 1u, 1u, 1u, false);
-        value.brake_fault = raw_brake_fault != 0u;
-        const std::uint64_t raw_light_left = detail::extract(source, 1u, 2u, 1u, false);
-        value.light_left = raw_light_left != 0u;
-        const std::uint64_t raw_light_right = detail::extract(source, 1u, 3u, 1u, false);
-        value.light_right = raw_light_right != 0u;
-        const std::uint64_t raw_light_brake = detail::extract(source, 1u, 4u, 1u, false);
-        value.light_brake = raw_light_brake != 0u;
-        const std::uint64_t raw_light_head = detail::extract(source, 1u, 5u, 1u, false);
-        value.light_head = raw_light_head != 0u;
-        const std::uint64_t raw_heartbeat_ok = detail::extract(source, 2u, 0u, 1u, false);
-        value.heartbeat_ok = raw_heartbeat_ok != 0u;
-        const std::uint64_t raw_rx_overflow = detail::extract(source, 2u, 1u, 6u, false);
+        const std::uint64_t raw_rx_overflow = detail::extract(source, 0u, 0u, 6u, false);
         value.rx_overflow = static_cast<std::uint8_t>(raw_rx_overflow);
-        const std::uint64_t raw_estop_active = detail::extract(source, 3u, 0u, 8u, false);
-        if (raw_estop_active > 1u) return CodecStatus::ValueOutOfRange;
-        value.estop_active = raw_estop_active != 0u;
-        const std::uint64_t raw_free_heap_kb = detail::extract(source, 4u, 0u, 16u, false);
-        value.free_heap_kb = static_cast<std::uint16_t>(raw_free_heap_kb);
-        const std::uint64_t raw_tec = detail::extract(source, 6u, 0u, 8u, false);
+        const std::uint64_t raw_can_state = detail::extract(source, 0u, 6u, 2u, false);
+        value.can_state = static_cast<std::uint8_t>(raw_can_state);
+        if (value.can_state != 0 && value.can_state != 1 && value.can_state != 2 && value.can_state != 3) return CodecStatus::InvalidEnum;
+        const std::uint64_t raw_tec = detail::extract(source, 1u, 0u, 8u, false);
         value.tec = static_cast<std::uint8_t>(raw_tec);
-        const std::uint64_t raw_rec = detail::extract(source, 7u, 0u, 8u, false);
+        const std::uint64_t raw_rec = detail::extract(source, 2u, 0u, 8u, false);
         value.rec = static_cast<std::uint8_t>(raw_rec);
+        const std::uint64_t raw_task_health_mask = detail::extract(source, 3u, 0u, 8u, false);
+        value.task_health_mask = static_cast<std::uint8_t>(raw_task_health_mask);
+        const std::uint64_t raw_free_heap_kb = detail::extract(source, 4u, 0u, 8u, false);
+        value.free_heap_kb = static_cast<std::uint8_t>(raw_free_heap_kb);
+        const std::uint64_t raw_mcu_reset_reason = detail::extract(source, 5u, 0u, 8u, false);
+        value.mcu_reset_reason = static_cast<std::uint8_t>(raw_mcu_reset_reason);
+        if (value.mcu_reset_reason > 5) return CodecStatus::ValueOutOfRange;
+        if (value.mcu_reset_reason != 0 && value.mcu_reset_reason != 1 && value.mcu_reset_reason != 2 && value.mcu_reset_reason != 3 && value.mcu_reset_reason != 4 && value.mcu_reset_reason != 5) return CodecStatus::InvalidEnum;
+        const std::uint64_t raw_uptime_seconds = detail::extract(source, 6u, 0u, 16u, false);
+        value.uptime_seconds = static_cast<std::uint16_t>(raw_uptime_seconds);
         out = value;
         return CodecStatus::Ok;
     }
@@ -3467,7 +3425,7 @@ inline CodecStatus decode(FrameView frame, SysModeCmd& out) noexcept { return de
 struct SysNodeStatus {
     static constexpr std::string_view kKey = "sys:sys_node_status";
     static constexpr std::uint32_t kId = 0x500u;
-    static constexpr std::size_t kDlc = 8u;
+    static constexpr std::size_t kDlc = 6u;
     static constexpr std::uint32_t kCycleMs = 200u;
     static constexpr bool kExtended = false;
     static constexpr std::uint32_t kHighId = 0x500u;
@@ -3476,135 +3434,263 @@ struct SysNodeStatus {
     static constexpr std::uint32_t kLowId = 0x500u;
     static constexpr std::uint32_t kLowCycleMs = 200u;
     static constexpr bool kLowExtended = false;
-    std::uint8_t node_state{};
-    std::uint8_t reserved_b0{0};
-    std::uint16_t block_mask{};
-    bool estop_active{};
-    bool ready{};
     bool command_received{};
     bool command_nonzero{};
-    bool output_enabled{};
-    bool estop_latched{};
-    bool recovery_pending{};
+    bool command_executing{};
+    bool command_rejected{};
+    bool driver_override{};
+    std::uint8_t reserved_b0{0};
+    bool system_ready{};
+    bool bypass_active{};
+    bool bench_solo_mode{};
+    bool bypass_mtr_absent{};
+    bool bypass_seb_sync{};
     bool degraded{};
-    std::uint16_t reserved_b4{0};
-    std::uint8_t rolling_counter{};
-    std::uint8_t e2e_crc{};
-    static constexpr std::uint8_t kNodeStateInit = 0;
-    static constexpr std::uint8_t kNodeStateAcquire = 1;
-    static constexpr std::uint8_t kNodeStateStandby = 2;
-    static constexpr std::uint8_t kNodeStateActive = 3;
-    static constexpr std::uint8_t kNodeStateInhibited = 4;
-    static constexpr std::uint8_t kNodeStateEstop = 5;
-    static constexpr std::uint8_t kNodeStateRecover = 6;
-    static constexpr std::uint8_t kNodeStateUnknown = 15;
-    struct NodeStateMeta {
-        static constexpr std::size_t kByte = 0u;
-        static constexpr std::uint8_t kBitOffset = 0u;
-        static constexpr std::uint8_t kWidth = 4u;
-        static constexpr std::uint64_t kMask = 0xFull;
-    };
-    static constexpr std::uint8_t kReservedB0 = 0;
-    struct ReservedB0Meta {
-        static constexpr std::size_t kByte = 0u;
-        static constexpr std::uint8_t kBitOffset = 4u;
-        static constexpr std::uint8_t kWidth = 4u;
-        static constexpr std::uint64_t kMask = 0xFull;
-    };
-    struct BlockMaskMeta {
-        static constexpr std::size_t kByte = 1u;
-        static constexpr std::uint8_t kBitOffset = 0u;
-        static constexpr std::uint8_t kWidth = 16u;
-        static constexpr std::uint64_t kMask = 0xFFFFull;
-    };
-    struct EstopActiveMeta {
-        static constexpr std::size_t kByte = 3u;
-        static constexpr std::uint8_t kBitOffset = 0u;
-        static constexpr std::uint8_t kWidth = 1u;
-        static constexpr std::uint64_t kMask = 0x1ull;
-    };
-    struct ReadyMeta {
-        static constexpr std::size_t kByte = 3u;
-        static constexpr std::uint8_t kBitOffset = 1u;
-        static constexpr std::uint8_t kWidth = 1u;
-        static constexpr std::uint64_t kMask = 0x1ull;
-    };
+    std::uint8_t reserved_b1{0};
+    std::uint8_t block_mask_low{};
+    std::uint8_t block_mask_high{};
+    bool hw_estop_btn_pressed{};
+    bool hw_start_btn_latched{};
+    bool hw_brake_lever_pulled{};
+    bool hw_mode_btn_pressed{};
+    bool hw_sw_left_turn{};
+    bool hw_sw_right_turn{};
+    bool hw_sw_headlight{};
+    bool run_latch_enabled{};
+    bool power_12v_relay_on{};
+    bool ready_bulb_on{};
+    bool bypass_bulb_on{};
+    bool estop_bulb_on{};
+    bool light_left_on{};
+    bool light_right_on{};
+    bool light_brake_on{};
+    bool light_head_on{};
     struct CommandReceivedMeta {
-        static constexpr std::size_t kByte = 3u;
-        static constexpr std::uint8_t kBitOffset = 2u;
+        static constexpr std::size_t kByte = 0u;
+        static constexpr std::uint8_t kBitOffset = 0u;
         static constexpr std::uint8_t kWidth = 1u;
         static constexpr std::uint64_t kMask = 0x1ull;
     };
     struct CommandNonzeroMeta {
-        static constexpr std::size_t kByte = 3u;
+        static constexpr std::size_t kByte = 0u;
+        static constexpr std::uint8_t kBitOffset = 1u;
+        static constexpr std::uint8_t kWidth = 1u;
+        static constexpr std::uint64_t kMask = 0x1ull;
+    };
+    struct CommandExecutingMeta {
+        static constexpr std::size_t kByte = 0u;
+        static constexpr std::uint8_t kBitOffset = 2u;
+        static constexpr std::uint8_t kWidth = 1u;
+        static constexpr std::uint64_t kMask = 0x1ull;
+    };
+    struct CommandRejectedMeta {
+        static constexpr std::size_t kByte = 0u;
         static constexpr std::uint8_t kBitOffset = 3u;
         static constexpr std::uint8_t kWidth = 1u;
         static constexpr std::uint64_t kMask = 0x1ull;
     };
-    struct OutputEnabledMeta {
-        static constexpr std::size_t kByte = 3u;
+    struct DriverOverrideMeta {
+        static constexpr std::size_t kByte = 0u;
         static constexpr std::uint8_t kBitOffset = 4u;
         static constexpr std::uint8_t kWidth = 1u;
         static constexpr std::uint64_t kMask = 0x1ull;
     };
-    struct EstopLatchedMeta {
-        static constexpr std::size_t kByte = 3u;
+    static constexpr std::uint8_t kReservedB0 = 0;
+    struct ReservedB0Meta {
+        static constexpr std::size_t kByte = 0u;
         static constexpr std::uint8_t kBitOffset = 5u;
+        static constexpr std::uint8_t kWidth = 3u;
+        static constexpr std::uint64_t kMask = 0x7ull;
+    };
+    struct SystemReadyMeta {
+        static constexpr std::size_t kByte = 1u;
+        static constexpr std::uint8_t kBitOffset = 0u;
         static constexpr std::uint8_t kWidth = 1u;
         static constexpr std::uint64_t kMask = 0x1ull;
     };
-    struct RecoveryPendingMeta {
-        static constexpr std::size_t kByte = 3u;
-        static constexpr std::uint8_t kBitOffset = 6u;
+    struct BypassActiveMeta {
+        static constexpr std::size_t kByte = 1u;
+        static constexpr std::uint8_t kBitOffset = 1u;
+        static constexpr std::uint8_t kWidth = 1u;
+        static constexpr std::uint64_t kMask = 0x1ull;
+    };
+    struct BenchSoloModeMeta {
+        static constexpr std::size_t kByte = 1u;
+        static constexpr std::uint8_t kBitOffset = 2u;
+        static constexpr std::uint8_t kWidth = 1u;
+        static constexpr std::uint64_t kMask = 0x1ull;
+    };
+    struct BypassMtrAbsentMeta {
+        static constexpr std::size_t kByte = 1u;
+        static constexpr std::uint8_t kBitOffset = 3u;
+        static constexpr std::uint8_t kWidth = 1u;
+        static constexpr std::uint64_t kMask = 0x1ull;
+    };
+    struct BypassSebSyncMeta {
+        static constexpr std::size_t kByte = 1u;
+        static constexpr std::uint8_t kBitOffset = 4u;
         static constexpr std::uint8_t kWidth = 1u;
         static constexpr std::uint64_t kMask = 0x1ull;
     };
     struct DegradedMeta {
+        static constexpr std::size_t kByte = 1u;
+        static constexpr std::uint8_t kBitOffset = 5u;
+        static constexpr std::uint8_t kWidth = 1u;
+        static constexpr std::uint64_t kMask = 0x1ull;
+    };
+    static constexpr std::uint8_t kReservedB1 = 0;
+    struct ReservedB1Meta {
+        static constexpr std::size_t kByte = 1u;
+        static constexpr std::uint8_t kBitOffset = 6u;
+        static constexpr std::uint8_t kWidth = 2u;
+        static constexpr std::uint64_t kMask = 0x3ull;
+    };
+    struct BlockMaskLowMeta {
+        static constexpr std::size_t kByte = 2u;
+        static constexpr std::uint8_t kBitOffset = 0u;
+        static constexpr std::uint8_t kWidth = 8u;
+        static constexpr std::uint64_t kMask = 0xFFull;
+    };
+    struct BlockMaskHighMeta {
         static constexpr std::size_t kByte = 3u;
+        static constexpr std::uint8_t kBitOffset = 0u;
+        static constexpr std::uint8_t kWidth = 8u;
+        static constexpr std::uint64_t kMask = 0xFFull;
+    };
+    struct HwEstopBtnPressedMeta {
+        static constexpr std::size_t kByte = 4u;
+        static constexpr std::uint8_t kBitOffset = 0u;
+        static constexpr std::uint8_t kWidth = 1u;
+        static constexpr std::uint64_t kMask = 0x1ull;
+    };
+    struct HwStartBtnLatchedMeta {
+        static constexpr std::size_t kByte = 4u;
+        static constexpr std::uint8_t kBitOffset = 1u;
+        static constexpr std::uint8_t kWidth = 1u;
+        static constexpr std::uint64_t kMask = 0x1ull;
+    };
+    struct HwBrakeLeverPulledMeta {
+        static constexpr std::size_t kByte = 4u;
+        static constexpr std::uint8_t kBitOffset = 2u;
+        static constexpr std::uint8_t kWidth = 1u;
+        static constexpr std::uint64_t kMask = 0x1ull;
+    };
+    struct HwModeBtnPressedMeta {
+        static constexpr std::size_t kByte = 4u;
+        static constexpr std::uint8_t kBitOffset = 3u;
+        static constexpr std::uint8_t kWidth = 1u;
+        static constexpr std::uint64_t kMask = 0x1ull;
+    };
+    struct HwSwLeftTurnMeta {
+        static constexpr std::size_t kByte = 4u;
+        static constexpr std::uint8_t kBitOffset = 4u;
+        static constexpr std::uint8_t kWidth = 1u;
+        static constexpr std::uint64_t kMask = 0x1ull;
+    };
+    struct HwSwRightTurnMeta {
+        static constexpr std::size_t kByte = 4u;
+        static constexpr std::uint8_t kBitOffset = 5u;
+        static constexpr std::uint8_t kWidth = 1u;
+        static constexpr std::uint64_t kMask = 0x1ull;
+    };
+    struct HwSwHeadlightMeta {
+        static constexpr std::size_t kByte = 4u;
+        static constexpr std::uint8_t kBitOffset = 6u;
+        static constexpr std::uint8_t kWidth = 1u;
+        static constexpr std::uint64_t kMask = 0x1ull;
+    };
+    struct RunLatchEnabledMeta {
+        static constexpr std::size_t kByte = 4u;
         static constexpr std::uint8_t kBitOffset = 7u;
         static constexpr std::uint8_t kWidth = 1u;
         static constexpr std::uint64_t kMask = 0x1ull;
     };
-    static constexpr std::uint16_t kReservedB4 = 0;
-    struct ReservedB4Meta {
-        static constexpr std::size_t kByte = 4u;
+    struct Power12vRelayOnMeta {
+        static constexpr std::size_t kByte = 5u;
         static constexpr std::uint8_t kBitOffset = 0u;
-        static constexpr std::uint8_t kWidth = 16u;
-        static constexpr std::uint64_t kMask = 0xFFFFull;
+        static constexpr std::uint8_t kWidth = 1u;
+        static constexpr std::uint64_t kMask = 0x1ull;
     };
-    struct RollingCounterMeta {
-        static constexpr std::size_t kByte = 6u;
-        static constexpr std::uint8_t kBitOffset = 0u;
-        static constexpr std::uint8_t kWidth = 8u;
-        static constexpr std::uint64_t kMask = 0xFFull;
+    struct ReadyBulbOnMeta {
+        static constexpr std::size_t kByte = 5u;
+        static constexpr std::uint8_t kBitOffset = 1u;
+        static constexpr std::uint8_t kWidth = 1u;
+        static constexpr std::uint64_t kMask = 0x1ull;
     };
-    struct E2eCrcMeta {
-        static constexpr std::size_t kByte = 7u;
-        static constexpr std::uint8_t kBitOffset = 0u;
-        static constexpr std::uint8_t kWidth = 8u;
-        static constexpr std::uint64_t kMask = 0xFFull;
+    struct BypassBulbOnMeta {
+        static constexpr std::size_t kByte = 5u;
+        static constexpr std::uint8_t kBitOffset = 2u;
+        static constexpr std::uint8_t kWidth = 1u;
+        static constexpr std::uint64_t kMask = 0x1ull;
+    };
+    struct EstopBulbOnMeta {
+        static constexpr std::size_t kByte = 5u;
+        static constexpr std::uint8_t kBitOffset = 3u;
+        static constexpr std::uint8_t kWidth = 1u;
+        static constexpr std::uint64_t kMask = 0x1ull;
+    };
+    struct LightLeftOnMeta {
+        static constexpr std::size_t kByte = 5u;
+        static constexpr std::uint8_t kBitOffset = 4u;
+        static constexpr std::uint8_t kWidth = 1u;
+        static constexpr std::uint64_t kMask = 0x1ull;
+    };
+    struct LightRightOnMeta {
+        static constexpr std::size_t kByte = 5u;
+        static constexpr std::uint8_t kBitOffset = 5u;
+        static constexpr std::uint8_t kWidth = 1u;
+        static constexpr std::uint64_t kMask = 0x1ull;
+    };
+    struct LightBrakeOnMeta {
+        static constexpr std::size_t kByte = 5u;
+        static constexpr std::uint8_t kBitOffset = 6u;
+        static constexpr std::uint8_t kWidth = 1u;
+        static constexpr std::uint64_t kMask = 0x1ull;
+    };
+    struct LightHeadOnMeta {
+        static constexpr std::size_t kByte = 5u;
+        static constexpr std::uint8_t kBitOffset = 7u;
+        static constexpr std::uint8_t kWidth = 1u;
+        static constexpr std::uint64_t kMask = 0x1ull;
     };
 
     CodecStatus pack(std::uint8_t* destination, std::size_t length) const noexcept {
         if (length != kDlc) return CodecStatus::UnexpectedLength;
         if (destination == nullptr && kDlc != 0u) return CodecStatus::NullData;
         if (reserved_b0 != 0) return CodecStatus::ConstantMismatch;
-        if (reserved_b4 != 0) return CodecStatus::ConstantMismatch;
+        if (reserved_b1 != 0) return CodecStatus::ConstantMismatch;
         std::array<std::uint8_t, kDlc> payload{};
-        detail::insert(payload.data(), 0u, 0u, 4u, false, static_cast<std::uint64_t>(node_state));
-        detail::insert(payload.data(), 0u, 4u, 4u, false, static_cast<std::uint64_t>(reserved_b0));
-        detail::insert(payload.data(), 1u, 0u, 16u, false, static_cast<std::uint64_t>(block_mask));
-        detail::insert(payload.data(), 3u, 0u, 1u, false, static_cast<std::uint64_t>(estop_active));
-        detail::insert(payload.data(), 3u, 1u, 1u, false, static_cast<std::uint64_t>(ready));
-        detail::insert(payload.data(), 3u, 2u, 1u, false, static_cast<std::uint64_t>(command_received));
-        detail::insert(payload.data(), 3u, 3u, 1u, false, static_cast<std::uint64_t>(command_nonzero));
-        detail::insert(payload.data(), 3u, 4u, 1u, false, static_cast<std::uint64_t>(output_enabled));
-        detail::insert(payload.data(), 3u, 5u, 1u, false, static_cast<std::uint64_t>(estop_latched));
-        detail::insert(payload.data(), 3u, 6u, 1u, false, static_cast<std::uint64_t>(recovery_pending));
-        detail::insert(payload.data(), 3u, 7u, 1u, false, static_cast<std::uint64_t>(degraded));
-        detail::insert(payload.data(), 4u, 0u, 16u, false, static_cast<std::uint64_t>(reserved_b4));
-        detail::insert(payload.data(), 6u, 0u, 8u, false, static_cast<std::uint64_t>(rolling_counter));
-        detail::insert(payload.data(), 7u, 0u, 8u, false, static_cast<std::uint64_t>(e2e_crc));
+        detail::insert(payload.data(), 0u, 0u, 1u, false, static_cast<std::uint64_t>(command_received));
+        detail::insert(payload.data(), 0u, 1u, 1u, false, static_cast<std::uint64_t>(command_nonzero));
+        detail::insert(payload.data(), 0u, 2u, 1u, false, static_cast<std::uint64_t>(command_executing));
+        detail::insert(payload.data(), 0u, 3u, 1u, false, static_cast<std::uint64_t>(command_rejected));
+        detail::insert(payload.data(), 0u, 4u, 1u, false, static_cast<std::uint64_t>(driver_override));
+        detail::insert(payload.data(), 0u, 5u, 3u, false, static_cast<std::uint64_t>(reserved_b0));
+        detail::insert(payload.data(), 1u, 0u, 1u, false, static_cast<std::uint64_t>(system_ready));
+        detail::insert(payload.data(), 1u, 1u, 1u, false, static_cast<std::uint64_t>(bypass_active));
+        detail::insert(payload.data(), 1u, 2u, 1u, false, static_cast<std::uint64_t>(bench_solo_mode));
+        detail::insert(payload.data(), 1u, 3u, 1u, false, static_cast<std::uint64_t>(bypass_mtr_absent));
+        detail::insert(payload.data(), 1u, 4u, 1u, false, static_cast<std::uint64_t>(bypass_seb_sync));
+        detail::insert(payload.data(), 1u, 5u, 1u, false, static_cast<std::uint64_t>(degraded));
+        detail::insert(payload.data(), 1u, 6u, 2u, false, static_cast<std::uint64_t>(reserved_b1));
+        detail::insert(payload.data(), 2u, 0u, 8u, false, static_cast<std::uint64_t>(block_mask_low));
+        detail::insert(payload.data(), 3u, 0u, 8u, false, static_cast<std::uint64_t>(block_mask_high));
+        detail::insert(payload.data(), 4u, 0u, 1u, false, static_cast<std::uint64_t>(hw_estop_btn_pressed));
+        detail::insert(payload.data(), 4u, 1u, 1u, false, static_cast<std::uint64_t>(hw_start_btn_latched));
+        detail::insert(payload.data(), 4u, 2u, 1u, false, static_cast<std::uint64_t>(hw_brake_lever_pulled));
+        detail::insert(payload.data(), 4u, 3u, 1u, false, static_cast<std::uint64_t>(hw_mode_btn_pressed));
+        detail::insert(payload.data(), 4u, 4u, 1u, false, static_cast<std::uint64_t>(hw_sw_left_turn));
+        detail::insert(payload.data(), 4u, 5u, 1u, false, static_cast<std::uint64_t>(hw_sw_right_turn));
+        detail::insert(payload.data(), 4u, 6u, 1u, false, static_cast<std::uint64_t>(hw_sw_headlight));
+        detail::insert(payload.data(), 4u, 7u, 1u, false, static_cast<std::uint64_t>(run_latch_enabled));
+        detail::insert(payload.data(), 5u, 0u, 1u, false, static_cast<std::uint64_t>(power_12v_relay_on));
+        detail::insert(payload.data(), 5u, 1u, 1u, false, static_cast<std::uint64_t>(ready_bulb_on));
+        detail::insert(payload.data(), 5u, 2u, 1u, false, static_cast<std::uint64_t>(bypass_bulb_on));
+        detail::insert(payload.data(), 5u, 3u, 1u, false, static_cast<std::uint64_t>(estop_bulb_on));
+        detail::insert(payload.data(), 5u, 4u, 1u, false, static_cast<std::uint64_t>(light_left_on));
+        detail::insert(payload.data(), 5u, 5u, 1u, false, static_cast<std::uint64_t>(light_right_on));
+        detail::insert(payload.data(), 5u, 6u, 1u, false, static_cast<std::uint64_t>(light_brake_on));
+        detail::insert(payload.data(), 5u, 7u, 1u, false, static_cast<std::uint64_t>(light_head_on));
         for (std::size_t index = 0; index < kDlc; ++index) destination[index] = payload[index];
         return CodecStatus::Ok;
     }
@@ -3613,36 +3699,70 @@ struct SysNodeStatus {
         if (length != kDlc) return CodecStatus::UnexpectedLength;
         if (source == nullptr && kDlc != 0u) return CodecStatus::NullData;
         SysNodeStatus value{};
-        const std::uint64_t raw_node_state = detail::extract(source, 0u, 0u, 4u, false);
-        value.node_state = static_cast<std::uint8_t>(raw_node_state);
-        const std::uint64_t raw_reserved_b0 = detail::extract(source, 0u, 4u, 4u, false);
+        const std::uint64_t raw_command_received = detail::extract(source, 0u, 0u, 1u, false);
+        value.command_received = raw_command_received != 0u;
+        const std::uint64_t raw_command_nonzero = detail::extract(source, 0u, 1u, 1u, false);
+        value.command_nonzero = raw_command_nonzero != 0u;
+        const std::uint64_t raw_command_executing = detail::extract(source, 0u, 2u, 1u, false);
+        value.command_executing = raw_command_executing != 0u;
+        const std::uint64_t raw_command_rejected = detail::extract(source, 0u, 3u, 1u, false);
+        value.command_rejected = raw_command_rejected != 0u;
+        const std::uint64_t raw_driver_override = detail::extract(source, 0u, 4u, 1u, false);
+        value.driver_override = raw_driver_override != 0u;
+        const std::uint64_t raw_reserved_b0 = detail::extract(source, 0u, 5u, 3u, false);
         if (raw_reserved_b0 != 0u) return CodecStatus::ConstantMismatch;
         value.reserved_b0 = static_cast<std::uint8_t>(raw_reserved_b0);
-        const std::uint64_t raw_block_mask = detail::extract(source, 1u, 0u, 16u, false);
-        value.block_mask = static_cast<std::uint16_t>(raw_block_mask);
-        const std::uint64_t raw_estop_active = detail::extract(source, 3u, 0u, 1u, false);
-        value.estop_active = raw_estop_active != 0u;
-        const std::uint64_t raw_ready = detail::extract(source, 3u, 1u, 1u, false);
-        value.ready = raw_ready != 0u;
-        const std::uint64_t raw_command_received = detail::extract(source, 3u, 2u, 1u, false);
-        value.command_received = raw_command_received != 0u;
-        const std::uint64_t raw_command_nonzero = detail::extract(source, 3u, 3u, 1u, false);
-        value.command_nonzero = raw_command_nonzero != 0u;
-        const std::uint64_t raw_output_enabled = detail::extract(source, 3u, 4u, 1u, false);
-        value.output_enabled = raw_output_enabled != 0u;
-        const std::uint64_t raw_estop_latched = detail::extract(source, 3u, 5u, 1u, false);
-        value.estop_latched = raw_estop_latched != 0u;
-        const std::uint64_t raw_recovery_pending = detail::extract(source, 3u, 6u, 1u, false);
-        value.recovery_pending = raw_recovery_pending != 0u;
-        const std::uint64_t raw_degraded = detail::extract(source, 3u, 7u, 1u, false);
+        const std::uint64_t raw_system_ready = detail::extract(source, 1u, 0u, 1u, false);
+        value.system_ready = raw_system_ready != 0u;
+        const std::uint64_t raw_bypass_active = detail::extract(source, 1u, 1u, 1u, false);
+        value.bypass_active = raw_bypass_active != 0u;
+        const std::uint64_t raw_bench_solo_mode = detail::extract(source, 1u, 2u, 1u, false);
+        value.bench_solo_mode = raw_bench_solo_mode != 0u;
+        const std::uint64_t raw_bypass_mtr_absent = detail::extract(source, 1u, 3u, 1u, false);
+        value.bypass_mtr_absent = raw_bypass_mtr_absent != 0u;
+        const std::uint64_t raw_bypass_seb_sync = detail::extract(source, 1u, 4u, 1u, false);
+        value.bypass_seb_sync = raw_bypass_seb_sync != 0u;
+        const std::uint64_t raw_degraded = detail::extract(source, 1u, 5u, 1u, false);
         value.degraded = raw_degraded != 0u;
-        const std::uint64_t raw_reserved_b4 = detail::extract(source, 4u, 0u, 16u, false);
-        if (raw_reserved_b4 != 0u) return CodecStatus::ConstantMismatch;
-        value.reserved_b4 = static_cast<std::uint16_t>(raw_reserved_b4);
-        const std::uint64_t raw_rolling_counter = detail::extract(source, 6u, 0u, 8u, false);
-        value.rolling_counter = static_cast<std::uint8_t>(raw_rolling_counter);
-        const std::uint64_t raw_e2e_crc = detail::extract(source, 7u, 0u, 8u, false);
-        value.e2e_crc = static_cast<std::uint8_t>(raw_e2e_crc);
+        const std::uint64_t raw_reserved_b1 = detail::extract(source, 1u, 6u, 2u, false);
+        if (raw_reserved_b1 != 0u) return CodecStatus::ConstantMismatch;
+        value.reserved_b1 = static_cast<std::uint8_t>(raw_reserved_b1);
+        const std::uint64_t raw_block_mask_low = detail::extract(source, 2u, 0u, 8u, false);
+        value.block_mask_low = static_cast<std::uint8_t>(raw_block_mask_low);
+        const std::uint64_t raw_block_mask_high = detail::extract(source, 3u, 0u, 8u, false);
+        value.block_mask_high = static_cast<std::uint8_t>(raw_block_mask_high);
+        const std::uint64_t raw_hw_estop_btn_pressed = detail::extract(source, 4u, 0u, 1u, false);
+        value.hw_estop_btn_pressed = raw_hw_estop_btn_pressed != 0u;
+        const std::uint64_t raw_hw_start_btn_latched = detail::extract(source, 4u, 1u, 1u, false);
+        value.hw_start_btn_latched = raw_hw_start_btn_latched != 0u;
+        const std::uint64_t raw_hw_brake_lever_pulled = detail::extract(source, 4u, 2u, 1u, false);
+        value.hw_brake_lever_pulled = raw_hw_brake_lever_pulled != 0u;
+        const std::uint64_t raw_hw_mode_btn_pressed = detail::extract(source, 4u, 3u, 1u, false);
+        value.hw_mode_btn_pressed = raw_hw_mode_btn_pressed != 0u;
+        const std::uint64_t raw_hw_sw_left_turn = detail::extract(source, 4u, 4u, 1u, false);
+        value.hw_sw_left_turn = raw_hw_sw_left_turn != 0u;
+        const std::uint64_t raw_hw_sw_right_turn = detail::extract(source, 4u, 5u, 1u, false);
+        value.hw_sw_right_turn = raw_hw_sw_right_turn != 0u;
+        const std::uint64_t raw_hw_sw_headlight = detail::extract(source, 4u, 6u, 1u, false);
+        value.hw_sw_headlight = raw_hw_sw_headlight != 0u;
+        const std::uint64_t raw_run_latch_enabled = detail::extract(source, 4u, 7u, 1u, false);
+        value.run_latch_enabled = raw_run_latch_enabled != 0u;
+        const std::uint64_t raw_power_12v_relay_on = detail::extract(source, 5u, 0u, 1u, false);
+        value.power_12v_relay_on = raw_power_12v_relay_on != 0u;
+        const std::uint64_t raw_ready_bulb_on = detail::extract(source, 5u, 1u, 1u, false);
+        value.ready_bulb_on = raw_ready_bulb_on != 0u;
+        const std::uint64_t raw_bypass_bulb_on = detail::extract(source, 5u, 2u, 1u, false);
+        value.bypass_bulb_on = raw_bypass_bulb_on != 0u;
+        const std::uint64_t raw_estop_bulb_on = detail::extract(source, 5u, 3u, 1u, false);
+        value.estop_bulb_on = raw_estop_bulb_on != 0u;
+        const std::uint64_t raw_light_left_on = detail::extract(source, 5u, 4u, 1u, false);
+        value.light_left_on = raw_light_left_on != 0u;
+        const std::uint64_t raw_light_right_on = detail::extract(source, 5u, 5u, 1u, false);
+        value.light_right_on = raw_light_right_on != 0u;
+        const std::uint64_t raw_light_brake_on = detail::extract(source, 5u, 6u, 1u, false);
+        value.light_brake_on = raw_light_brake_on != 0u;
+        const std::uint64_t raw_light_head_on = detail::extract(source, 5u, 7u, 1u, false);
+        value.light_head_on = raw_light_head_on != 0u;
         out = value;
         return CodecStatus::Ok;
     }

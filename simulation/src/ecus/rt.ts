@@ -194,6 +194,7 @@ export class RtEcu implements SimulatedEcu {
       if (
         decodeAs(f, "sys:sys_safety_sts") !== undefined ||
         decodeAs(f, "mtr:sys_throttle_sts") !== undefined ||
+        decodeAs(f, "sys:sys_node_status") !== undefined ||
         decodeAs(f, "sys:sys_diag_rpt") !== undefined
       ) {
         out.push({ ...f, bus: "high", sender: "rt" });

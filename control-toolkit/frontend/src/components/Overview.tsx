@@ -263,7 +263,7 @@ export function Overview() {
               </div>
               <div className="metric metric-discrete" data-testid="metric-gear">
                 <StatusPill
-                  label={speed.hostGear}
+                  label={speed.hostGear ?? '—'}
                   tone={speed.hostGear === 'N' || speed.hostGear === '—' ? 'muted' : 'accent'}
                   testId="status-gear"
                 />

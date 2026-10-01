@@ -111,10 +111,42 @@ _NODE_STATUS_BASE = {
     "rolling_counter": 7,
 }
 
+# Redesigned 0x500: command execution + readiness + blocker + cockpit I/O.
+_SYS_NODE_STATUS_BASE = {
+    "command_received": 1,
+    "command_nonzero": 0,
+    "command_executing": 0,
+    "command_rejected": 0,
+    "driver_override": 0,
+    "system_ready": 1,
+    "bypass_active": 0,
+    "bench_solo_mode": 0,
+    "bypass_mtr_absent": 0,
+    "bypass_seb_sync": 0,
+    "degraded": 0,
+    "block_mask_low": 0x23,
+    "block_mask_high": 0x01,
+    "hw_estop_btn_pressed": 0,
+    "hw_start_btn_latched": 1,
+    "hw_brake_lever_pulled": 0,
+    "hw_mode_btn_pressed": 0,
+    "hw_sw_left_turn": 0,
+    "hw_sw_right_turn": 0,
+    "hw_sw_headlight": 0,
+    "run_latch_enabled": 1,
+    "power_12v_relay_on": 1,
+    "ready_bulb_on": 1,
+    "bypass_bulb_on": 0,
+    "estop_bulb_on": 0,
+    "light_left_on": 0,
+    "light_right_on": 0,
+    "light_brake_on": 1,
+    "light_head_on": 0,
+}
+
 
 def test_encode_node_status_auto_e2e():
     for key, can_id in (
-        ("sys:sys_node_status", 0x500),
         ("rt:rt_node_status", 0x501),
         ("mtr:mtr_node_status", 0x502),
     ):
@@ -125,3 +157,12 @@ def test_encode_node_status_auto_e2e():
         assert r.ok, (key, r.status)
         assert r.can_id == can_id
         assert r.dlc == 8
+
+    r = encode_message(key="sys:sys_node_status", bus="low",
+                       values=dict(_SYS_NODE_STATUS_BASE))
+    assert r.ok, r.status
+    assert r.can_id == 0x500
+    assert r.dlc == 6
+    assert r.data[2] == 0x23   # block_mask_low
+    assert r.data[3] == 0x01   # block_mask_high
+    assert r.data[5] == 0b01000011  # power+ready relays, light_brake_on

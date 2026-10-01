@@ -152,10 +152,12 @@ Low CAN Bus (500 kbit/s, 11-bit Standard ID)
 │ 0x206     │ MTR_MOTOR_FBK        │ RX      │ 20 ms    │ DLC 4. Speed cmd echo + fault flags      │
 │ 0x210     │ RT_STATE_RPT         │ RX      │ 100 ms   │ DLC 6. RT safety state for takeover      │
 │ 0x302     │ HOST_LIGHT_CMD       │ RX      │ Event    │ DLC 1. Turn, brake, headlight bits       │
-│ 0x500     │ SYS_NODE_STATUS      │ TX      │ 200 ms   │ DLC 8. System-ready, node state, block   │
+│ 0x500     │ SYS_NODE_STATUS      │ TX      │ 200 ms   │ DLC 6. Exec state, blockers, hw inputs,  │
+│           │                      │         │          │ relay/lamp outputs                       │
 │ 0x501     │ RT_NODE_STATUS       │ RX      │ 20 ms    │ DLC 8. RT ready/degraded (covers SES)    │
 │ 0x502     │ MTR_NODE_STATUS      │ RX      │ 20 ms    │ DLC 8. MTR ready/output/ignition proof   │
-│ 0x600     │ SYS_DIAG_RPT         │ TX      │ 1000 ms  │ DLC 8. Lights, heap, TEC/REC, overflow   │
+│ 0x600     │ SYS_DIAG_RPT         │ TX      │ 1000 ms  │ DLC 8. Bus health, TEC/REC, task health, │
+│           │                      │         │          │ heap, reset reason, uptime               │
 │ 0x6FB     │ SEB_TEST             │ RX      │ 10 ms    │ DLC 8. Motor current & ECU temperature   │
 │ 0x721     │ SEB_STATUS           │ RX      │ 10 ms    │ DLC 8. Stroke raw, error status, roll    │
 │ 0x731     │ SEB_ERR_INFO         │ RX      │ 100 ms   │ DLC 8. 16 Level-3 vendor fault bits      │
@@ -189,7 +191,7 @@ rolling advancing, `error_status < 3`), and the Host request-stream validity fla
 Bypass-aware: `g_bypass_mtr_absent` / `g_bypass_seb_sync` set `mtr_required` /
 `seb_required` false so an intentionally-absent bench actuator degrades the level
 instead of reporting a hard fault. RT is always required. The level is debounced
-by `kSystemReadyHoldMs` before it changes, and is exported as `0x500.ready`
+by `kSystemReadyHoldMs` before it changes, and is exported as `0x500.system_ready`
 (Full only) plus `0x500.command_received` / `.command_nonzero`.
 
 ---

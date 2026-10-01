@@ -68,7 +68,7 @@ Presence of this frame = emergency stop. Motor stop, brake engage, steering disa
 | `SYS_RollingCounter` | 24 | 8 | u8 | 1 | 0 | 0 | 255 | ? | Wrapping |
 | `SYS_E2eCrc` | 32 | 8 | u8 | 1 | 0 | 0 | 255 | ? | CRC-8 over bytes 0..3 |
 
-> Lighting status moved off `0x011` onto `0x600 SYS_DIAG_RPT` (byte 1, bits 2..5). `0x011` is now a pure ASIL-D authority frame: ESTOP source + reason + node presence.
+> Lighting status moved off `0x011` onto `0x500 SYS_NODE_STATUS` (byte 5, executed outputs). `0x011` is now a pure ASIL-D authority frame: ESTOP source + reason + node presence. `0x600 SYS_DIAG_RPT` is pure ECU/bus health (rx_overflow, can_state, TEC/REC, task health, heap, reset reason, uptime).
 
 ---
 
@@ -375,19 +375,65 @@ Detailed fault flags. Each bit is an independent fault indicator. 1 = fault acti
 | **DLC** | 8 |
 | **Period** | 1 Hz |
 
-| Signal | Start bit | Len | Type |
-|--------|-----------|-----|------|
-| `SYS_DiagMode` | 0 | 8 | u8 |
-| `SYS_DiagBrakeEngaged` | 8 | 1 | u8 bool |
-| `SYS_DiagBrakeFault` | 9 | 1 | u8 bool |
-| `SYS_DiagHeartbeatOk` | 16 | 1 | u8 bool |
-| `SYS_DiagRxOverflow` | 17 | 6 | u8 |
-| `SYS_DiagEstopActive` | 24 | 8 | u8 |
-| `SYS_DiagFreeHeapKb` | 32 | 16 | u16 |
-| `SYS_DiagTec` | 48 | 8 | u8 |
-| `SYS_DiagRec` | 56 | 8 | u8 |
+| Signal | Byte | Bit | Len | Type |
+|--------|------|-----|-----|------|
+| `SYS_DiagRxOverflow` | 0 | 0 | 6 | u8 (saturating) |
+| `SYS_DiagCanState` | 0 | 6 | 2 | enum (0=ACTIVE, 1=WARNING, 2=PASSIVE, 3=RECOVERING) |
+| `SYS_DiagTec` | 1 | 0 | 8 | u8 |
+| `SYS_DiagRec` | 2 | 0 | 8 | u8 |
+| `SYS_DiagTaskHealthMask` | 3 | 0 | 8 | u8 bitmask |
+| `SYS_DiagFreeHeapKb` | 4 | 0 | 8 | u8 (saturating, KB) |
+| `SYS_DiagMcuResetReason` | 5 | 0 | 8 | enum (0=POWER_ON … 5=UNKNOWN) |
+| `SYS_DiagUptimeSeconds` | 6 | 0 | 16 | u16 BE |
 
-Byte layout (big-endian): Byte 0=mode, 1=brake, 2=hb_ok/rx_overflow, 3=estop, 4-5=heap, 6=tec, 7=rec.
+Byte layout (big-endian): Byte 0=rx_overflow(6b)+can_state(2b), 1=tec, 2=rec, 3=task_health_mask, 4=free_heap_kb, 5=mcu_reset_reason, 6-7=uptime_seconds.
+
+---
+
+### 0x500 — SYS_NODE_STATUS
+
+Execution/readiness/blocker status + cockpit hardware inputs + relay/lamp outputs.
+
+| Property | Value |
+|----------|-------|
+| **Sender** | SYS |
+| **Receiver(s)** | RT (→ Jetson) |
+| **DLC** | 6 |
+| **Period** | 5 Hz (200 ms) |
+
+| Signal | Byte | Bit | Len | Type | Description |
+|--------|------|-----|-----|------|-------------|
+| `SYS_NodeCmdReceived` | 0 | 0 | 1 | bool | 0x204 fresh (<200 ms) |
+| `SYS_NodeCmdNonzero` | 0 | 1 | 1 | bool | last 0x204 magnitude ≠ 0 |
+| `SYS_NodeCmdExecuting` | 0 | 2 | 1 | bool | command passed to RT this cycle |
+| `SYS_NodeCmdRejected` | 0 | 3 | 1 | bool | fresh command blocked by a blocker |
+| `SYS_NodeDriverOverride` | 0 | 4 | 1 | bool | human input overriding |
+| `SYS_NodeSystemReady` | 1 | 0 | 1 | bool | readiness level == Full |
+| `SYS_NodeBypassActive` | 1 | 1 | 1 | bool | any bypass armed |
+| `SYS_NodeBenchSoloMode` | 1 | 2 | 1 | bool | running solo on bench |
+| `SYS_NodeBypassMtrAbsent` | 1 | 3 | 1 | bool | MTR absent + bypass accepted |
+| `SYS_NodeBypassSebSync` | 1 | 4 | 1 | bool | SEB sync absent + bypass accepted |
+| `SYS_NodeDegraded` | 1 | 5 | 1 | bool | reduced supervision |
+| `SYS_NodeBlockMaskLow` | 2 | 0 | 8 | u8 | blocker bitmask, low byte |
+| `SYS_NodeBlockMaskHigh` | 3 | 0 | 8 | u8 | blocker bitmask, high byte |
+| `SYS_NodeHwEstopBtnPressed` | 4 | 0 | 1 | bool | GPIO1 |
+| `SYS_NodeHwStartBtnLatched` | 4 | 1 | 1 | bool | GPIO41 raw |
+| `SYS_NodeHwBrakeLeverPulled` | 4 | 2 | 1 | bool | GPIO2 |
+| `SYS_NodeHwModeBtnPressed` | 4 | 3 | 1 | bool | GPIO11 |
+| `SYS_NodeHwSwLeftTurn` | 4 | 4 | 1 | bool | GPIO9 |
+| `SYS_NodeHwSwRightTurn` | 4 | 5 | 1 | bool | GPIO6 |
+| `SYS_NodeHwSwHeadlight` | 4 | 6 | 1 | bool | GPIO7 |
+| `SYS_NodeRunLatchEnabled` | 4 | 7 | 1 | bool | run latch enabled |
+| `SYS_NodePower12vRelayOn` | 5 | 0 | 1 | bool | 12 V relay |
+| `SYS_NodeReadyBulbOn` | 5 | 1 | 1 | bool | GPIO17 |
+| `SYS_NodeBypassBulbOn` | 5 | 2 | 1 | bool | GPIO14 |
+| `SYS_NodeEstopBulbOn` | 5 | 3 | 1 | bool | GPIO18 |
+| `SYS_NodeLightLeftOn` | 5 | 4 | 1 | bool | executed left-turn output |
+| `SYS_NodeLightRightOn` | 5 | 5 | 1 | bool | executed right-turn output |
+| `SYS_NodeLightBrakeOn` | 5 | 6 | 1 | bool | executed brake output |
+| `SYS_NodeLightHeadOn` | 5 | 7 | 1 | bool | executed headlight output |
+
+Blocker vocabulary (low byte): 0x01 brake lever · 0x02 SEB sync missing · 0x04 MTR fbk unacked · 0x08 RT setpoint stale · 0x10 start unlatched · 0x20 startup acquire window. High byte: 0x01 SEB L3 latch · 0x02 EGAS mismatch (reserved) · 0x04 MTR fbk timeout · 0x08 task deadline.
 
 ---
 
@@ -859,9 +905,9 @@ See low-level ?1 `0x112`. Present on both buses (HMI ? SYS).
 
 ---
 
-### 0x600 ? SYS_DIAG_RPT (forwarded)
+### 0x500 / 0x600 ? SYS frames (forwarded)
 
-Forwarded from low-level by RT. Same layout as ?1 `0x600`.
+Forwarded from low-level by RT. Same layout as ?1 (`0x500 SYS_NODE_STATUS`, `0x600 SYS_DIAG_RPT`).
 
 ---
 
@@ -926,6 +972,7 @@ Jetson is QM, not safety-critical. Heartbeat loss triggers controlled stop, not 
 | `0x206` | MTR_MOTOR_FBK | MTR | RT, SYS, Host | 4 | 50 Hz |
 | `0x210` | RT_STATE_RPT | RT | Host, SYS | 6 | 10 Hz |
 | `0x302` | HOST_LIGHT_CMD | RT (fwd) | SYS | 1 | Change |
+| `0x500` | SYS_NODE_STATUS | SYS | RT (?)Jetson | 6 | 5 Hz |
 | `0x600` | SYS_DIAG_RPT | SYS | RT (?Jetson) | 8 | 1 Hz |
 | `0x6FA` | SES_Test | SES | RT | 8 | 100 Hz |
 | `0x6FB` | SEB_Test | SEB | SYS | 8 | 100 Hz |
@@ -954,6 +1001,7 @@ Jetson is QM, not safety-critical. Heartbeat loss triggers controlled stop, not 
 | `0x310` | STEER_DIAG | RT | Host | 8 | 100 Hz |
 | `0x311` | BRAKE_DIAG | RT | Host | 8 | 100 Hz |
 | `0x400` | HOST_OBSTACLE_DIST | Jetson | RT | 4 | 10 Hz |
+| `0x500` | SYS_NODE_STATUS | RT (fwd) | Jetson | 6 | 5 Hz |
 | `0x600` | SYS_DIAG_RPT | RT (fwd) | Jetson | 8 | 1 Hz |
 | `0x7FD` | RT_HEARTBEAT | RT | Jetson | 2 | 2 Hz |
 | `0x7FC` | HOST_HEARTBEAT | Jetson | RT | 2 | 2 Hz |
@@ -968,7 +1016,7 @@ RT is the only dual-bus node. Every CAN message falls into exactly one of three 
 
 | Direction | IDs |
 |-----------|-----|
-| Low ? High | `0x001`, `0x011`, `0x120`, `0x206`, `0x600` |
+| Low ? High | `0x001`, `0x011`, `0x120`, `0x206`, `0x500`, `0x600` |
 | High ? Low | `0x001`, `0x111`, `0x112`, `0x302` |
 
 ### Category 2: Consumed by RT ? different message generated
@@ -982,7 +1030,7 @@ RT is the only dual-bus node. Every CAN message falls into exactly one of three 
 
 | Bus | IDs |
 |-----|-----|
-| Low only | `0x012`, `0x110`, `0x113`, `0x169`, `0x202`, `0x203`, `0x204`, `0x205`, `0x500` (SYS_NODE_STATUS @ 200 ms), `0x6FA`, `0x6FB`, `0x721`, `0x731`, `0x741`, `0x7B9` |
+| Low only | `0x012`, `0x110`, `0x113`, `0x169`, `0x202`, `0x203`, `0x204`, `0x205`, `0x6FA`, `0x6FB`, `0x721`, `0x731`, `0x741`, `0x7B9` |
 | Low only | `0x201` (steer-by-wire unit feedback) |
 | High only | `0x220`, `0x400` (obstacle distance), `0x310` (steer diag), `0x311` (brake diag) |
 | Both independent | `0x7FD`, `0x7FE`, `0x7FC`, `0x210` (RT_STATE_RPT @ 10 Hz), `0x501` (RT_NODE_STATUS: 100 ms High, 200 ms Low), `0x621` (RT_DIAG_EVENT_RPT: on event / 100 ms) |

@@ -44,7 +44,7 @@ export function evaluateActivationGates(
   const sysPwr = findMsg(messages, 'SYS_PWR_CMD', 'low')
   const sysSafety = findMsg(messages, 'SYS_SAFETY_STS', 'low')
   const sysHb = findMsg(messages, 'SYS_HEARTBEAT', 'low')
-  const sysDiag = findMsg(messages, 'SYS_DIAG_RPT', 'low')
+  const sysNode = findMsg(messages, 'SYS_NODE_STATUS', 'low')
 
   const rtHb = findMsg(messages, 'RT_HEARTBEAT')
   const rtState = findMsg(messages, 'RT_STATE_RPT', 'low') ?? findMsg(messages, 'RT_STATUS', 'low')
@@ -73,7 +73,8 @@ export function evaluateActivationGates(
   const estopVal = useSim ? 0 : (signalIsOn(sysSafety, 'estop_source') ? 1 : 0)
   const estopMet = estopVal === 0
 
-  const brakeLeverVal = useSim ? 0 : (signalNum(sysDiag, 'brake_engaged') ?? (signalIsOn(sysDiag, 'brake_engaged') ? 1 : 0))
+  // Brake lever moved to 0x500 hw_brake_lever_pulled (0x600 is pure ECU health).
+  const brakeLeverVal = useSim ? 0 : (signalNum(sysNode, 'hw_brake_lever_pulled') ?? (signalIsOn(sysNode, 'hw_brake_lever_pulled') ? 1 : 0))
   const brakeLeverMet = brakeLeverVal === 0
 
   const sysHbOk = useSim ? 1 : (signalNum(sysHb, 'heartbeat_ok') ?? 1)
@@ -118,10 +119,10 @@ export function evaluateActivationGates(
     },
     {
       id: 'sys-brake-lever',
-      canId: '0x600',
+      canId: '0x500',
       bus: 'low',
-      msgName: 'SYS_DIAG_RPT',
-      signalKey: 'brake_engaged',
+      msgName: 'SYS_NODE_STATUS',
+      signalKey: 'hw_brake_lever_pulled',
       description: 'Physical handlebar brake lever sensor (GPIO2 pull-up)',
       condition: '== 0 (Released)',
       liveValue: brakeLeverMet ? '0 (Released)' : '1 (Pulled)',

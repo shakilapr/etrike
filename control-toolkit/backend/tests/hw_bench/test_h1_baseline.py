@@ -72,30 +72,40 @@ def test_rt_motion_report_on_high(bench):
 
 
 def test_node_status_standby_and_healthy(bench):
-    """Both node-status reports are operational with no block mask and ready."""
+    """RT node-status is operational with no block mask and ready; SYS's
+    redesigned 0x500 reports a clear command path, no blockers and readiness."""
     ok, state = bench.wait_live(LOW, CAN_SYS_NODE_STATUS, timeout_s=4.0)
     assert ok, "SYS 0x500 not live on Low"
     ok, state = bench.wait_live(LOW, CAN_RT_NODE_STATUS, timeout_s=4.0)
     assert ok, "RT 0x501 not live on Low"
 
     def _healthy(s) -> bool:
-        for bus, cid in ((LOW, CAN_SYS_NODE_STATUS), (LOW, CAN_RT_NODE_STATUS)):
-            msg = s.get((bus, cid))
-            if not msg:
-                return False
-            if signal_of(msg, "node_state") not in NODE_STATES_OPERATIONAL:
-                return False
-            if signal_of(msg, "block_mask") != 0:
-                return False
-            if signal_of(msg, "ready") != 1:
-                return False
-            if signal_of(msg, "estop_active") != 0:
-                return False
+        rt = s.get((LOW, CAN_RT_NODE_STATUS))
+        if not rt:
+            return False
+        if signal_of(rt, "node_state") not in NODE_STATES_OPERATIONAL:
+            return False
+        if signal_of(rt, "block_mask") != 0:
+            return False
+        if signal_of(rt, "ready") != 1:
+            return False
+        if signal_of(rt, "estop_active") != 0:
+            return False
+        sys_node = s.get((LOW, CAN_SYS_NODE_STATUS))
+        if not sys_node:
+            return False
+        if signal_of(sys_node, "command_rejected") != 0:
+            return False
+        if ((signal_of(sys_node, "block_mask_low") or 0)
+                | ((signal_of(sys_node, "block_mask_high") or 0) << 8)) != 0:
+            return False
+        if signal_of(sys_node, "system_ready") != 1:
+            return False
         return True
 
     ok, state = bench.wait_for(_healthy, timeout_s=6.0)
     assert ok, (
-        "node status not healthy (STANDBY/ACTIVE, ready=1, block_mask=0): "
+        "node status not healthy (operational, ready, block_mask=0): "
         f"RT={state.get((LOW, CAN_RT_NODE_STATUS))}, SYS={state.get((LOW, CAN_SYS_NODE_STATUS))}"
     )
 

@@ -1,4 +1,4 @@
-// Per-signal CAN protocol test — ALL 169 signals from YAML protocol definitions.
+// Per-signal CAN protocol test — ALL 227 signals from YAML protocol definitions.
 // Built by the native CMake test suite.
 // Each signal: encode/decode roundtrip (zero, min, max, mid), bit isolation, DLC guard.
 
@@ -74,7 +74,7 @@ static void test_signal(const SignalDef& s) {
     CHECK_EQ(diso, 0, b);
 }
 
-// ── ALL 169 signals (generated from YAML) ──────────────────────────
+// ── ALL 227 signals (generated from YAML) ──────────────────────────
 static const SignalDef ALL_SIGNALS[] = {
 #include "test_all_signals_data.inc"
 };

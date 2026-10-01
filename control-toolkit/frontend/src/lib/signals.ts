@@ -32,8 +32,14 @@ export function nodeStateLabel(m: MessageState | undefined): string {
   return ({ 0: 'INIT', 1: 'ACQUIRE', 2: 'STANDBY', 3: 'ACTIVE', 4: 'INHIBITED', 5: 'ESTOP', 6: 'RECOVER', 15: 'UNKNOWN' })[n ?? -1] ?? ''
 }
 
-/** Persistent ESTOP latch observed from a node's NODE_STATUS frame (fresh). */
+/** Persistent ESTOP latch observed from a node's NODE_STATUS frame (fresh).
+ *  The redesigned 0x500 SYS_NODE_STATUS carries no latch: the SYS latch is
+ *  resolved from 0x011 SYS_SAFETY_STS.estop_source instead. */
 export function nodeLatchActive(messages: MessageState[], name: string): boolean {
+  if (name === 'SYS_NODE_STATUS') {
+    const safety = findMsg(messages, 'SYS_SAFETY_STS')
+    return !!safety && frameRecent(safety) && signalIsOn(safety, 'estop_source')
+  }
   const m = findMsg(messages, name)
   if (!m || !frameRecent(m)) return false
   if (nodeStateLabel(m) === 'ESTOP') return true
@@ -164,11 +170,10 @@ export function observeEstop(
   const busLow = frameRecent(findMsg(messages, 'SAFETY_ESTOP', 'low'), 5000)
   const sysSafety = findMsg(messages, 'SYS_SAFETY_STS')
   const sysHb = findMsg(messages, 'SYS_HEARTBEAT')
-  const sysDiag = findMsg(messages, 'SYS_DIAG_RPT')
+  const sysNode = findMsg(messages, 'SYS_NODE_STATUS')
   const sysReported =
-    (frameRecent(sysSafety) && signalIsOn(sysSafety, 'estop_active')) ||
-    (frameRecent(sysHb) && signalIsOn(sysHb, 'estop_active')) ||
-    (frameRecent(sysDiag) && signalIsOn(sysDiag, 'estop_active'))
+    (frameRecent(sysSafety) && signalIsOn(sysSafety, 'estop_source')) ||
+    (frameRecent(sysHb) && signalIsOn(sysHb, 'estop_active'))
   const sysHeartbeatBad =
     !!sysHb &&
     frameRecent(sysHb) &&
@@ -176,7 +181,9 @@ export function observeEstop(
     !signalIsOn(sysHb, 'heartbeat_ok')
   const sysCanBad =
     !!sysHb && frameRecent(sysHb) && sysHb.signals?.can_ok != null && !signalIsOn(sysHb, 'can_ok')
-  const sysBrakeFault = frameRecent(sysDiag) && signalIsOn(sysDiag, 'brake_fault')
+  // 0x600 no longer carries brake_fault; the latched brake fault is
+  // kBlkSebL3 (bit 0) in SYS_NODE_STATUS.block_mask_high.
+  const sysBrakeFault = frameRecent(sysNode) && signalIsOn(sysNode, 'block_mask_high')
 
   const candidates = [
     findMsg(messages, 'RT_STATE_RPT', 'high'),
@@ -493,7 +500,7 @@ export function getAuthorityPipeline(messages: MessageState[]) {
   const sysMode = findMsg(messages, 'SYS_MODE_CMD')
   const sysPwr = findMsg(messages, 'SYS_PWR_CMD')
   const sysSafety = findMsg(messages, 'SYS_SAFETY_STS')
-  const sysDiag = findMsg(messages, 'SYS_DIAG_RPT')
+  const sysNode = findMsg(messages, 'SYS_NODE_STATUS')
 
   const hmiReqMode = signalText(hmiMode, 'req_mode')
   const hmiReqStart = signalText(hmiPwr, 'req_start')
@@ -501,12 +508,13 @@ export function getAuthorityPipeline(messages: MessageState[]) {
   const sysCommandedMode = signalText(sysMode, 'mode')
   const sysCommandedPower = signalText(sysPwr, 'power_state')
 
-  // 0x011 carries estop_source (nonzero = active); lights moved to 0x600.
+  // 0x011 carries estop_source (nonzero = active); executed lamp outputs live
+  // on 0x500 SYS_NODE_STATUS byte 5.
   const safetyEstop = signalIsOn(sysSafety, 'estop_source') || signalIsOn(sysSafety, 'estop_active')
-  const lightBrake = signalIsOn(sysDiag, 'light_brake')
-  const lightHead = signalIsOn(sysDiag, 'light_head')
-  const lightLeft = signalIsOn(sysDiag, 'light_left')
-  const lightRight = signalIsOn(sysDiag, 'light_right')
+  const lightBrake = signalIsOn(sysNode, 'light_brake_on')
+  const lightHead = signalIsOn(sysNode, 'light_head_on')
+  const lightLeft = signalIsOn(sysNode, 'light_left_on')
+  const lightRight = signalIsOn(sysNode, 'light_right_on')
 
   return {
     hmiMode,
@@ -560,7 +568,6 @@ export type ControllerModes = {
 /** Drive mode of each controller (SYS, RT, MTR) from real CAN messages */
 export function getControllerModes(messages: MessageState[]): ControllerModes {
   const sysMode = findMsg(messages, 'SYS_MODE_CMD')
-  const sysDiag = findMsg(messages, 'SYS_DIAG_RPT')
   const sysHb = findMsg(messages, 'SYS_HEARTBEAT')
   const rtState = findMsg(messages, 'RT_STATE_RPT')
   const mtrFbk = findMsg(messages, 'MTR_MOTOR_FBK')
@@ -571,10 +578,8 @@ export function getControllerModes(messages: MessageState[]): ControllerModes {
   if (sysMode && frameRecent(sysMode)) {
     const m = signalText(sysMode, 'mode')
     if (m && m !== '—') sys = m.toUpperCase()
-  } else if (sysDiag && frameRecent(sysDiag)) {
-    const m = signalText(sysDiag, 'mode')
-    if (m && m !== '—') sys = m.toUpperCase()
   } else if (sysHb && frameRecent(sysHb)) {
+    // 0x600 no longer carries mode; 0x7FE mode_auto is the fallback view.
     const auto = sysHb.signals?.mode_auto?.engineering_value
     sys = auto === 1 || auto === '1' || String(auto).toLowerCase() === 'true' ? 'AUTO' : 'MANUAL'
   }
@@ -662,7 +667,7 @@ export function getDiagnosticIndicators(messages: MessageState[]) {
   const hostSteer = findMsg(messages, 'HOST_STEER_CMD')
   const rtSesReq = findMsg(messages, 'VCU_SES_REQ')
   const wheelSts = findMsg(messages, 'RT_WHEEL_SPEED_STS')
-  const sysSafety = findMsg(messages, 'SYS_SAFETY_STS')
+  const sysNode = findMsg(messages, 'SYS_NODE_STATUS')
 
   // Actuator message presence
   const sesHasMsg = sesStatus != null && frameRecent(sesStatus)
@@ -676,7 +681,6 @@ export function getDiagnosticIndicators(messages: MessageState[]) {
   const hostSteerHasMsg = hostSteer != null && frameRecent(hostSteer)
   const rtSesReqHasMsg = rtSesReq != null && frameRecent(rtSesReq)
   const wheelStsHasMsg = wheelSts != null && frameRecent(wheelSts)
-  const sysSafetyHasMsg = sysSafety != null && frameRecent(sysSafety)
 
   // SES Error Level (0x201 error_status)
   const sesErrLevel = sesHasMsg ? signalNum(sesStatus, 'error_status') : null
@@ -706,8 +710,10 @@ export function getDiagnosticIndicators(messages: MessageState[]) {
         ? false
         : null
 
-  // Brake lever engaged (0x600 brake_engaged)
-  const leverEngaged = sysDiagHasMsg ? signalIsOn(sysDiag, 'brake_engaged') : null
+  // Brake lever engaged (0x500 hw_brake_lever_pulled; 0x600 no longer carries it)
+  const leverEngaged = (sysNode != null && frameRecent(sysNode))
+    ? signalIsOn(sysNode, 'hw_brake_lever_pulled')
+    : null
 
   // EGAS Level 2 Consistency (RT_DRIVE_CMD 0x204 speed vs MTR_MOTOR_FBK 0x206 speed)
   const rtSpd = rtDriveHasMsg
@@ -733,11 +739,12 @@ export function getDiagnosticIndicators(messages: MessageState[]) {
   const mcpBusOff = rtDiagHasMsg ? signalIsOn(rtDiag, 'mcp_bus_off') : null
   const mcpRecovering = rtDiagHasMsg ? signalIsOn(rtDiag, 'mcp_recovering') : null
 
-  // Relays
-  const headlamp = sysSafetyHasMsg ? signalIsOn(sysSafety, 'light_head') : null
-  const brakelamp = sysSafetyHasMsg ? signalIsOn(sysSafety, 'light_brake') : null
-  const turnLeft = sysSafetyHasMsg ? signalIsOn(sysSafety, 'light_left') : null
-  const turnRight = sysSafetyHasMsg ? signalIsOn(sysSafety, 'light_right') : null
+  // Relays — executed lamp outputs live on 0x500 SYS_NODE_STATUS byte 5
+  const nodeHasMsg = sysNode != null && frameRecent(sysNode)
+  const headlamp = nodeHasMsg ? signalIsOn(sysNode, 'light_head_on') : null
+  const brakelamp = nodeHasMsg ? signalIsOn(sysNode, 'light_brake_on') : null
+  const turnLeft = nodeHasMsg ? signalIsOn(sysNode, 'light_left_on') : null
+  const turnRight = nodeHasMsg ? signalIsOn(sysNode, 'light_right_on') : null
 
   // In-card signals
   const hostAngleValid = hostSteerHasMsg ? signalIsOn(hostSteer, 'angle_valid') : null

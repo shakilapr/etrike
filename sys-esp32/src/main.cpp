@@ -42,6 +42,7 @@ bool g_bypass_mtr_absent = false;
 #include "indicator_control.h"
 #include "sys_status_led.h"
 #include "system_ready.h"
+#include "node_status.h"
 #include "estop_status.h"
 // #include "wdt_toggle.h"
 
@@ -166,6 +167,22 @@ static std::atomic<uint32_t> g_last_mtr_node_tick{0};
 // Debounced system READY level (see system_ready.h); observational only.
 static std::atomic<uint8_t>  g_sys_ready_level{
     static_cast<uint8_t>(sys::SystemReadyLevel::Blocked)};
+
+// ── 0x500 cockpit I/O telemetry (observational) ─────────────────────
+// Raw physical inputs (as seen at the GPIOs, before any authority resolution)
+// and the FINAL executed lamp/relay outputs (whoever commanded them — manual
+// handlebar switches or AUTO/0x302). Written by the owning tasks.
+static std::atomic<bool> g_hw_estop_pressed{false};      // task_safety (GPIO1)
+static std::atomic<bool> g_hw_start_latched{false};      // task_mode   (GPIO41)
+static std::atomic<bool> g_hw_brake_lever{false};        // task_safety (GPIO2)
+static std::atomic<bool> g_hw_mode_btn{false};           // task_mode   (GPIO11)
+static std::atomic<bool> g_hw_sw_left{false};            // task_lights (GPIO9)
+static std::atomic<bool> g_hw_sw_right{false};           // task_lights (GPIO6)
+static std::atomic<bool> g_hw_sw_head{false};            // task_lights (GPIO7)
+static std::atomic<bool> g_out_power12v{false};          // task_indicator (GPIO40)
+static std::atomic<bool> g_out_ready_bulb{false};        // task_indicator (GPIO17)
+static std::atomic<bool> g_out_bypass_bulb{false};       // task_indicator (GPIO14)
+static std::atomic<bool> g_out_estop_bulb{false};        // task_indicator (GPIO18)
 
 // 0x204 staleness tracking (arch §8.6: 200ms timeout → zero speed + neutral)
 static std::atomic<uint32_t> g_last_setpoint_tick{0};
@@ -714,6 +731,9 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
 
         g_safety.set_estop(estop_hw);
         g_safety.set_brake_lever(brake_lever);
+        // 0x500 cockpit I/O telemetry: raw physical switch states.
+        g_hw_estop_pressed.store(estop_hw, std::memory_order_relaxed);
+        g_hw_brake_lever.store(brake_lever, std::memory_order_relaxed);
 
         // Driver brake takeover: pulling the lever in AUTO transitions to MANUAL immediately
         // and zeros motor propulsion setpoints so the motor never drives against the brakes.
@@ -810,6 +830,9 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
 #endif
 
         bool changed = g_mode_mgr.tick(mode_btn, start_btn, g_safety.estop_active());
+        // 0x500 cockpit I/O telemetry: raw buttons + resolved run latch.
+        g_hw_mode_btn.store(mode_btn, std::memory_order_relaxed);
+        g_hw_start_latched.store(start_btn, std::memory_order_relaxed);
         // START run/enable latch: on release (unlatch) immediately zero the
         // motion setpoints. resolve_authority() below drops 0x113 power and
         // clamps 0x110 to MANUAL; this is a stop, never an ESTOP.
@@ -1054,6 +1077,10 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
         bool sw_R = (gpio_get_level(static_cast<gpio_num_t>(sys::kSwitchRightTurn)) == 0);
         bool sw_H = (gpio_get_level(static_cast<gpio_num_t>(sys::kSwitchHeadlight)) == 0);
 #endif
+        // 0x500 cockpit I/O telemetry: raw handlebar switch states.
+        g_hw_sw_left.store(sw_L, std::memory_order_relaxed);
+        g_hw_sw_right.store(sw_R, std::memory_order_relaxed);
+        g_hw_sw_head.store(sw_H, std::memory_order_relaxed);
 
         // Brake light OR-logic (§8.6): add SEB stroke check — if SEB is actually
         // braking (stroke > 0.5mm ≈ raw 610), light the brake lamp.
@@ -1112,6 +1139,11 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
                 != static_cast<uint8_t>(sys::SystemReadyLevel::Blocked);
         // Red "ESTOP" bulb: dedicated, independent of brake lamp
         [[maybe_unused]] bool estop = (mode == can::Mode::Estop);
+        // 0x500 board output telemetry: FINAL executed bulb/relay states.
+        g_out_ready_bulb.store(ready, std::memory_order_relaxed);
+        g_out_estop_bulb.store(estop, std::memory_order_relaxed);
+        g_out_bypass_bulb.store(g_bench_solo_mode, std::memory_order_relaxed);
+        g_out_power12v.store(true, std::memory_order_relaxed);
 
 #ifndef TESTING
         set_relay(sys::kBulbReady, ready);
@@ -1155,43 +1187,104 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
 // ── CAN TX task (prio 2, 5 Hz) — 0x011 SYS_SAFETY_STS ──────────────
 
 // ── 0x500 SYS_NODE_STATUS (observational, issue-added NODE_STATUS) ──
+
+// ── 0x500 SYS_NODE_STATUS (observational, issue-added NODE_STATUS) ──
 // Strictly observational: never changes mode/authority. Reports SYS's own
-// node_state + reason mask so hosts/RT can see the authoritative latch without
-// inferring it from 0x011. block_mask = low 8 bits transient inhibit reasons |
-// high 8 bits latched fault reasons (see inhibit_state.h).
+// ── 0x500 SYS_NODE_STATUS — blocker bitmask (observational) ─────────
+// Byte 2 (block_mask_low)  = transient/recoverable conditions.
+// Byte 3 (block_mask_high) = latched faults (cleared only by the reset path).
+// Bit values live in node_status.h so tests share the shipped vocabulary.
+static constexpr uint32_t kBlkSetpointStaleMs = 200;  // matches task_safety enforcement
+
+// Safety-critical task bits inside g_task_health_bits (task_diag); a miss on
+// any of these latches ESTOP after 2 consecutive 1 Hz cycles.
+static constexpr uint8_t kCriticalTaskMask =
+    0x01 /*safety*/ | 0x02 /*brake*/ | 0x04 /*dispatch*/
+    | 0x08 /*can_tx*/ | 0x40 /*mode*/;
+
+static uint16_t sys_block_mask() {
+    const TickType_t now = xTaskGetTickCount();
+    auto stale = [now](const std::atomic<uint32_t>& t, uint32_t window_ms) {
+        const uint32_t last = t.load(std::memory_order_relaxed);
+        return last == 0 || (now - last) > pdMS_TO_TICKS(window_ms);
+    };
+
+    uint8_t low = 0, high = 0;
+    if (g_safety.brake_lever_pressed())                       low  |= sys::kBlkBrakeLever;
+    if (!g_seb_seen.load(std::memory_order_relaxed))          low  |= sys::kBlkSebSyncing;
+    if (g_mtr_ack_watchdog.is_pending())                      low  |= sys::kBlkMtrFbkUnacked;
+    if (stale(g_last_setpoint_tick, kBlkSetpointStaleMs))     low  |= sys::kBlkRtSetpointStale;
+    if (!g_mode_mgr.run_enabled())                            low  |= sys::kBlkStartUnlatched;
+    if (now < pdMS_TO_TICKS(sys::kSebStartupAcquireMs))       low  |= sys::kBlkStartupAcquire;
+
+    const uint32_t latched = sys::g_latched_fault_reasons.load(std::memory_order_relaxed);
+    if (latched & sys::kLatchedSebL3)                         high |= sys::kBlkSebL3;
+    // kBlkEgasMismatch: reserved — the physical/command-path EGAS detector is
+    // compiled out on the current encoder-less vehicle (config.h).
+    if (stale(g_last_mtr_fbk_tick, sys::kMtrFbkStaleMs)
+        && !g_bypass_mtr_absent)                              high |= sys::kBlkMtrFbkTimeout;
+    if ((g_task_health_bits.load(std::memory_order_relaxed)
+         & kCriticalTaskMask) != kCriticalTaskMask)           high |= sys::kBlkTaskDeadline;
+    return static_cast<uint16_t>(low) | (static_cast<uint16_t>(high) << 8);
+}
+
+// ── 0x500 SYS_NODE_STATUS — Vehicle Operational & I/O Status ─────────
+// Strictly observational: never changes mode/authority. Command-execution
+// outcome, system readiness, developer-bypass flags, the blocker bitmask, raw
+// cockpit hardware inputs and the FINAL executed relay/lamp outputs.
 static can::gen::SysNodeStatus build_sys_node_status() {
     can::gen::SysNodeStatus ns{};
     const can::Mode m = g_mode_mgr.mode();
     const bool estop = sys_estop_latched();
-    const bool inhibit = sys::any_inhibit();
-    if (estop) {
-        ns.node_state = can::gen::SysNodeStatus::kNodeStateEstop;
-    } else if (inhibit) {
-        ns.node_state = can::gen::SysNodeStatus::kNodeStateInhibited;
-    } else if (m == can::Mode::Auto) {
-        ns.node_state = can::gen::SysNodeStatus::kNodeStateActive;
-    } else {
-        ns.node_state = can::gen::SysNodeStatus::kNodeStateStandby;
-    }
-    const uint32_t inhibit_bits =
-        sys::g_inhibit_reasons.load(std::memory_order_relaxed);
-    const uint32_t latched_bits =
-        sys::g_latched_fault_reasons.load(std::memory_order_relaxed);
-    ns.block_mask = static_cast<uint16_t>(
-        (inhibit_bits & 0xFFu) | ((latched_bits & 0xFFu) << 8));
-    ns.estop_active = estop;
-    ns.estop_latched = estop;
-    // `ready` reflects the observational SYSTEM readiness (whole Host→RT→SYS→
-    // {MTR,SEB} path up and error-free), not just this node. See system_ready.h.
+    const bool nonzero = g_setpoint_speed_mmps.load(std::memory_order_relaxed) != 0;
+
+    // Byte 0 — command execution
+    ns.command_received = g_last_setpoint_tick.load(std::memory_order_relaxed) != 0
+        && (xTaskGetTickCount() - g_last_setpoint_tick.load(std::memory_order_relaxed))
+               <= pdMS_TO_TICKS(kBlkSetpointStaleMs);
+    ns.command_nonzero = nonzero;
+    ns.command_executing = nonzero && !estop && !sys::any_inhibit()
+                        && g_mode_mgr.run_enabled() && (m == can::Mode::Auto);
+    ns.command_rejected = nonzero && !ns.command_executing;
+    ns.driver_override = g_safety.brake_lever_pressed();
+
+    // Byte 1 — readiness & developer overrides
     const uint8_t ready_level = g_sys_ready_level.load(std::memory_order_relaxed);
-    ns.ready = (ready_level == static_cast<uint8_t>(sys::SystemReadyLevel::Full));
-    ns.command_received = g_mode_request_valid.load(std::memory_order_relaxed)
-                       && g_power_request_valid.load(std::memory_order_relaxed);
-    ns.command_nonzero = g_setpoint_speed_mmps.load(std::memory_order_relaxed) != 0;
-    ns.output_enabled = !estop && !inhibit;
-    ns.degraded = g_brake_fault_active.load(std::memory_order_relaxed)
-               || sys::traction_fault_present();
-    ns.recovery_pending = false;
+    ns.system_ready = (ready_level == static_cast<uint8_t>(sys::SystemReadyLevel::Full));
+    ns.bypass_active = g_bench_solo_mode;
+    ns.bench_solo_mode = g_bench_solo_mode;
+    ns.bypass_mtr_absent = g_bypass_mtr_absent;
+    ns.bypass_seb_sync = g_bypass_seb_sync;
+    ns.degraded = (ready_level == static_cast<uint8_t>(sys::SystemReadyLevel::MtrAbsent))
+               || (ready_level == static_cast<uint8_t>(sys::SystemReadyLevel::HostAbsent))
+               || g_brake_fault_active.load(std::memory_order_relaxed)
+               || sys::any_inhibit();
+
+    // Bytes 2-3 — blocker bitmask
+    const uint16_t blockers = sys_block_mask();
+    ns.block_mask_low = static_cast<uint8_t>(blockers & 0xFFu);
+    ns.block_mask_high = static_cast<uint8_t>((blockers >> 8) & 0xFFu);
+
+    // Byte 4 — raw cockpit hardware inputs
+    ns.hw_estop_btn_pressed  = g_hw_estop_pressed.load(std::memory_order_relaxed);
+    ns.hw_start_btn_latched  = g_hw_start_latched.load(std::memory_order_relaxed);
+    ns.hw_brake_lever_pulled = g_hw_brake_lever.load(std::memory_order_relaxed);
+    ns.hw_mode_btn_pressed   = g_hw_mode_btn.load(std::memory_order_relaxed);
+    ns.hw_sw_left_turn       = g_hw_sw_left.load(std::memory_order_relaxed);
+    ns.hw_sw_right_turn      = g_hw_sw_right.load(std::memory_order_relaxed);
+    ns.hw_sw_headlight       = g_hw_sw_head.load(std::memory_order_relaxed);
+    ns.run_latch_enabled     = g_mode_mgr.run_enabled();
+
+    // Byte 5 — FINAL executed relay/lamp outputs (manual or AUTO commanded)
+    const uint8_t lights = g_light_state.load(std::memory_order_relaxed);
+    ns.power_12v_relay_on = g_out_power12v.load(std::memory_order_relaxed);
+    ns.ready_bulb_on      = g_out_ready_bulb.load(std::memory_order_relaxed);
+    ns.bypass_bulb_on     = g_out_bypass_bulb.load(std::memory_order_relaxed);
+    ns.estop_bulb_on      = g_out_estop_bulb.load(std::memory_order_relaxed);
+    ns.light_left_on      = (lights & 0x01u) != 0;
+    ns.light_right_on     = (lights & 0x02u) != 0;
+    ns.light_brake_on     = (lights & 0x04u) != 0;
+    ns.light_head_on      = (lights & 0x08u) != 0;
     return ns;
 }
 
@@ -1199,7 +1292,6 @@ static can::gen::SysNodeStatus build_sys_node_status() {
     TickType_t period = pdMS_TO_TICKS(200);  // 5 Hz (SYS_SAFETY_STS cycle)
     TickType_t last   = xTaskGetTickCount();
     static uint8_t safety_roll = 0;
-    static uint8_t node_status_roll = 0;
     while (1) {
         g_alive_can_tx.store(xTaskGetTickCount(), std::memory_order_relaxed);
         can::Frame fr;
@@ -1223,15 +1315,10 @@ static can::gen::SysNodeStatus build_sys_node_status() {
                 send_can(fr, "safety");
         }
 
-        // ── 0x500 SYS_NODE_STATUS (same 5 Hz cadence) ──────────────
+        // ── 0x500 SYS_NODE_STATUS (same 5 Hz cadence, no CRC/counter) ──
         can::gen::SysNodeStatus ns = build_sys_node_status();
-        ns.rolling_counter = node_status_roll++;
-        ns.e2e_crc = 0;
-        if (can::gen::encode_sys_node_status(ns, tmp) == can::gen::CodecStatus::Ok) {
-            ns.e2e_crc = can::e2e::crc8_h2f(tmp.data.data(), 7u, 0u);
-            if (can::gen::encode_sys_node_status(ns, fr) == can::gen::CodecStatus::Ok)
-                send_can(fr, "node-status");
-        }
+        if (can::gen::encode_sys_node_status(ns, fr) == can::gen::CodecStatus::Ok)
+            send_can(fr, "node-status");
 
         vTaskDelayUntil(&last, period);
     }
@@ -1278,9 +1365,6 @@ static can::gen::SysNodeStatus build_sys_node_status() {
         // it latches ESTOP and broadcasts 0x001. (task_hb loss is handled
         // downstream by RT's 0x7FE timeout -> SYS_DEGRADED; lights/indicator/gear
         // and can_ctrl are non-life-critical and excluded.)
-        static constexpr uint8_t kCriticalTaskMask =
-            0x01 /*safety*/ | 0x02 /*brake*/ | 0x04 /*dispatch*/
-            | 0x08 /*can_tx*/ | 0x40 /*mode*/;
         static int critical_miss_count = 0;
         if ((task_health & kCriticalTaskMask) != kCriticalTaskMask) {
             if (++critical_miss_count >= 2) {   // persistent >= 2 s miss
@@ -1292,37 +1376,45 @@ static can::gen::SysNodeStatus build_sys_node_status() {
             critical_miss_count = 0;
         }
 
-        // Send 0x600 with real TEC/REC
+        // ── 0x600 SYS_DIAG_RPT — pure ECU/bus health (1 Hz) ────────
         uint8_t tec = 0, rec = 0;
         g_can.get_error_counters(tec, rec);
 
         can::gen::SysDiagRpt rpt;
-        rpt.mode = g_mode_mgr.mode_u8();
-        rpt.brake_engaged = g_safety.brake_lever_pressed();
-        rpt.brake_fault = g_brake_fault_active.load(std::memory_order_relaxed)
-                       || sys::traction_fault_present();
-        rpt.heartbeat_ok  = g_safety.heartbeat_ok();
-        rpt.estop_active = (g_mode_mgr.mode() == can::Mode::Estop);
-        // Light status moved off 0x011 (ASIL-D authority) onto this 1 Hz body diag.
-        {
-            const uint8_t lights = g_light_state.load(std::memory_order_relaxed);
-            rpt.light_left  = lights & 0x01;
-            rpt.light_right = lights & 0x02;
-            rpt.light_brake = lights & 0x04;
-            rpt.light_head  = lights & 0x08;
-        }
-        rpt.free_heap_kb = static_cast<uint16_t>(esp_get_free_heap_size() / 1024);
-        rpt.tec = tec; rpt.rec = rec;
-        // Report CAN RX overflow count (6-bit, saturated at 63)
+        // Byte 0: saturated RX-overflow counter + CAN controller state.
+        const auto can_health = g_can.health_snapshot();
         {
             uint32_t ov = g_can_rx_overflow.load(std::memory_order_relaxed);
             rpt.rx_overflow = ov > 63 ? 63 : static_cast<uint8_t>(ov);
         }
+        // HealthState: Active=0, Warning=1, Passive=2, BusOff=3. A bus-off
+        // controller is reported as RECOVERING (service_recovery drives it back).
+        rpt.can_state = static_cast<uint8_t>(can_health.state);
+        rpt.tec = tec;
+        rpt.rec = rec;
+        rpt.task_health_mask = g_task_health_bits.load(std::memory_order_relaxed);
+        rpt.free_heap_kb = static_cast<uint8_t>(
+            (esp_get_free_heap_size() / 1024) > 255 ? 255 : (esp_get_free_heap_size() / 1024));
+        // Boot forensics: map esp_reset_reason_t onto the wire enum.
+        {
+            const esp_reset_reason_t rst = esp_reset_reason();
+            uint8_t mapped;
+            switch (rst) {
+                case ESP_RST_POWERON:  mapped = 0; break;  // POWER_ON
+                case ESP_RST_SW:       mapped = 1; break;  // SW_RESET
+                case ESP_RST_TASK_WDT: mapped = 2; break;  // TASK_WDT
+                case ESP_RST_WDT:      mapped = 2; break;  // (RTC WDT family)
+                case ESP_RST_BROWNOUT: mapped = 3; break;  // BROWNOUT
+                case ESP_RST_PANIC:    mapped = 4; break;  // PANIC
+                default:               mapped = 5; break;  // UNKNOWN
+            }
+            rpt.mcu_reset_reason = mapped;
+        }
+        rpt.uptime_seconds = static_cast<uint16_t>(esp_timer_get_time() / 1000000ULL);
         can::Frame fr;
         if (can::gen::encode_sys_diag_rpt(rpt, fr) == can::gen::CodecStatus::Ok) send_can(fr);
 
         // CAN bus-off monitoring is state-driven. TEC/REC are telemetry only.
-        const auto can_health = g_can.health_snapshot();
         if (can_health.state == can::CanDriver::HealthState::Passive)
             ESP_LOGW(TAG, "CAN error-passive: TEC=%u REC=%u", tec, rec);
         if (can_health.state == can::CanDriver::HealthState::BusOff) {

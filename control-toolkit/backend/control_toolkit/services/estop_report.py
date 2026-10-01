@@ -168,6 +168,25 @@ def _node_status(messages: list[MessageState], name: str) -> dict[str, Any] | No
     msg = _find(messages, name, "low") or _find(messages, name)
     if msg is None or not _fresh_ok(msg):
         return None
+    if name == "SYS_NODE_STATUS":
+        # 0x500 redesign: no node_state / estop_* / output_enabled fields. The
+        # persistent SYS latch lives on 0x011 SYS_SAFETY_STS.estop_source and the
+        # blockers on block_mask_low/high (latched faults in the high byte).
+        safety = _find(messages, "SYS_SAFETY_STS", "low") or _find(messages, "SYS_SAFETY_STS")
+        sys_latched = bool(
+            _fresh_ok(safety) and ((_num(safety, "estop_source") or 0) != 0)
+        )
+        block = ((_num(msg, "block_mask_high") or 0) << 8) | (_num(msg, "block_mask_low") or 0)
+        return {
+            "state": "ESTOP" if sys_latched else None,
+            "estop_active": sys_latched,
+            "estop_latched": sys_latched,
+            "recovery_pending": None,
+            "ready": _on(msg, "system_ready"),
+            "degraded": _on(msg, "degraded"),
+            "output_enabled": _on(msg, "command_executing"),
+            "block_mask": block,
+        }
     return {
         "state": _sig(msg, "node_state"),
         "estop_active": _on(msg, "estop_active"),
@@ -205,16 +224,19 @@ def build_estop_report(
         messages, "SYS_SAFETY_STS"
     )
     sys_hb = _find(messages, "SYS_HEARTBEAT", "low") or _find(messages, "SYS_HEARTBEAT")
-    sys_diag = _find(messages, "SYS_DIAG_RPT", "low") or _find(messages, "SYS_DIAG_RPT")
 
     sys_estop = (
-        (_fresh_ok(sys_safety) and _on(sys_safety, "estop_active"))
+        (_fresh_ok(sys_safety) and ((_num(sys_safety, "estop_source") or 0) != 0))
         or (_fresh_ok(sys_hb) and _on(sys_hb, "estop_active"))
-        or (_fresh_ok(sys_diag) and _on(sys_diag, "estop_active"))
     )
     sys_hb_bad = sys_hb is not None and _fresh_ok(sys_hb) and not _on(sys_hb, "heartbeat_ok")
     sys_can_bad = sys_hb is not None and _fresh_ok(sys_hb) and not _on(sys_hb, "can_ok")
-    sys_brake_fault = _fresh_ok(sys_diag) and _on(sys_diag, "brake_fault")
+    # 0x600 no longer carries brake_fault; the latched brake fault is visible as
+    # kBlkSebL3 (bit 0) in SYS_NODE_STATUS.block_mask_high (and via 0x011).
+    sys_node = _find(messages, "SYS_NODE_STATUS", "low") or _find(messages, "SYS_NODE_STATUS")
+    sys_brake_fault = _fresh_ok(sys_node) and (
+        ((_num(sys_node, "block_mask_high") or 0) & 0x01) != 0
+    )
 
     rt = (
         _find(messages, "RT_STATE_RPT", "high")

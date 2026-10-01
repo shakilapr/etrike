@@ -72,9 +72,9 @@ CHECK_EQ(d.motor_command_speed_mmps,sp[i],"speed");CHECK_EQ(d.fault_flags,fl[i],
  CHECK(abs(1500-2100)>500,"command-path/setpoint-echo consistency threshold");}
 
 static void t7(){T("=== 7. 0x600 Diag ===");
-generated::SysDiagRpt r;r.mode=1;r.heartbeat_ok=true;r.estop_active=false;
+generated::SysDiagRpt r;r.rx_overflow=2;r.can_state=1;r.tec=10;r.rec=20;r.task_health_mask=0xFF;r.free_heap_kb=120;r.mcu_reset_reason=1;r.uptime_seconds=1234;
 protocol::Frame f;generated::encode(r,f);generated::SysDiagRpt d;generated::decode(f.view(),d);
-CHECK_EQ(d.mode,1,"mode=AUTO");CHECK_EQ(d.heartbeat_ok,true,"hb");}
+CHECK_EQ(d.rx_overflow,2,"rx_overflow");CHECK_EQ(d.can_state,1,"can_state");CHECK_EQ(d.tec,10,"tec");CHECK_EQ(d.uptime_seconds,1234,"uptime");}
 
 static void t8(){T("=== 8. 0x210 RT State ===");
 generated::RtStateRpt r;r.mode=1;r.safety_state=0;r.rx_overflow=3;

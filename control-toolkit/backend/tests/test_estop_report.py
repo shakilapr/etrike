@@ -64,7 +64,8 @@ def test_rt_estop_reason_following_error():
 
 def test_sys_estop_and_bus_001():
     msgs = [
-        _msg("SYS_SAFETY_STS", "low", 0x11, {"estop_active": 1, "heartbeat_ok": 1}),
+        _msg("SYS_SAFETY_STS", "low", 0x11,
+             {"estop_source": 1, "node_presence": 0x3F, "estop_reason": 1}),
         _msg(
             "SAFETY_ESTOP",
             "high",
@@ -137,19 +138,23 @@ def test_stale_ecu_fault_bits_do_not_remain_active():
 
 def test_sys_node_status_latched_counts_as_active_source():
     msgs = [
+        # 0x500 no longer carries the latch: the SYS latch is resolved from the
+        # companion 0x011 SYS_SAFETY_STS.estop_source stream.
+        _msg("SYS_SAFETY_STS", "low", 0x11,
+             {"estop_source": 1, "node_presence": 0x3F, "estop_reason": 1}),
         _msg(
             "SYS_NODE_STATUS",
             "low",
             0x500,
             {
-                "node_state": 5,
-                "estop_active": 1,
-                "estop_latched": 1,
-                "ready": 0,
-                "degraded": 0,
-                "recovery_pending": 0,
-                "output_enabled": 0,
-                "block_mask": 1,
+                "command_received": 1,
+                "command_nonzero": 0,
+                "command_executing": 0,
+                "command_rejected": 0,
+                "system_ready": 0,
+                "degraded": 1,
+                "block_mask_low": 0,
+                "block_mask_high": 0,
             },
         )
     ]
@@ -158,7 +163,11 @@ def test_sys_node_status_latched_counts_as_active_source():
     assert r["nodes"]["sys"]["estop_latched"] is True
     assert any(s["id"] == "sys_node_latched" for s in r["sources"])
     assert "SYS NODE_STATUS latched" in r["summary"]
-    assert r["primary_cause"].startswith("Latched ESTOP in NODE_STATUS")
+    # With the companion 0x011 present, the ECU ESTOP cause may rank first;
+    # the node latch must still be reported as an active source either way.
+    assert r["primary_cause"].startswith(
+        ("Latched ESTOP in NODE_STATUS", "ECU reports ESTOP")
+    )
 
 
 def test_node_status_unlatched_reports_clear():
@@ -168,20 +177,20 @@ def test_node_status_unlatched_reports_clear():
             "low",
             0x500,
             {
-                "node_state": 3,
-                "estop_active": 0,
-                "estop_latched": 0,
-                "ready": 1,
+                "command_received": 1,
+                "command_nonzero": 0,
+                "command_executing": 0,
+                "command_rejected": 0,
+                "system_ready": 1,
                 "degraded": 0,
-                "recovery_pending": 0,
-                "output_enabled": 1,
-                "block_mask": 0,
+                "block_mask_low": 0,
+                "block_mask_high": 0,
             },
         )
     ]
     r = build_estop_report(msgs, host_latch=False)
     assert r["active"] is False
-    assert r["nodes"]["sys"]["state"] == 3
+    assert r["nodes"]["sys"]["state"] is None
     assert "clear" in r["summary"].lower()
 
     assert r["rt"]["frame_fresh"] is False

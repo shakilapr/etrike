@@ -2,13 +2,14 @@
  * SysEcu ? simulated SYS ESP32-S3 (safety, brake, lights, diag, mode).
  *
  * Monitors safety, controls SEB brake via 0x7B9, manages mode transitions,
- * sends 0x011 safety status, 0x110 mode, 0x600 diag, 0x7FE heartbeat.
+ * sends 0x011 safety status, 0x110 mode, 0x500 node status, 0x600 diag,
+ * 0x7FE heartbeat.
  */
 
 import type { SimulatedEcu, SimulationContext } from "./base.js";
 import type { SimFrame, SimNodeId } from "../core/types.js";
 import { SysSafetyMonitor } from "../controllers/sys-safety.js";
-import { SysBrakeController, BrakeState } from "../controllers/sys-brake.js";
+import { SysBrakeController } from "../controllers/sys-brake.js";
 import { decodeAs, encodeSimFrame } from "../protocol.js";
 
 export class SysEcu implements SimulatedEcu {
@@ -246,22 +247,58 @@ export class SysEcu implements SimulatedEcu {
       out.push(encodeSimFrame("sys:sys_mode_cmd", { mode: modeByte }, "low", "sys", nowMs));
     }
 
-    // ?? 0x600 SYS_DIAG_RPT (1 Hz) ???????????????????????????????
+    // ?? 0x500 SYS_NODE_STATUS (10 Hz) — execution/readiness/outputs ?????
+    if (nowMs % 100 === 0) {
+      const rtAlive = this.safety.heartbeatOk(nowMs);
+      const cmdFresh = (nowMs - this.lastSetpointTickMs) < 200;
+      const executing = this.currentMode === "auto" && rtAlive && !effectiveEstop
+        && !this.safety.brakeLever && cmdFresh;
+      const blockLow = (this.safety.brakeLever ? 0x01 : 0)
+        | (!cmdFresh ? 0x08 : 0);
+      out.push(encodeSimFrame("sys:sys_node_status", {
+        command_received: cmdFresh ? 1 : 0,
+        command_nonzero: this.cmdSpeedMmps !== 0 ? 1 : 0,
+        command_executing: executing ? 1 : 0,
+        command_rejected: cmdFresh && !executing ? 1 : 0,
+        driver_override: this.safety.brakeLever ? 1 : 0,
+        system_ready: 1,
+        bypass_active: 0,
+        bench_solo_mode: 0,
+        bypass_mtr_absent: 0,
+        bypass_seb_sync: 0,
+        degraded: 0,
+        block_mask_low: blockLow,
+        block_mask_high: 0,
+        hw_estop_btn_pressed: effectiveEstop ? 1 : 0,
+        hw_start_btn_latched: this.currentMode === "auto" ? 1 : 0,
+        hw_brake_lever_pulled: this.safety.brakeLever ? 1 : 0,
+        hw_mode_btn_pressed: 0,
+        hw_sw_left_turn: this.lights & 1,
+        hw_sw_right_turn: (this.lights >> 1) & 1,
+        hw_sw_headlight: (this.lights >> 3) & 1,
+        run_latch_enabled: this.currentMode === "auto" && !effectiveEstop ? 1 : 0,
+        power_12v_relay_on: 1,
+        ready_bulb_on: 1,
+        bypass_bulb_on: 0,
+        estop_bulb_on: effectiveEstop ? 1 : 0,
+        light_left_on: this.lights & 1,
+        light_right_on: (this.lights >> 1) & 1,
+        light_brake_on: (this.lights >> 2) & 1,
+        light_head_on: (this.lights >> 3) & 1,
+      }, "low", "sys", nowMs));
+    }
+
+    // ?? 0x600 SYS_DIAG_RPT (1 Hz) — pure ECU/bus health ?????????????
     if (nowMs % 1000 === 0) {
       out.push(encodeSimFrame("sys:sys_diag_rpt", {
-        mode: ctx.mode === "auto" ? 1 : ctx.mode === "estop" ? 2 : 0,
-        brake_engaged: this.brake.state === BrakeState.ACTIVE ? 1 : 0,
-        brake_fault: this.brake.getDiagnostics().brakeFollowingError ? 1 : 0,
-        light_left: this.lights & 1,
-        light_right: (this.lights >> 1) & 1,
-        light_brake: (this.lights >> 2) & 1,
-        light_head: (this.lights >> 3) & 1,
-        heartbeat_ok: this.safety.heartbeatOk(nowMs) ? 1 : 0,
         rx_overflow: 0,
-        estop_active: effectiveEstop ? 1 : 0,
-        free_heap_kb: this.diagHeapKb,
+        can_state: 0,
         tec: this.tec,
         rec: this.rec,
+        task_health_mask: 0xFF,
+        free_heap_kb: this.diagHeapKb,
+        mcu_reset_reason: 0,
+        uptime_seconds: Math.floor(nowMs / 1000) & 0xFFFF,
       }, "low", "sys", nowMs));
     }
 

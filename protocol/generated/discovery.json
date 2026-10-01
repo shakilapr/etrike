@@ -2486,91 +2486,81 @@
         "fields": [
           {
             "bit": 0,
-            "bits": 8,
+            "bits": 6,
+            "byte": 0,
+            "key": "rx_overflow",
+            "max": 63,
+            "min": 0
+          },
+          {
+            "bit": 6,
+            "bits": 2,
             "byte": 0,
             "enum": {
-              "0": "MANUAL",
-              "1": "AUTO",
-              "2": "ESTOP"
+              "0": "ACTIVE",
+              "1": "WARNING",
+              "2": "PASSIVE",
+              "3": "RECOVERING"
             },
-            "key": "mode",
-            "max": 2,
+            "key": "can_state",
+            "max": 3,
             "min": 0
           },
           {
             "bit": 0,
-            "bits": 1,
+            "bits": 8,
             "byte": 1,
-            "key": "brake_engaged"
-          },
-          {
-            "bit": 1,
-            "bits": 1,
-            "byte": 1,
-            "key": "brake_fault"
-          },
-          {
-            "bit": 2,
-            "bits": 1,
-            "byte": 1,
-            "key": "light_left"
-          },
-          {
-            "bit": 3,
-            "bits": 1,
-            "byte": 1,
-            "key": "light_right"
-          },
-          {
-            "bit": 4,
-            "bits": 1,
-            "byte": 1,
-            "key": "light_brake"
-          },
-          {
-            "bit": 5,
-            "bits": 1,
-            "byte": 1,
-            "key": "light_head"
+            "key": "tec",
+            "max": 255,
+            "min": 0
           },
           {
             "bit": 0,
-            "bits": 1,
+            "bits": 8,
             "byte": 2,
-            "key": "heartbeat_ok"
-          },
-          {
-            "bit": 1,
-            "bits": 6,
-            "byte": 2,
-            "key": "rx_overflow",
-            "max": 63
+            "key": "rec",
+            "max": 255,
+            "min": 0
           },
           {
             "bit": 0,
             "bits": 8,
             "byte": 3,
-            "key": "estop_active",
-            "max": 1,
+            "key": "task_health_mask",
+            "max": 255,
+            "min": 0
+          },
+          {
+            "bit": 0,
+            "bits": 8,
+            "byte": 4,
+            "key": "free_heap_kb",
+            "max": 255,
+            "min": 0
+          },
+          {
+            "bit": 0,
+            "bits": 8,
+            "byte": 5,
+            "enum": {
+              "0": "POWER_ON",
+              "1": "SW_RESET",
+              "2": "TASK_WDT",
+              "3": "BROWNOUT",
+              "4": "PANIC",
+              "5": "UNKNOWN"
+            },
+            "key": "mcu_reset_reason",
+            "max": 5,
             "min": 0
           },
           {
             "bit": 0,
             "bits": 16,
-            "byte": 4,
-            "key": "free_heap_kb"
-          },
-          {
-            "bit": 0,
-            "bits": 8,
             "byte": 6,
-            "key": "tec"
-          },
-          {
-            "bit": 0,
-            "bits": 8,
-            "byte": 7,
-            "key": "rec"
+            "key": "uptime_seconds",
+            "max": 65535,
+            "min": 0
           }
         ],
         "kind": "signals"
@@ -2808,7 +2798,7 @@
       "codec": {
         "strategy": "generated"
       },
-      "dlc": 8,
+      "dlc": 6,
       "instances": [
         {
           "bus": "high",
@@ -2838,125 +2828,249 @@
         "fields": [
           {
             "bit": 0,
-            "bits": 4,
-            "byte": 0,
-            "enum": {
-              "0": "INIT",
-              "1": "ACQUIRE",
-              "15": "UNKNOWN",
-              "2": "STANDBY",
-              "3": "ACTIVE",
-              "4": "INHIBITED",
-              "5": "ESTOP",
-              "6": "RECOVER"
-            },
-            "key": "node_state",
-            "max": 15,
-            "min": 0
-          },
-          {
-            "bit": 4,
-            "bits": 4,
-            "byte": 0,
-            "constant": 0,
-            "key": "reserved_b0"
-          },
-          {
-            "bit": 0,
-            "bits": 16,
-            "byte": 1,
-            "key": "block_mask",
-            "max": 65535,
-            "min": 0
-          },
-          {
-            "bit": 0,
             "bits": 1,
-            "byte": 3,
-            "key": "estop_active",
+            "byte": 0,
+            "key": "command_received",
             "max": 1,
             "min": 0
           },
           {
             "bit": 1,
             "bits": 1,
-            "byte": 3,
-            "key": "ready",
+            "byte": 0,
+            "key": "command_nonzero",
             "max": 1,
             "min": 0
           },
           {
             "bit": 2,
             "bits": 1,
-            "byte": 3,
-            "key": "command_received",
+            "byte": 0,
+            "key": "command_executing",
             "max": 1,
             "min": 0
           },
           {
             "bit": 3,
             "bits": 1,
-            "byte": 3,
-            "key": "command_nonzero",
+            "byte": 0,
+            "key": "command_rejected",
             "max": 1,
             "min": 0
           },
           {
             "bit": 4,
             "bits": 1,
-            "byte": 3,
-            "key": "output_enabled",
+            "byte": 0,
+            "key": "driver_override",
+            "max": 1,
+            "min": 0
+          },
+          {
+            "bit": 5,
+            "bits": 3,
+            "byte": 0,
+            "constant": 0,
+            "key": "reserved_b0"
+          },
+          {
+            "bit": 0,
+            "bits": 1,
+            "byte": 1,
+            "key": "system_ready",
+            "max": 1,
+            "min": 0
+          },
+          {
+            "bit": 1,
+            "bits": 1,
+            "byte": 1,
+            "key": "bypass_active",
+            "max": 1,
+            "min": 0
+          },
+          {
+            "bit": 2,
+            "bits": 1,
+            "byte": 1,
+            "key": "bench_solo_mode",
+            "max": 1,
+            "min": 0
+          },
+          {
+            "bit": 3,
+            "bits": 1,
+            "byte": 1,
+            "key": "bypass_mtr_absent",
+            "max": 1,
+            "min": 0
+          },
+          {
+            "bit": 4,
+            "bits": 1,
+            "byte": 1,
+            "key": "bypass_seb_sync",
             "max": 1,
             "min": 0
           },
           {
             "bit": 5,
             "bits": 1,
+            "byte": 1,
+            "key": "degraded",
+            "max": 1,
+            "min": 0
+          },
+          {
+            "bit": 6,
+            "bits": 2,
+            "byte": 1,
+            "constant": 0,
+            "key": "reserved_b1"
+          },
+          {
+            "bit": 0,
+            "bits": 8,
+            "byte": 2,
+            "key": "block_mask_low",
+            "max": 255,
+            "min": 0
+          },
+          {
+            "bit": 0,
+            "bits": 8,
             "byte": 3,
-            "key": "estop_latched",
+            "key": "block_mask_high",
+            "max": 255,
+            "min": 0
+          },
+          {
+            "bit": 0,
+            "bits": 1,
+            "byte": 4,
+            "key": "hw_estop_btn_pressed",
+            "max": 1,
+            "min": 0
+          },
+          {
+            "bit": 1,
+            "bits": 1,
+            "byte": 4,
+            "key": "hw_start_btn_latched",
+            "max": 1,
+            "min": 0
+          },
+          {
+            "bit": 2,
+            "bits": 1,
+            "byte": 4,
+            "key": "hw_brake_lever_pulled",
+            "max": 1,
+            "min": 0
+          },
+          {
+            "bit": 3,
+            "bits": 1,
+            "byte": 4,
+            "key": "hw_mode_btn_pressed",
+            "max": 1,
+            "min": 0
+          },
+          {
+            "bit": 4,
+            "bits": 1,
+            "byte": 4,
+            "key": "hw_sw_left_turn",
+            "max": 1,
+            "min": 0
+          },
+          {
+            "bit": 5,
+            "bits": 1,
+            "byte": 4,
+            "key": "hw_sw_right_turn",
             "max": 1,
             "min": 0
           },
           {
             "bit": 6,
             "bits": 1,
-            "byte": 3,
-            "key": "recovery_pending",
+            "byte": 4,
+            "key": "hw_sw_headlight",
             "max": 1,
             "min": 0
           },
           {
             "bit": 7,
             "bits": 1,
-            "byte": 3,
-            "key": "degraded",
+            "byte": 4,
+            "key": "run_latch_enabled",
             "max": 1,
             "min": 0
           },
           {
             "bit": 0,
-            "bits": 16,
-            "byte": 4,
-            "constant": 0,
-            "key": "reserved_b4"
+            "bits": 1,
+            "byte": 5,
+            "key": "power_12v_relay_on",
+            "max": 1,
+            "min": 0
           },
           {
-            "bit": 0,
-            "bits": 8,
-            "byte": 6,
-            "counter": {
-              "increment": 1,
-              "kind": "wrapping",
-              "reset_scope": "ecu_restart"
-            },
-            "key": "rolling_counter"
+            "bit": 1,
+            "bits": 1,
+            "byte": 5,
+            "key": "ready_bulb_on",
+            "max": 1,
+            "min": 0
           },
           {
-            "bit": 0,
-            "bits": 8,
-            "byte": 7,
-            "key": "e2e_crc",
-            "max": 255
+            "bit": 2,
+            "bits": 1,
+            "byte": 5,
+            "key": "bypass_bulb_on",
+            "max": 1,
+            "min": 0
+          },
+          {
+            "bit": 3,
+            "bits": 1,
+            "byte": 5,
+            "key": "estop_bulb_on",
+            "max": 1,
+            "min": 0
+          },
+          {
+            "bit": 4,
+            "bits": 1,
+            "byte": 5,
+            "key": "light_left_on",
+            "max": 1,
+            "min": 0
+          },
+          {
+            "bit": 5,
+            "bits": 1,
+            "byte": 5,
+            "key": "light_right_on",
+            "max": 1,
+            "min": 0
+          },
+          {
+            "bit": 6,
+            "bits": 1,
+            "byte": 5,
+            "key": "light_brake_on",
+            "max": 1,
+            "min": 0
+          },
+          {
+            "bit": 7,
+            "bits": 1,
+            "byte": 5,
+            "key": "light_head_on",
+            "max": 1,
+            "min": 0
           }
         ],
         "kind": "signals"
@@ -3119,7 +3233,7 @@
       "protocol": "etrike.application.v1"
     }
   ],
-  "network_hash": "297a72dec33e7840d5caab0d70733b73c0085558a1d883ae2e89519d72f9abf9",
+  "network_hash": "23f918c9273340bdbaab68c309eb42042b890c66b681f37583452487c4fa6e63",
   "routes": [
     {
       "from": "low",
@@ -3228,6 +3342,6 @@
     }
   ],
   "schema_version": 1,
-  "semantic_hash": "702d13133fc277541f7a24d0b3fc0fa90a3686dff031790d75eb15b0f5896fb1",
-  "wire_hash": "702d13133fc277541f7a24d0b3fc0fa90a3686dff031790d75eb15b0f5896fb1"
+  "semantic_hash": "88c7a78affc0a28bec6bbed9e69a46ff47bdc11703b8eb87925d9ef049124b58",
+  "wire_hash": "88c7a78affc0a28bec6bbed9e69a46ff47bdc11703b8eb87925d9ef049124b58"
 }

@@ -166,26 +166,36 @@ def test_node_status_latched_emits_durable_event():
     diagnostics = DiagnosticsService()
     monitor = EstopEventMonitor(diagnostics)
 
-    latched = _state(
+    # Redesigned 0x500 carries no estop fields: the SYS latch is resolved from
+    # 0x011 SYS_SAFETY_STS.estop_source (nonzero = latched).
+    safety = _state(
+        "SYS_SAFETY_STS",
+        "low",
+        0x011,
+        {"estop_source": 1, "node_presence": 0x3F, "estop_reason": 1},
+    )
+    monitor.observe(safety, _frame(ChannelId.LOW, 0x011, dlc=5))
+    node = _state(
         "SYS_NODE_STATUS",
         "low",
         0x500,
-        {"node_state": 5, "estop_latched": 1, "estop_active": 1, "ready": 0},
+        {"command_received": 0, "command_nonzero": 0, "system_ready": 0},
     )
-    monitor.observe(latched, _frame(ChannelId.LOW, 0x500, dlc=8))
-    monitor.observe(latched, _frame(ChannelId.LOW, 0x500, dlc=8))  # dedup on repeat
+    monitor.observe(node, _frame(ChannelId.LOW, 0x500, dlc=6))
+    monitor.observe(node, _frame(ChannelId.LOW, 0x500, dlc=6))  # dedup on repeat
 
     events = diagnostics.list_events(limit=10)
     node_events = [e for e in events if e["code"] == "safety.sys_estop_latched"]
     assert len(node_events) == 1
     assert node_events[0]["title"] == "SYS_NODE_STATUS ESTOP latched"
 
-    clear = _state(
-        "SYS_NODE_STATUS",
+    clear_safety = _state(
+        "SYS_SAFETY_STS",
         "low",
-        0x500,
-        {"node_state": 3, "estop_latched": 0, "estop_active": 0, "ready": 1},
+        0x011,
+        {"estop_source": 0, "node_presence": 0x3F, "estop_reason": 0},
     )
-    monitor.observe(clear, _frame(ChannelId.LOW, 0x500, dlc=8))
+    monitor.observe(clear_safety, _frame(ChannelId.LOW, 0x011, dlc=5))
+    monitor.observe(node, _frame(ChannelId.LOW, 0x500, dlc=6))
     assert diagnostics.recover("safety.sys_estop_latched", scope="low") is True
 

@@ -19,10 +19,14 @@
       {"key":"rolling_counter","byte":1,"bit":0,"bits":8,"counter":{"kind":"wrapping","reset_scope":"ecu_restart","increment":1}}
     ]},"instances":[{"bus":"low","id":"0x113","frame_format":"standard","sender":"SYS","receivers":["MTR"],"cycle_ms":100,"semantics":"independent"}]},
     {"key":"sys_diag_rpt","owner":"sys","protocol":"etrike.application.v1","name":"SYS_DIAG_RPT","dlc":8,"byte_order":"big","codec":{"strategy":"generated"},"layout":{"kind":"signals","fields":[
-      {"key":"mode","byte":0,"bit":0,"bits":8,"min":0,"max":2,"enum":{"0":"MANUAL","1":"AUTO","2":"ESTOP"}},{"key":"brake_engaged","byte":1,"bit":0,"bits":1},{"key":"brake_fault","byte":1,"bit":1,"bits":1},
-      {"key":"light_left","byte":1,"bit":2,"bits":1},{"key":"light_right","byte":1,"bit":3,"bits":1},{"key":"light_brake","byte":1,"bit":4,"bits":1},{"key":"light_head","byte":1,"bit":5,"bits":1},
-      {"key":"heartbeat_ok","byte":2,"bit":0,"bits":1},{"key":"rx_overflow","byte":2,"bit":1,"bits":6,"max":63},{"key":"estop_active","byte":3,"bit":0,"bits":8,"min":0,"max":1},
-      {"key":"free_heap_kb","byte":4,"bit":0,"bits":16},{"key":"tec","byte":6,"bit":0,"bits":8},{"key":"rec","byte":7,"bit":0,"bits":8}
+      {"key":"rx_overflow","byte":0,"bit":0,"bits":6,"min":0,"max":63},
+      {"key":"can_state","byte":0,"bit":6,"bits":2,"min":0,"max":3,"enum":{"0":"ACTIVE","1":"WARNING","2":"PASSIVE","3":"RECOVERING"}},
+      {"key":"tec","byte":1,"bit":0,"bits":8,"min":0,"max":255},
+      {"key":"rec","byte":2,"bit":0,"bits":8,"min":0,"max":255},
+      {"key":"task_health_mask","byte":3,"bit":0,"bits":8,"min":0,"max":255},
+      {"key":"free_heap_kb","byte":4,"bit":0,"bits":8,"min":0,"max":255},
+      {"key":"mcu_reset_reason","byte":5,"bit":0,"bits":8,"min":0,"max":5,"enum":{"0":"POWER_ON","1":"SW_RESET","2":"TASK_WDT","3":"BROWNOUT","4":"PANIC","5":"UNKNOWN"}},
+      {"key":"uptime_seconds","byte":6,"bit":0,"bits":16,"min":0,"max":65535}
     ]},"instances":[
       {"bus":"low","id":"0x600","frame_format":"standard","sender":"SYS","receivers":["RT","Host"],"cycle_ms":1000,"semantics":"independent"},
       {"bus":"high","id":"0x600","frame_format":"standard","sender":"SYS","receivers":["RT","Host"],"cycle_ms":1000,"semantics":"same_frame"}
@@ -43,21 +47,38 @@
       {"bus":"low","id":"0x601","frame_format":"standard","sender":"SYS","receivers":["RT"],"cycle_ms":0,"semantics":"independent"},
       {"bus":"high","id":"0x601","frame_format":"standard","sender":"SYS","receivers":["RT","Host"],"cycle_ms":0,"semantics":"same_frame"}
     ]},
-    {"key":"sys_node_status","owner":"sys","protocol":"etrike.application.v1","name":"SYS_NODE_STATUS","dlc":8,"byte_order":"big","codec":{"strategy":"generated"},"layout":{"kind":"signals","fields":[
-      {"key":"node_state","byte":0,"bit":0,"bits":4,"min":0,"max":15,"enum":{"0":"INIT","1":"ACQUIRE","2":"STANDBY","3":"ACTIVE","4":"INHIBITED","5":"ESTOP","6":"RECOVER","15":"UNKNOWN"}},
-      {"key":"reserved_b0","byte":0,"bit":4,"bits":4,"constant":0},
-      {"key":"block_mask","byte":1,"bit":0,"bits":16,"min":0,"max":65535},
-      {"key":"estop_active","byte":3,"bit":0,"bits":1,"min":0,"max":1},
-      {"key":"ready","byte":3,"bit":1,"bits":1,"min":0,"max":1},
-      {"key":"command_received","byte":3,"bit":2,"bits":1,"min":0,"max":1},
-      {"key":"command_nonzero","byte":3,"bit":3,"bits":1,"min":0,"max":1},
-      {"key":"output_enabled","byte":3,"bit":4,"bits":1,"min":0,"max":1},
-      {"key":"estop_latched","byte":3,"bit":5,"bits":1,"min":0,"max":1},
-      {"key":"recovery_pending","byte":3,"bit":6,"bits":1,"min":0,"max":1},
-      {"key":"degraded","byte":3,"bit":7,"bits":1,"min":0,"max":1},
-      {"key":"reserved_b4","byte":4,"bit":0,"bits":16,"constant":0},
-      {"key":"rolling_counter","byte":6,"bit":0,"bits":8,"counter":{"kind":"wrapping","reset_scope":"ecu_restart","increment":1}},
-      {"key":"e2e_crc","byte":7,"bit":0,"bits":8,"max":255}
+    {"key":"sys_node_status","owner":"sys","protocol":"etrike.application.v1","name":"SYS_NODE_STATUS","dlc":6,"byte_order":"big","codec":{"strategy":"generated"},"layout":{"kind":"signals","fields":[
+      {"key":"command_received","byte":0,"bit":0,"bits":1,"min":0,"max":1},
+      {"key":"command_nonzero","byte":0,"bit":1,"bits":1,"min":0,"max":1},
+      {"key":"command_executing","byte":0,"bit":2,"bits":1,"min":0,"max":1},
+      {"key":"command_rejected","byte":0,"bit":3,"bits":1,"min":0,"max":1},
+      {"key":"driver_override","byte":0,"bit":4,"bits":1,"min":0,"max":1},
+      {"key":"reserved_b0","byte":0,"bit":5,"bits":3,"constant":0},
+      {"key":"system_ready","byte":1,"bit":0,"bits":1,"min":0,"max":1},
+      {"key":"bypass_active","byte":1,"bit":1,"bits":1,"min":0,"max":1},
+      {"key":"bench_solo_mode","byte":1,"bit":2,"bits":1,"min":0,"max":1},
+      {"key":"bypass_mtr_absent","byte":1,"bit":3,"bits":1,"min":0,"max":1},
+      {"key":"bypass_seb_sync","byte":1,"bit":4,"bits":1,"min":0,"max":1},
+      {"key":"degraded","byte":1,"bit":5,"bits":1,"min":0,"max":1},
+      {"key":"reserved_b1","byte":1,"bit":6,"bits":2,"constant":0},
+      {"key":"block_mask_low","byte":2,"bit":0,"bits":8,"min":0,"max":255},
+      {"key":"block_mask_high","byte":3,"bit":0,"bits":8,"min":0,"max":255},
+      {"key":"hw_estop_btn_pressed","byte":4,"bit":0,"bits":1,"min":0,"max":1},
+      {"key":"hw_start_btn_latched","byte":4,"bit":1,"bits":1,"min":0,"max":1},
+      {"key":"hw_brake_lever_pulled","byte":4,"bit":2,"bits":1,"min":0,"max":1},
+      {"key":"hw_mode_btn_pressed","byte":4,"bit":3,"bits":1,"min":0,"max":1},
+      {"key":"hw_sw_left_turn","byte":4,"bit":4,"bits":1,"min":0,"max":1},
+      {"key":"hw_sw_right_turn","byte":4,"bit":5,"bits":1,"min":0,"max":1},
+      {"key":"hw_sw_headlight","byte":4,"bit":6,"bits":1,"min":0,"max":1},
+      {"key":"run_latch_enabled","byte":4,"bit":7,"bits":1,"min":0,"max":1},
+      {"key":"power_12v_relay_on","byte":5,"bit":0,"bits":1,"min":0,"max":1},
+      {"key":"ready_bulb_on","byte":5,"bit":1,"bits":1,"min":0,"max":1},
+      {"key":"bypass_bulb_on","byte":5,"bit":2,"bits":1,"min":0,"max":1},
+      {"key":"estop_bulb_on","byte":5,"bit":3,"bits":1,"min":0,"max":1},
+      {"key":"light_left_on","byte":5,"bit":4,"bits":1,"min":0,"max":1},
+      {"key":"light_right_on","byte":5,"bit":5,"bits":1,"min":0,"max":1},
+      {"key":"light_brake_on","byte":5,"bit":6,"bits":1,"min":0,"max":1},
+      {"key":"light_head_on","byte":5,"bit":7,"bits":1,"min":0,"max":1}
     ]},"instances":[
       {"bus":"low","id":"0x500","frame_format":"standard","sender":"SYS","receivers":["RT"],"cycle_ms":200,"semantics":"independent"},
       {"bus":"high","id":"0x500","frame_format":"standard","sender":"SYS","receivers":["Host"],"cycle_ms":200,"semantics":"same_frame"}

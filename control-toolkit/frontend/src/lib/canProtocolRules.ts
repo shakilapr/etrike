@@ -702,6 +702,38 @@ export function decodeBlockerMask(mask: number): Array<{ bit: number; name: stri
   return result
 }
 
+/** 0x500 SYS_NODE_STATUS block_mask vocabulary (sys-esp32/src/node_status.h).
+ *  Byte 2 (low) = transient blocks; byte 3 (high) = latched faults. */
+export const SYS_NODE_BLOCKERS: Record<number, { name: string; description: string }> = {
+  0x0001: { name: 'BRAKE_LEVER', description: 'Rider is pulling the handlebar brake lever.' },
+  0x0002: { name: 'SEB_SYNCING', description: 'SEB brake actuator not yet acquired / syncing.' },
+  0x0004: { name: 'MTR_FBK_UNACKED', description: 'MTR ESTOP acknowledgement still pending.' },
+  0x0008: { name: 'RT_SETPOINT_STALE', description: 'RT drive setpoint stream is stale.' },
+  0x0010: { name: 'START_UNLATCHED', description: 'Cockpit START run-latch is released.' },
+  0x0020: { name: 'STARTUP_ACQUIRE', description: 'Boot/startup acquisition window is active.' },
+  0x0100: { name: 'SEB_L3', description: 'SEB Level-3 critical brake fault (latched).' },
+  0x0200: { name: 'EGAS_MISMATCH', description: 'Throttle/EGAS correlation mismatch (latched).' },
+  0x0400: { name: 'MTR_FBK_TIMEOUT', description: 'MTR feedback stream timed out.' },
+  0x0800: { name: 'TASK_DEADLINE', description: 'Critical FreeRTOS task deadline missed.' },
+}
+
+/** Decodes the 0x500 block_mask (low | high<<8) into individual node blockers. */
+export function decodeNodeBlockMask(mask: number): Array<{ bit: number; name: string; description: string }> {
+  const result: Array<{ bit: number; name: string; description: string }> = []
+  for (let bit = 0; bit < 16; bit++) {
+    const flag = 1 << bit
+    if ((mask & flag) !== 0) {
+      const def = SYS_NODE_BLOCKERS[flag]
+      if (def) {
+        result.push({ bit, name: def.name, description: def.description })
+      } else {
+        result.push({ bit, name: `UNKNOWN_BLOCKER_BIT_${bit}`, description: `Reserved blocker flag bit ${bit} is set.` })
+      }
+    }
+  }
+  return result
+}
+
 /**
  * Official Node Operating States from protocol/contracts/sys.yaml, rt.yaml, mtr.yaml
  * (0x500 SYS_NODE_STATUS, 0x501 RT_NODE_STATUS, 0x502 MTR_NODE_STATUS)
@@ -879,6 +911,25 @@ export function parseNodeStatus(msg: MessageState): ParsedNodeStatus | null {
   else if (msg.can_id === 0x502 || msg.name === 'MTR_NODE_STATUS') reporter = 'MTR'
 
   if (!reporter) return null
+
+  if (reporter === 'SYS') {
+    // Redesigned 0x500: command execution + readiness + cockpit I/O. No
+    // node_state/estop fields — the SYS latch rides on 0x011 estop_source.
+    const blockMask =
+      ((signalNum(msg, 'block_mask_high') ?? 0) << 8) | (signalNum(msg, 'block_mask_low') ?? 0)
+    const executing = signalNum(msg, 'command_executing') === 1
+    return {
+      reporter,
+      nodeStateNum: executing ? 3 : 2,   // ACTIVE when executing, else STANDBY
+      nodeStateName: executing ? NODE_STATE_NAMES[3] : NODE_STATE_NAMES[2],
+      blockMask,
+      blockers: decodeNodeBlockMask(blockMask),
+      estopActive: false,
+      estopLatched: false,
+      outputEnabled: executing,
+      degraded: signalNum(msg, 'degraded') === 1,
+    }
+  }
 
   const stateNum = signalNum(msg, 'node_state') ?? 15
   const blockMask = signalNum(msg, 'block_mask') ?? 0

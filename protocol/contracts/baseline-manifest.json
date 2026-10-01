@@ -253,7 +253,7 @@
       "0x500",
       "standard",
       "sys:sys_node_status",
-      8,
+      6,
       200,
       "SYS",
       [
@@ -592,7 +592,7 @@
       "0x500",
       "standard",
       "sys:sys_node_status",
-      8,
+      6,
       200,
       "SYS",
       [
