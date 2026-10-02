@@ -30,6 +30,81 @@ extern "C" void HAL_FDCAN_RxFifo0Callback(FDCAN_HandleTypeDef *hfdcan, uint32_t 
     }
 }
 
+// ── Bench TX diagnostic probe (active only when mtr::kTxProbe) ─────
+// Sends one 0.206 frame per second and reports the FDCAN transmit outcome on
+// the PC6 status LED — the only output channel available while the TX path
+// itself is broken (a failing frame cannot carry its own error report onto
+// the bus). Verdict coding (judge >=3 s after power-on; LED starts solid):
+//   SolidOn — transmitted, TXBRP drained, TEC did not rise, LEC clean
+//   Slow    — LEC 3: ACK error (frame reached the bus, nobody acknowledged)
+//   Fast    — LEC 1/2/4/5/6: bus-level error (transceiver TX stage dead,
+//             silent, or miswired)
+//   Dark    — Bus-Off latched (controller disconnected itself)
+namespace {
+
+enum class ProbeLedMode : uint8_t { SolidOn, Slow, Fast, Dark };
+
+void probe_led_write(bool on) {
+    // PC6 status LED is active-low.
+    HAL_GPIO_WritePin(GPIOC, mtr::kLedPin, on ? GPIO_PIN_RESET : GPIO_PIN_SET);
+}
+
+void probe_led_service(uint32_t now_ms, ProbeLedMode mode) {
+    switch (mode) {
+    case ProbeLedMode::SolidOn: probe_led_write(true); break;
+    case ProbeLedMode::Dark:    probe_led_write(false); break;
+    case ProbeLedMode::Slow:    probe_led_write((now_ms % 1000U) < 500U); break;  // 1 Hz
+    case ProbeLedMode::Fast:    probe_led_write((now_ms % 200U) < 100U); break;   // 5 Hz
+    }
+}
+
+}  // namespace
+
+// Called from the 5 ms tick. In vehicle builds (kTxProbe == false) this is a
+// no-op eliminated at compile time.
+static void probe_tick(uint32_t now_ms) {
+    if constexpr (!mtr::kTxProbe) {
+        return;
+    }
+
+    static uint32_t last_send_ms = 0;
+    static uint8_t tec_at_send = 0;
+    static bool awaiting_sample = false;
+    static ProbeLedMode led = ProbeLedMode::SolidOn;
+
+    probe_led_service(now_ms, led);
+
+    if (awaiting_sample) {
+        // One 500 kbit/s frame completes in ~250 us; 10 ms also lets the
+        // 5 ms service_recovery() shadow refresh pick up the outcome.
+        if (now_ms - last_send_ms >= 10U) {
+            awaiting_sample = false;
+            const auto h = g_can.tx_health();
+            const bool clean_lec = (h.lec == 0U || h.lec == 7U);
+            if (h.bus_off) {
+                led = ProbeLedMode::Dark;
+            } else if (!g_can.tx_pending() && clean_lec && h.tec <= tec_at_send) {
+                led = ProbeLedMode::SolidOn;
+            } else if (h.lec == 3U) {
+                led = ProbeLedMode::Slow;
+            } else {
+                led = ProbeLedMode::Fast;
+            }
+        }
+        return;
+    }
+
+    if (now_ms - last_send_ms >= 1000U) {
+        last_send_ms = now_ms;
+        tec_at_send = g_can.tx_health().tec;
+        if (g_can.send(g_motor.build_motor_feedback_frame())) {
+            awaiting_sample = true;
+        } else {
+            led = ProbeLedMode::Fast;  // TX FIFO rejected the frame
+        }
+    }
+}
+
 // Error Handler definition
 extern "C" void Error_Handler(void) {
     __disable_irq();
@@ -140,11 +215,14 @@ int main(void) {
             g_motor.handle_frame(rx_frame, now_ms);
         }
 
-        // Periodic motor & watchdog evaluation (5 ms rate)
-        if (now_ms - last_loop_ms >= mtr::kMainLoopPeriodMs) {
-            last_loop_ms = now_ms;
-            g_can.service_recovery();
-            g_motor.tick(now_ms);
+            // Periodic motor & watchdog evaluation (5 ms rate)
+            if (now_ms - last_loop_ms >= mtr::kMainLoopPeriodMs) {
+                last_loop_ms = now_ms;
+                g_can.service_recovery();
+                g_motor.tick(now_ms);
+
+                // Bench TX diagnostic probe (no-op unless kTxProbe).
+                probe_tick(now_ms);
 
             // Phase B: bounded drain of pending diagnostic reports to 0x631 (MTR_DIAG_EVENT_RPT).
             // pop_pending_report() is non-blocking; cap frames per iteration to avoid TX floods.

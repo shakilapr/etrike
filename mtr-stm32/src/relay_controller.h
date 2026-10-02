@@ -46,8 +46,11 @@ public:
     void set_state(State new_state) {
         if (state_ == new_state) return;
         apply_state_(new_state);
-        // Toggle PC6 status LED on state transition
-        HAL_GPIO_TogglePin(GPIOC, kLedPin);
+        // Toggle PC6 status LED on state transitions — except in TX-probe
+        // builds, where the LED is reserved for the probe verdict pattern.
+        if constexpr (!mtr::kTxProbe) {
+            HAL_GPIO_TogglePin(GPIOC, kLedPin);
+        }
     }
 
     // Direct mapping from canonical CAN Gear enum

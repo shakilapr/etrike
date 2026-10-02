@@ -59,4 +59,21 @@ constexpr uint32_t kDriveCmdTimeoutMs     = 150;  // no valid 0x204 for 150 ms w
 constexpr uint32_t kDriveCmdRecoverFrames =   3;
 constexpr uint32_t kDriveCmdRecoverMaxGapMs = 100;
 
+// ── Bench TX diagnostic probe ─────────────────────────────────────
+// When true, the firmware sends one 0x206 frame per second and reports the
+// FDCAN transmit outcome on the PC6 status LED — the only output channel
+// available while the TX path itself is broken (a failing frame can never
+// carry its own error report onto the bus):
+//   Solid ON   — frame transmitted, TEC unchanged, no LEC error (TX proven)
+//   Slow 1 Hz  — LEC=3 ACK error (frame reached the bus, nobody acknowledged)
+//   Fast 5 Hz  — bus-level error (LEC 1/2/4/5/6: stuff/form/bit/CRC —
+//                transceiver TX stage dead, silent, or miswired)
+//   Dark       — Bus-Off (judge >=3 s after power-on; LED starts solid)
+// Probe builds reserve the PC6 LED for the probe (relay-transition toggling
+// is compiled out) and keep the 0x631 diagnostic drain disabled. The probe
+// transmits at 1 Hz, violating the 0x206 20 ms contract — keep RT offline
+// (bench topology 2) or expect RT-side MTR feedback staleness flags.
+// Must be false in vehicle builds; bench use only.
+constexpr bool kTxProbe = false;
+
 }  // namespace mtr
