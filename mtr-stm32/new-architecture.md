@@ -81,13 +81,13 @@ Mechanics: verdict comes from the `CanDriver` TX-health shadow (`service_recover
 
 ## 3. Clock, Timing & CAN Bit Timing
 
-- **Core:** 16 MHz HSI direct, no PLL (`RCC_PLL_NONE`, `main.cpp:41-65`). `SYSCLK = HCLK = PCLK1 = PCLK2 = 16 MHz`, flash latency 0, `PWR_REGULATOR_VOLTAGE_SCALE1`.
+- **Core:** 16 MHz HSI direct, no PLL (`RCC_PLL_NONE`, `main.cpp:116-139`). `SYSCLK = HCLK = PCLK1 = PCLK2 = 16 MHz`, flash latency 0, `PWR_REGULATOR_VOLTAGE_SCALE1`.
 - **FDCAN kernel clock:** PCLK1 = 16 MHz (`can_driver.h:26-32`).
 - **Bit timing (500 kbit/s, 81.25 % sample point, `can_driver.h:54-60`):**
   - Nominal prescaler 2 → t_q = 125 ns; Seg1 = 12 t_q, Seg2 = 3 t_q, SJW = 3.
   - 1 + 12 + 3 = 16 t_q = 2.0 µs → 500 kbit/s. Sample point 81.25 %, aligned with the ESP32 TWAI nodes (80.0 %, SJW = 3).
-- **Loop cadence:** `HAL_Delay(1)` polling loop (`main.cpp:208`) with a 5 ms control tick (`kMainLoopPeriodMs`, `config.h:48`).
-- **DWT cycle counter** enabled at boot (`main.cpp:81-83`).
+- **Loop cadence:** `HAL_Delay(1)` polling loop (`main.cpp:292`) with a 5 ms control tick (`kMainLoopPeriodMs`, `config.h:48`).
+- **DWT cycle counter** enabled at boot (`main.cpp:156-158`).
 
 ---
 
@@ -112,22 +112,22 @@ mtr-stm32/
     └── legacy/…                       # Older standalone suites (flat test_*.cpp; excluded from env:native)
 ```
 
-### 4.1 Boot Sequence (`main.cpp:67-131`)
+### 4.1 Boot Sequence (`main.cpp:142-207`)
 
-1. **Capture reset cause before it is cleared**: `RCC->CSR.IWDGRSTF`; if the independent watchdog reset the MCU, raise-then-recover `DiagId::MtrWatchdogReset` (one-shot boot notification, `main.cpp:72-75,104-107`).
+1. **Capture reset cause before it is cleared**: `RCC->CSR.IWDGRSTF`; if the independent watchdog reset the MCU, raise-then-recover `DiagId::MtrWatchdogReset` (one-shot boot notification, `main.cpp:147-150,178-182`).
 2. `HAL_Init()`, DWT cycle counter enable, `SystemClock_Config()` (HSI 16 MHz).
 3. `g_motor.init()` → relays to safe OFF + DAC init (EEPROM 0 V provisioning).
 4. `g_can.init()` → on failure `Error_Handler()` (`__disable_irq()` + halt; outputs remain in the safe OFF state established above).
 5. Wire shared `DiagnosticManager` into MotorManager and CanDriver (reporting only — bookkeeping never changes safety reactions).
-6. Start **IWDG**: LSI ~32 kHz / 128 = 250 Hz (4 ms/tick), reload 400 → **~1.6 s window** (`main.cpp:109-126`). Cannot be stopped except by reset. If it cannot start → `Error_Handler()`.
+6. Start **IWDG**: LSI ~32 kHz / 128 = 250 Hz (4 ms/tick), reload 400 → **~1.6 s window** (`main.cpp:190-205`). Cannot be stopped except by reset. If it cannot start → `Error_Handler()`.
 7. Enter main loop.
 
-### 4.2 Main Loop Schedule (`main.cpp:134-209`)
+### 4.2 Main Loop Schedule (`main.cpp:209-293`)
 
 | Rate | Work |
 |---|---|
 | Every pass (~1 ms) | Drain `poll_rx()` ring → `g_motor.handle_frame()` per frame |
-| Every 5 ms | `g_can.service_recovery()` (bus-off), `g_motor.tick()` (safety evaluation), bounded diagnostic drain (≤ 8 × `0x631` frames/iteration) |
+| Every 5 ms | `g_can.service_recovery()` (bus-off + TX-health shadow refresh), `g_motor.tick()` (safety evaluation), TX-probe tick (`kTxProbe` builds only), bounded diagnostic drain (≤ 8 × `0x631` frames/iteration, gated on `kEnableCanBroadcast`) |
 | Every 10 ms *(compiled out: `kEnableCanBroadcast=false`)* | 0x120 SYS_THROTTLE_STS |
 | Every 20 ms *(compiled out)* | 0x206 MTR_MOTOR_FBK; 0x502 MTR_NODE_STATUS (10 ms phase offset) |
 | End of every full cycle | `HAL_IWDG_Refresh()` — fed **only** after CAN drain + `tick()` + periodic sends complete; a hang anywhere above resets the MCU into the safe all-OFF boot state |
@@ -136,8 +136,8 @@ mtr-stm32/
 
 - **Instance:** FDCAN1, Classic CAN, normal mode, `AutoRetransmission = DISABLE`, TX pause & protocol exception disabled, TX FIFO operation mode (`can_driver.h:47-69`).
 - **Acceptance:** 5 exact-match standard filters routed to RX FIFO 0 (`FilterID2 = 0x7FF` mask): `0x001`, `0x011`, `0x110`, `0x113`, `0x204`. Global filter **rejects** non-matching standard frames and remote frames (`can_driver.h:76-84`).
-- **RX path:** FIFO0 new-message IRQ (NVIC priority 5 — below HAL critical sections at priority 0) → ISR drains FIFO0 into a **32-slot ring buffer** (`rx_ring_`); overflow increments `rx_overflow_` and raises `DiagId::MtrFdcanRxOverflow`. Main loop `poll_rx()` pops under an IRQ-disable critical section (`can_driver.h:135-172`, `:264`).
-- **Bus-off / HAL-error recovery** (`service_recovery`, `can_driver.h:175-215`, called at 5 ms): debounced to one attempt per **150 ms**; on `PSR.BO` clears `CCCR.INIT` (triggering the ISO 11898-1 128×11 recessive-bit recovery), repairs a corrupted `HAL_FDCAN_STATE_ERROR` by forcing `READY` + restart, re-arms the FIFO0 notification, and reports `DiagId::MtrFdcanBusOff` with a BITFIELD16 snapshot (TEC<<8 | REC).
+- **RX path:** FIFO0 new-message IRQ (NVIC priority 5 — below HAL critical sections at priority 0) → ISR drains FIFO0 into a **32-slot ring buffer** (`rx_ring_`); overflow increments `rx_overflow_` and raises `DiagId::MtrFdcanRxOverflow`. Main loop `poll_rx()` pops under an IRQ-disable critical section (`can_driver.h:135-186`, ring at `:286`).
+- **Bus-off / HAL-error recovery** (`service_recovery`, `can_driver.h:175-224`, called at 5 ms): debounced to one attempt per **150 ms**; on `PSR.BO` clears `CCCR.INIT` (triggering the ISO 11898-1 128×11 recessive-bit recovery), repairs a corrupted `HAL_FDCAN_STATE_ERROR` by forcing `READY` + restart, re-arms the FIFO0 notification, and reports `DiagId::MtrFdcanBusOff` with a BITFIELD16 snapshot (TEC<<8 | REC). Also the **single PSR/ECR reader**: every call refreshes the `CanTxHealth` shadow (TEC, REC, LEC, bus-off) exposed via `tx_health()` / `tx_pending()` — PSR.LEC is read-destructive, so no other code may read PSR.
 
 ---
 
@@ -242,7 +242,7 @@ A direct D↔R transition forces a **50 ms neutral dwell** (`kShiftDwellMs`, `mo
 | Drive | ON | ON | OFF (**mutual exclusion**) |
 | Reverse | ON | OFF (**mutual exclusion**) | ON |
 
-- Canonical gear mapping (`set_gear`, `relay_controller.h:54-72`): `D`/`S` → Drive, `R` → Reverse, `N`/default → Park; `ignition_on == false` forces Off. PC6 LED toggles on every state change.
+- Canonical gear mapping (`set_gear`, `relay_controller.h:57-75`): `D`/`S` → Drive, `R` → Reverse, `N`/default → Park; `ignition_on == false` forces Off. PC6 LED toggles on every state change (except TX-probe builds, where the LED is reserved for the probe verdict — §1.3).
 - Drive and Reverse relays can **never** be energized simultaneously (structural in `apply_state_`).
 
 ### 7.4 Throttle Mapping → MCP4725 DAC
@@ -268,7 +268,7 @@ clamp(code, kDacMinCode=655, kDacMaxCode=1966)   # 0.8 V … 2.4 V @ 5.0 V ref
 
 ## 8. Diagnostics Plane (Phase B)
 
-Shared `DiagnosticManager` (`shared/diagnostics.h`) wired into MotorManager + CanDriver (`main.cpp:97-98`). Reporting only — raising/recovering never changes a safety reaction. Reports drain to the bus as **0x631 MTR_DIAG_EVENT_RPT**, capped at 8 frames per 5 ms iteration (`main.cpp:149-165`).
+Shared `DiagnosticManager` (`shared/diagnostics.h`) wired into MotorManager + CanDriver (`main.cpp:172-173`). Reporting only — raising/recovering never changes a safety reaction. Reports drain to the bus as **0x631 MTR_DIAG_EVENT_RPT**, capped at 8 frames per 5 ms iteration (`main.cpp:231-249`), **gated on `kEnableCanBroadcast`** — in receive-only mode pending reports accumulate in the bounded queue instead of being emitted into a bus that cannot ACK them.
 
 | DiagId | Code | Raised when |
 |---|---|---|
