@@ -52,11 +52,12 @@ public:
         hfdcan_.Init.ProtocolException = DISABLE;
 
         // Bit timing for 500 kbps @ 16 MHz kernel:
-        // Prescaler 2 -> Tq = 125 ns. (1 + 13 + 2) = 16 Tq = 2 us -> 500 kbps (87.5% sample point, CiA DS-102)
+        // Prescaler 2 -> Tq = 125 ns. (1 + 12 + 3) = 16 Tq = 2 us -> 500 kbps (81.25% sample point, SJW=3)
+        // Aligned with ESP32 TWAI (80.0% sample point, SJW=3) and provides ample margin for IPT and transceiver delay.
         hfdcan_.Init.NominalPrescaler = 2;
-        hfdcan_.Init.NominalSyncJumpWidth = 2;
-        hfdcan_.Init.NominalTimeSeg1 = 13;
-        hfdcan_.Init.NominalTimeSeg2 = 2;
+        hfdcan_.Init.NominalSyncJumpWidth = 3;
+        hfdcan_.Init.NominalTimeSeg1 = 12;
+        hfdcan_.Init.NominalTimeSeg2 = 3;
 
         hfdcan_.Init.DataPrescaler = 1;
         hfdcan_.Init.DataSyncJumpWidth = 1;
@@ -194,11 +195,11 @@ public:
         // Reset HAL error state if controller state was corrupted
         if (hfdcan_.State == HAL_FDCAN_STATE_ERROR) {
             hfdcan_.State = HAL_FDCAN_STATE_READY;
+            HAL_FDCAN_Start(&hfdcan_);
+        } else if (is_bus_off) {
+            // Clearing CCCR.INIT triggers the 128x11 recessive bits sequence per ISO 11898-1
+            CLEAR_BIT(hfdcan_.Instance->CCCR, FDCAN_CCCR_INIT);
         }
-
-        HAL_FDCAN_Stop(&hfdcan_);
-        CLEAR_BIT(hfdcan_.Instance->CCCR, FDCAN_CCCR_INIT);
-        HAL_FDCAN_Start(&hfdcan_);
 
         // Report the bus-off event with TEC/REC snapshot (BITFIELD16: tec 15:8, rec 7:0).
         if (diag_) {
