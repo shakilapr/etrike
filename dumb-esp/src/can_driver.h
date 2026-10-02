@@ -79,10 +79,8 @@ public:
         config.io_cfg.quanta_clk_out = GPIO_NUM_NC;
         config.io_cfg.bus_off_indicator = GPIO_NUM_NC;
         config.bit_timing.bitrate = config_.bitrate_hz;
-        // ESP-IDF 5.5 abandons the active frame without an on_tx_done
-        // callback on Bus-Off. Keep one driver-owned frame so recovery can
-        // reclaim its application slot deterministically.
-        config.fail_retry_cnt = 0;
+        // Standard CAN: allow up to 3 retries on arbitration loss or transient error.
+        config.fail_retry_cnt = 3;
         config.tx_queue_depth = 16;
 
         esp_err_t result = twai_new_node_onchip(&config, &node_);
@@ -118,7 +116,7 @@ public:
         return true;
     }
 
-    bool send(const Frame& source, TickType_t timeout_ms = 20) {
+    bool send(const Frame& source, TickType_t timeout_ms = 2) {
         if (!initialized_ || !node_ || source.dlc > 8) return false;
         if (state_.load(std::memory_order_acquire) == TWAI_ERROR_BUS_OFF
             || esp_timer_get_time()
