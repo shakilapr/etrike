@@ -47,11 +47,8 @@ constexpr int kStatusLedGpio    = 2;  // Onboard blue LED on classic ESP32 dev b
 constexpr bool kHasWs2812Led    = false;
 #endif
 
-#if defined(ETRIKE_DUMB_TWAI_SELF_TEST) && ETRIKE_DUMB_TWAI_SELF_TEST
-constexpr bool kCanLowBenchSelfTest = true;
-#else
+// Always require standard external ACK on CAN bus
 constexpr bool kCanLowBenchSelfTest = false;
-#endif
 
 // ── Control loop timing ──────────────────────────────────────────────────
 constexpr int kControlHz     = 100;       // 10 ms period

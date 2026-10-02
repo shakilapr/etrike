@@ -55,4 +55,17 @@ bool IRAM_ATTR CanDriver::on_state_change_(twai_node_handle_t,
     return false;
 }
 
+bool IRAM_ATTR CanDriver::on_error_(twai_node_handle_t,
+                                    const twai_error_event_data_t* event,
+                                    void* user_ctx) {
+    auto* self = static_cast<CanDriver*>(user_ctx);
+    if (!event) return false;
+    self->last_err_flags_.store(event->err_flags.val, std::memory_order_relaxed);
+    if (event->err_flags.bit_err) self->err_bit_count_.fetch_add(1, std::memory_order_relaxed);
+    if (event->err_flags.ack_err) self->err_ack_count_.fetch_add(1, std::memory_order_relaxed);
+    if (event->err_flags.form_err) self->err_form_count_.fetch_add(1, std::memory_order_relaxed);
+    if (event->err_flags.stuff_err) self->err_stuff_count_.fetch_add(1, std::memory_order_relaxed);
+    return false;
+}
+
 }  // namespace can

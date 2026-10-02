@@ -29,6 +29,10 @@ public:
         bool recovery_in_progress;
         uint32_t recovery_attempts;
         uint32_t last_transition_tick;
+        uint32_t bit_errors;
+        uint32_t ack_errors;
+        uint32_t form_errors;
+        uint32_t stuff_errors;
     };
 
     struct Config {
@@ -70,18 +74,8 @@ public:
 
         twai_onchip_node_config_t config{};
         config.io_cfg.tx = static_cast<gpio_num_t>(config_.tx_gpio);
-        if (config_.bench_loopback) {
-            // Standalone bench mode without physical actuators: loop back RX to TX pin
-            // and enable self_test (no-ACK) so missing external ACKs and unterminated
-            // bench transceiver lines do not trigger bit errors or Bus-Off.
-            config.io_cfg.rx = static_cast<gpio_num_t>(config_.tx_gpio);
-            config.flags.enable_self_test = 1;
-        } else {
-            // Normal vehicle mode with physical actuators: receive real actuator frames
-            // on RX pin (GPIO 4) and use normal CAN arbitration and ACKs.
-            config.io_cfg.rx = static_cast<gpio_num_t>(config_.rx_gpio);
-            config.flags.enable_self_test = 0;
-        }
+        config.io_cfg.rx = static_cast<gpio_num_t>(config_.rx_gpio);
+        config.flags.enable_self_test = 0;  // Standard CAN: external ACK required
         config.io_cfg.quanta_clk_out = GPIO_NUM_NC;
         config.io_cfg.bus_off_indicator = GPIO_NUM_NC;
         config.bit_timing.bitrate = config_.bitrate_hz;
@@ -97,14 +91,15 @@ public:
             callbacks.on_rx_done = &CanDriver::on_rx_done_;
             callbacks.on_tx_done = &CanDriver::on_tx_done_;
             callbacks.on_state_change = &CanDriver::on_state_change_;
+            callbacks.on_error = &CanDriver::on_error_;
             result = twai_node_register_event_callbacks(node_, &callbacks, this);
         }
         if (result == ESP_OK) result = twai_node_enable(node_);
         if (result == ESP_OK) {
             initialized_ = true;
             state_.store(TWAI_ERROR_ACTIVE, std::memory_order_release);
-            ESP_LOGI("can", "TWAI TX=%d RX=%d @ %d kbit/s (self_test=%d)", config_.tx_gpio,
-                     config_.rx_gpio, config_.bitrate_hz / 1000, config.flags.enable_self_test);
+            ESP_LOGI("can", "TWAI TX=%d RX=%d @ %d kbit/s (self_test=0, ACK enabled)", config_.tx_gpio,
+                     config_.rx_gpio, config_.bitrate_hz / 1000);
         } else if (node_) {
             twai_node_delete(node_);
             node_ = nullptr;
@@ -172,8 +167,13 @@ public:
         if (result == ESP_OK && info.state == TWAI_ERROR_BUS_OFF) {
             const uint32_t attempt = recovery_attempts_.fetch_add(1, std::memory_order_relaxed) + 1;
             last_recovery_attempt_us_.store(esp_timer_get_time(), std::memory_order_relaxed);
-            ESP_LOGW("can", "state=bus_off recovery=start attempt=%lu tec=%u rec=%u",
-                     static_cast<unsigned long>(attempt), info.tx_error_count, info.rx_error_count);
+            ESP_LOGW("can", "state=bus_off recovery=start attempt=%lu tec=%u rec=%u [err_stats: bit=%lu ack=%lu form=%lu stuff=%lu last_flags=0x%02lx]",
+                     static_cast<unsigned long>(attempt), info.tx_error_count, info.rx_error_count,
+                     static_cast<unsigned long>(err_bit_count_.load(std::memory_order_relaxed)),
+                     static_cast<unsigned long>(err_ack_count_.load(std::memory_order_relaxed)),
+                     static_cast<unsigned long>(err_form_count_.load(std::memory_order_relaxed)),
+                     static_cast<unsigned long>(err_stuff_count_.load(std::memory_order_relaxed)),
+                     static_cast<unsigned long>(last_err_flags_.load(std::memory_order_relaxed)));
             result = twai_node_recover(node_);
             recovery_in_progress_.store(result == ESP_OK, std::memory_order_release);
         }
@@ -229,7 +229,11 @@ public:
                 info.rx_error_count,
                 recovery_in_progress_.load(std::memory_order_acquire),
                 recovery_attempts_.load(std::memory_order_relaxed),
-                last_transition_tick_.load(std::memory_order_relaxed)};
+                last_transition_tick_.load(std::memory_order_relaxed),
+                err_bit_count_.load(std::memory_order_relaxed),
+                err_ack_count_.load(std::memory_order_relaxed),
+                err_form_count_.load(std::memory_order_relaxed),
+                err_stuff_count_.load(std::memory_order_relaxed)};
     }
 
 private:
@@ -259,6 +263,9 @@ private:
     static bool IRAM_ATTR on_state_change_(twai_node_handle_t node,
                                             const twai_state_change_event_data_t* event,
                                             void* user_ctx);
+    static bool IRAM_ATTR on_error_(twai_node_handle_t node,
+                                    const twai_error_event_data_t* event,
+                                    void* user_ctx);
 
     static HealthState map_state_(twai_error_state_t state) {
         switch (state) {
@@ -303,6 +310,11 @@ private:
     std::atomic<bool> first_tx_pending_{false};
     std::atomic<uint32_t> consecutive_bus_offs_{0};
     std::atomic<int64_t> tx_resume_not_before_us_{0};
+    std::atomic<uint32_t> err_bit_count_{0};
+    std::atomic<uint32_t> err_ack_count_{0};
+    std::atomic<uint32_t> err_form_count_{0};
+    std::atomic<uint32_t> err_stuff_count_{0};
+    std::atomic<uint32_t> last_err_flags_{0};
 };
 
 }  // namespace can

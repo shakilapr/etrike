@@ -444,30 +444,39 @@ static void emit_sys_heartbeat() {
 // 0x600 SYS_DIAG_RPT — Host diagnostic keepalive (1 Hz, pure ECU/bus health)
 static void emit_sys_diag(bool braking) {
     (void)braking;
+    uint8_t low_tec = 0, low_rec = 0;
+    g_can_low.get_error_counters(low_tec, low_rec);
+    const auto health = g_can_low.health_snapshot();
+    const uint8_t can_state = static_cast<uint8_t>(health.state);
+
     Frame fr = Frame::standard(can::kIdSysDiagRpt, 8);
-    fr.data[0] = 0u;    // rx_overflow=0 | can_state=0 (ACTIVE)
-    fr.data[1] = 0u;    // tec = 0
-    fr.data[2] = 0u;    // rec = 0
-    fr.data[3] = 0xFFu; // task_health_mask = all alive
-    fr.data[4] = 120u;  // free_heap_kb
-    fr.data[5] = 0u;    // mcu_reset_reason = POWER_ON
-    be_write_u16(&fr.data[6], 0u); // uptime_seconds = 0
+    fr.data[0] = can_state & 0x03u;    // rx_overflow=0 | can_state (0=Active, 1=Warning, 2=Passive, 3=BusOff)
+    fr.data[1] = low_tec;             // Low CAN TEC
+    fr.data[2] = low_rec;             // Low CAN REC
+    fr.data[3] = 0xFFu;               // task_health_mask = all alive
+    fr.data[4] = 120u;                // free_heap_kb
+    fr.data[5] = 0u;                  // mcu_reset_reason = POWER_ON
+    const uint16_t uptime = static_cast<uint16_t>(esp_timer_get_time() / 1'000'000);
+    be_write_u16(&fr.data[6], uptime);
     g_can_high.send(fr, 2);
     g_can_low.send(fr, 2);
 }
 
 // 0x620 RT_DIAG_RPT — RT diagnostic keepalive (1 Hz)
 static void emit_rt_diag() {
+    uint8_t high_tec = 0, high_rec = 0;
+    g_can_high.get_error_counters(high_tec, high_rec);
     Frame fr = Frame::standard(0x620u, 8);
-    fr.data[0] = 0u; // mcp_eflg
-    fr.data[1] = 0u; // mcp_tec
-    fr.data[2] = 0u; // mcp_rec
-    fr.data[3] = 0u; // flags
-    fr.data[4] = 0u; // brake_fallback_state
-    fr.data[5] = 0u; // spi_fault_delta
-    fr.data[6] = 0u; // mcp_recovery_attempts
+    fr.data[0] = g_can_high.bus_off() ? 0x20u : 0u; // mcp_eflg: TXBO=0x20
+    fr.data[1] = high_tec;                          // mcp_tec
+    fr.data[2] = high_rec;                          // mcp_rec
+    fr.data[3] = 0u;                                // flags
+    fr.data[4] = 0u;                                // brake_fallback_state
+    fr.data[5] = 0u;                                // spi_fault_delta
+    fr.data[6] = 0u;                                // mcp_recovery_attempts
     fr.data[7] = g_roll_rt_diag++;
     g_can_high.send(fr, 2);
+    g_can_low.send(fr, 2);
 }
 
 // ─── FreeRTOS Tasks ──────────────────────────────────────────────────────────
@@ -664,6 +673,16 @@ static void emit_rt_diag() {
         if (tick % 100u == 9u) {
             emit_sys_diag(brake_kpa > 100);
             emit_rt_diag();
+
+            const auto snap = g_can_low.health_snapshot();
+            ESP_LOGI(TAG, "diag 1Hz: Low CAN state=%d tec=%u rec=%u [err: bit=%lu ack=%lu form=%lu stuff=%lu recov_attempts=%lu in_prog=%d]",
+                     static_cast<int>(snap.state), snap.tec, snap.rec,
+                     static_cast<unsigned long>(snap.bit_errors),
+                     static_cast<unsigned long>(snap.ack_errors),
+                     static_cast<unsigned long>(snap.form_errors),
+                     static_cast<unsigned long>(snap.stuff_errors),
+                     static_cast<unsigned long>(snap.recovery_attempts),
+                     snap.recovery_in_progress ? 1 : 0);
         }
 
         // ═════════════════════════════════════════════════════════════
@@ -732,7 +751,7 @@ extern "C" void app_main() {
     if (!g_can_low.init()) {
         ESP_LOGE(TAG, "TWAI Low CAN driver init failed!");
     } else {
-        ESP_LOGI(TAG, "TWAI Low CAN driver ready (TX=%d, RX=%d @ %d bps, bench_loopback=1)",
+        ESP_LOGI(TAG, "TWAI Low CAN driver ready (TX=%d, RX=%d @ %d bps, ACK enabled)",
                  dumb::kCanLowTxGpio, dumb::kCanLowRxGpio, dumb::kCanLowBitrateHz);
     }
 
