@@ -213,11 +213,13 @@ inline void HAL_GPIO_TogglePin(GPIO_TypeDef* port, uint16_t pin_mask) {
 
 typedef struct {
     volatile uint32_t CCCR;
-    volatile uint32_t ECR;   // Error Counter Register (TEC 15:8, REC 7:0) — present on real STM32G4
-    volatile uint32_t PSR;
+    volatile uint32_t ECR;   // Error Counter Register (TEC 7:0, REC 14:8) — present on real STM32G4
+    volatile uint32_t PSR;   // Protocol Status Register (LEC 2:0, BO 7)
+    volatile uint32_t TXBRP; // Tx Buffer Request Pending (bit 0 = FIFO slot 0 pending)
 } FDCAN_GlobalTypeDef;
 
 #define FDCAN_PSR_BO    (1 << 7)
+#define FDCAN_PSR_LEC_Msk (0x7u)
 #define FDCAN_CCCR_INIT (1 << 0)
 #define CLEAR_BIT(REG, BIT) ((REG) &= ~(BIT))
 
@@ -309,12 +311,14 @@ struct MockMsg {
 inline std::vector<MockMsg> g_tx_msgs;
 inline std::deque<MockMsg>  g_rx_queue;
 
-inline void reset() {
-    g_tx_msgs.clear();
-    g_rx_queue.clear();
-    g_fdcan1_regs.CCCR = 0;
-    g_fdcan1_regs.PSR = 0;
-}
+    inline void reset() {
+        g_tx_msgs.clear();
+        g_rx_queue.clear();
+        g_fdcan1_regs.CCCR = 0;
+        g_fdcan1_regs.ECR = 0;
+        g_fdcan1_regs.PSR = 0;
+        g_fdcan1_regs.TXBRP = 0;
+    }
 } // namespace fdcan_mock
 
 inline HAL_StatusTypeDef HAL_RCCEx_PeriphCLKConfig(RCC_PeriphCLKInitTypeDef*) { return HAL_OK; }

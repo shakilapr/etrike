@@ -175,7 +175,17 @@ public:
     void service_recovery() {
         if (!initialized_) return;
         const uint32_t now_ms = HAL_GetTick();
-        const bool is_bus_off = (hfdcan_.Instance->PSR & FDCAN_PSR_BO) != 0U;
+
+        // Single PSR/ECR read point (see tx_health()). Captured every tick so
+        // consumers (bench TX probe) never race the LEC read-clear behavior.
+        const std::uint32_t ecr = hfdcan_.Instance->ECR;
+        const std::uint32_t psr = hfdcan_.Instance->PSR;
+        tx_health_.tec = static_cast<std::uint8_t>(ecr & 0xFFu);
+        tx_health_.rec = static_cast<std::uint8_t>((ecr >> 8) & 0x7Fu);
+        tx_health_.lec = static_cast<std::uint8_t>(psr & FDCAN_PSR_LEC_Msk);
+        tx_health_.bus_off = (psr & FDCAN_PSR_BO) != 0U;
+
+        const bool is_bus_off = tx_health_.bus_off;
         const bool is_hal_err = (hfdcan_.State == HAL_FDCAN_STATE_ERROR);
 
         if (!is_bus_off && !is_hal_err) {
@@ -204,16 +214,27 @@ public:
         // Report the bus-off event with TEC/REC snapshot (BITFIELD16: tec 15:8, rec 7:0).
         // RM0440 FDCAN_ECR layout: TEC[7:0] = bits 7:0, REC[6:0] = bits 14:8.
         if (diag_) {
-            const std::uint32_t ecr = hfdcan_.Instance->ECR;
-            const std::uint16_t tec = static_cast<std::uint16_t>(ecr & 0xFFu);
-            const std::uint16_t rec = static_cast<std::uint16_t>((ecr >> 8) & 0x7Fu);
             diag_->raise(etrike::diagnostics::DiagId::MtrFdcanBusOff,
-                         static_cast<std::uint16_t>((tec << 8u) | rec));
+                         static_cast<std::uint16_t>((tx_health_.tec << 8u) | tx_health_.rec));
         }
 
         // Re-arm RX FIFO 0 interrupt which is cleared by HAL_FDCAN_Stop
         HAL_FDCAN_ActivateNotification(&hfdcan_, FDCAN_IT_RX_FIFO0_NEW_MESSAGE, 0);
     }
+
+    // Cached FDCAN TX-health snapshot, refreshed by service_recovery() — the
+    // single reader of PSR/ECR. PSR.LEC is read-destructive on FDCAN, so no
+    // other code may read PSR directly or the last-error code is lost.
+    struct CanTxHealth {
+        std::uint8_t tec{0};       // Transmit Error Counter (ECR[7:0])
+        std::uint8_t rec{0};       // Receive Error Counter (ECR[14:8])
+        std::uint8_t lec{7};       // Last Error Code (PSR[2:0]); 0 or 7 = clean
+        bool bus_off{false};       // PSR.BO
+    };
+    CanTxHealth tx_health() const { return tx_health_; }
+
+    // True while a TX request is still pending (frame not yet handed to the bus).
+    bool tx_pending() const { return (hfdcan_.Instance->TXBRP & 0x1U) != 0U; }
 
     FDCAN_HandleTypeDef* handle() { return &hfdcan_; }
 
@@ -272,6 +293,7 @@ private:
     bool initialized_{false};
     bool recovery_in_progress_{false};
     uint32_t last_recovery_ms_{0};
+    CanTxHealth tx_health_{};
     uint32_t tx_count_{0};
     uint32_t tx_dropped_{0};
     uint32_t rx_overflow_{0};
