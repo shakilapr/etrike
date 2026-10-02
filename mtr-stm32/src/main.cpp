@@ -128,6 +128,7 @@ int main(void) {
     uint32_t last_loop_ms = HAL_GetTick();
     uint32_t last_fbk_ms = last_loop_ms;
     uint32_t last_throttle_ms = last_loop_ms;
+    uint32_t last_status_ms = last_loop_ms + 10;
 
     // 6. Main Execution Loop
     while (1) {
@@ -164,30 +165,36 @@ int main(void) {
             }
         }
 
-        // Periodic 0x120 SYS_THROTTLE_STS broadcast (100 Hz / 10 ms rate)
-        if (now_ms - last_throttle_ms >= mtr::kThrottlePeriodMs) {
-            last_throttle_ms = now_ms;
-            can::Frame fr = g_motor.build_throttle_status_frame();
-            g_can.send(fr);
-        }
+        // Periodic broadcasts (disabled in receive-only mode to prevent requiring ACK from peers)
+        if constexpr (mtr::kEnableCanBroadcast) {
+            // Periodic 0x120 SYS_THROTTLE_STS broadcast (100 Hz / 10 ms rate)
+            if (now_ms - last_throttle_ms >= mtr::kThrottlePeriodMs) {
+                last_throttle_ms = now_ms;
+                can::Frame fr = g_motor.build_throttle_status_frame();
+                g_can.send(fr);
+            }
 
-        // Periodic 0x206 MTR_MOTOR_FBK broadcast (50 Hz / 20 ms rate)
-        if (now_ms - last_fbk_ms >= mtr::kFeedbackPeriodMs) {
-            last_fbk_ms = now_ms;
-            can::Frame fr = g_motor.build_motor_feedback_frame();
-            g_can.send(fr);
+            // Periodic 0x206 MTR_MOTOR_FBK broadcast (50 Hz / 20 ms rate, offset 0 ms)
+            if (now_ms - last_fbk_ms >= mtr::kFeedbackPeriodMs) {
+                last_fbk_ms = now_ms;
+                can::Frame fr = g_motor.build_motor_feedback_frame();
+                g_can.send(fr);
+            }
 
-            // 0x502 MTR_NODE_STATUS at the same 50 Hz cadence (observational).
-            static uint8_t node_status_roll = 0;
-            can::gen::MtrNodeStatus ns{};
-            g_motor.fill_node_status(ns);
-            ns.rolling_counter = node_status_roll++;
-            ns.e2e_crc = 0;
-            can::Frame ns_fr{};
-            if (can::gen::encode_mtr_node_status(ns, ns_fr) == can::gen::CodecStatus::Ok) {
-                ns.e2e_crc = ::etrike::protocol::e2e::crc8_h2f(ns_fr.data.data(), 7u, 0u);
+            // Periodic 0x502 MTR_NODE_STATUS broadcast (50 Hz / 20 ms rate, offset 10 ms)
+            if (now_ms - last_status_ms >= mtr::kFeedbackPeriodMs) {
+                last_status_ms = now_ms;
+                static uint8_t node_status_roll = 0;
+                can::gen::MtrNodeStatus ns{};
+                g_motor.fill_node_status(ns);
+                ns.rolling_counter = node_status_roll++;
+                ns.e2e_crc = 0;
+                can::Frame ns_fr{};
                 if (can::gen::encode_mtr_node_status(ns, ns_fr) == can::gen::CodecStatus::Ok) {
-                    g_can.send(ns_fr);
+                    ns.e2e_crc = ::etrike::protocol::e2e::crc8_h2f(ns_fr.data.data(), 7u, 0u);
+                    if (can::gen::encode_mtr_node_status(ns, ns_fr) == can::gen::CodecStatus::Ok) {
+                        g_can.send(ns_fr);
+                    }
                 }
             }
         }

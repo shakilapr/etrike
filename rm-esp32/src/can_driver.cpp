@@ -28,6 +28,8 @@ bool IRAM_ATTR CanDriver::on_tx_done_(twai_node_handle_t,
     BaseType_t wake = pdFALSE;
     for (uint8_t index = 0; index < kTxSlots; ++index) {
         if (event->done_tx_frame == &self->tx_slots_[index].frame) {
+            uint8_t expected = index;
+            self->inflight_slot_.compare_exchange_strong(expected, 0xFF, std::memory_order_acq_rel);
             xQueueSendFromISR(self->free_tx_slots_, &index, &wake);
             break;
         }
@@ -45,8 +47,7 @@ bool IRAM_ATTR CanDriver::on_state_change_(twai_node_handle_t,
         self->bus_off_started_tick_.store(xTaskGetTickCountFromISR(), std::memory_order_relaxed);
         self->consecutive_bus_offs_.fetch_add(1, std::memory_order_relaxed);
         self->tx_resume_not_before_us_.store(INT64_MAX, std::memory_order_release);
-    } else if (event->old_sta == TWAI_ERROR_BUS_OFF
-               && event->new_sta == TWAI_ERROR_ACTIVE) {
+    } else if (event->new_sta != TWAI_ERROR_BUS_OFF) {
         self->recovery_in_progress_.store(false, std::memory_order_release);
         self->recovery_completed_pending_.store(true, std::memory_order_release);
         self->first_tx_pending_.store(true, std::memory_order_release);

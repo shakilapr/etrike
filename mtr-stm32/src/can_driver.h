@@ -173,19 +173,33 @@ public:
     // Service Bus-Off auto-recovery sequence per ISO 11898-1
     void service_recovery() {
         if (!initialized_) return;
-        // Check Protocol Status Register (PSR) for Bus-Off flag.
-        // Also check if HAL state went to error (can happen after direct HW access).
-        if ((hfdcan_.Instance->PSR & FDCAN_PSR_BO) == 0U
-            && hfdcan_.State != HAL_FDCAN_STATE_ERROR) {
+        const uint32_t now_ms = HAL_GetTick();
+        const bool is_bus_off = (hfdcan_.Instance->PSR & FDCAN_PSR_BO) != 0U;
+        const bool is_hal_err = (hfdcan_.State == HAL_FDCAN_STATE_ERROR);
+
+        if (!is_bus_off && !is_hal_err) {
+            recovery_in_progress_ = false;
             return;
         }
-        // Use HAL Stop/Start to reset both the hardware controller and HAL's
-        // internal state machine. Direct CCCR.INIT manipulation leaves hfdcan_.State
-        // corrupted, causing all subsequent TX calls to silently return HAL_ERROR.
+
+        // Debounce: allow hardware at least 150 ms to accumulate 128x11 recessive bits
+        // without repeatedly resetting the controller every 5 ms.
+        if (recovery_in_progress_ && (now_ms - last_recovery_ms_ < 150)) {
+            return;
+        }
+
+        recovery_in_progress_ = true;
+        last_recovery_ms_ = now_ms;
+
+        // Reset HAL error state if controller state was corrupted
+        if (hfdcan_.State == HAL_FDCAN_STATE_ERROR) {
+            hfdcan_.State = HAL_FDCAN_STATE_READY;
+        }
+
         HAL_FDCAN_Stop(&hfdcan_);
-        // Clear CCCR.INIT through the HAL-visible path to trigger 128x11-bit recovery
         CLEAR_BIT(hfdcan_.Instance->CCCR, FDCAN_CCCR_INIT);
         HAL_FDCAN_Start(&hfdcan_);
+
         // Report the bus-off event with TEC/REC snapshot (BITFIELD16: tec 15:8, rec 7:0).
         if (diag_) {
             const std::uint32_t ecr = hfdcan_.Instance->ECR;
@@ -194,6 +208,7 @@ public:
             diag_->raise(etrike::diagnostics::DiagId::MtrFdcanBusOff,
                          static_cast<std::uint16_t>((tec << 8u) | rec));
         }
+
         // Re-arm RX FIFO 0 interrupt which is cleared by HAL_FDCAN_Stop
         HAL_FDCAN_ActivateNotification(&hfdcan_, FDCAN_IT_RX_FIFO0_NEW_MESSAGE, 0);
     }
@@ -253,6 +268,8 @@ private:
     FDCAN_HandleTypeDef& hfdcan_;
     etrike::diagnostics::DiagnosticManager* diag_{nullptr};  // Phase B reporting (optional)
     bool initialized_{false};
+    bool recovery_in_progress_{false};
+    uint32_t last_recovery_ms_{0};
     uint32_t tx_count_{0};
     uint32_t tx_dropped_{0};
     uint32_t rx_overflow_{0};

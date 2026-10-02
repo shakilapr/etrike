@@ -55,7 +55,7 @@ static std::atomic<bool>     g_seb_seen{false};
 static std::atomic<uint32_t> g_seb_err_info{0};
 
 static bool send_can_frame(can::Frame& fr) {
-    if (!g_can.send(fr, 2)) {
+    if (!g_can.send(fr, 10)) {
         g_can_tx_fail.fetch_add(1, std::memory_order_relaxed);
         return false;
     }

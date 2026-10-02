@@ -197,9 +197,9 @@ private:
             send(ses_fr);
         }
 
-        // 2. Braking: 0x7B9 VCU_SEB_REQ (50 Hz / 20 ms per SEB specification)
+        // 2. Braking: 0x7B9 VCU_SEB_REQ (50 Hz / 20 ms per SEB specification, interleaved on odd ticks)
         //    Raw wire-frame encoding (Byte6=0x00, Byte7=0x00, zero-security bypass).
-        if (tick_10ms % 2 == 0) {
+        if (tick_10ms % 2 == 1) {
             can::custom::seb::Command seb_cmd{};
             seb_cmd.alignment_enable = false; // Normal braking: alignment MUST be false (true resets zero datum)
             seb_cmd.control_enable   = true;
@@ -233,7 +233,8 @@ private:
             send(drive_fr);
         }
 
-        // 4. Supervisor Emulation (10 Hz Heartbeat): 0x110 SYS_MODE_CMD + 0x113 SYS_PWR_CMD
+        // 4. Supervisor Emulation (10 Hz Heartbeat, interleaved across ticks to prevent TX queue bursts):
+        // 4a. 0x110 SYS_MODE_CMD (offset 0)
         if (tick_10ms % 10 == 0) {
             can::gen::SysModeCmd mode_cmd{};
             // MTR STM32 strictly requires AUTO mode (1) in 0x110 to accept CAN 0x204 RT_DRIVE_CMD
@@ -247,7 +248,10 @@ private:
             if (can::gen::encode_sys_mode_cmd(mode_cmd, mode_fr) == can::gen::CodecStatus::Ok) {
                 send(mode_fr);
             }
+        }
 
+        // 4b. 0x113 SYS_PWR_CMD (offset 3)
+        if (tick_10ms % 10 == 3) {
             can::gen::SysPwrCmd pwr_cmd{};
             // MTR requires a 0x113 OFF->ON power rearm edge after boot/reset
             // (mtr-stm32/src/motor_manager.h:166-180). Force power_state=0 for
@@ -260,7 +264,10 @@ private:
             if (can::gen::encode_sys_pwr_cmd(pwr_cmd, pwr_fr) == can::gen::CodecStatus::Ok) {
                 send(pwr_fr);
             }
+        }
 
+        // 4c. 0x011 SYS_SAFETY_STS (offset 6)
+        if (tick_10ms % 10 == 6) {
             // Emulated SYS safety authority (0x011 SYS_SAFETY_STS). MTR gates
             // ignition on safety_state_valid_, which is set ONLY by 0x011
             // (mtr-stm32/src/motor_manager.h:313/:194-212). Without it MTR never

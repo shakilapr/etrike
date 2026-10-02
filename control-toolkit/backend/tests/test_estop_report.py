@@ -31,7 +31,13 @@ def test_clear_when_nothing_active():
     r = build_estop_report([], host_latch=False)
     assert r["active"] is False
     assert r["causes"] == []
-    assert "clear" in r["summary"].lower()
+    assert "unconfirmed" in r["summary"].lower()
+
+    # With normal active telemetry
+    msgs = [_msg("SYS_HEARTBEAT", "low", 0x7FC, {"heartbeat_ok": 1, "can_ok": 1, "estop_active": 0})]
+    r_live = build_estop_report(msgs, host_latch=False)
+    assert r_live["active"] is False
+    assert "clear" in r_live["summary"].lower()
 
 
 def test_host_latch_only():

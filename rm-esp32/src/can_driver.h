@@ -87,12 +87,11 @@ public:
         config.fail_retry_cnt = 0;
         config.flags.enable_self_test = 1;
 #else
-        // Keep retrying on arbitration loss / missing ACK (matches rt-esp32).
-        // Single-shot (0) abandons the frame and walks TEC to Bus-Off, which
-        // stops the transceiver driving the bus.
+        // Enable hardware auto-retransmit so frames losing arbitration to MTR
+        // (e.g. 0x204 losing to 0x120) automatically retry and deliver.
         config.fail_retry_cnt = -1;
 #endif
-        config.tx_queue_depth = kTxSlots;
+        config.tx_queue_depth = 1;
 
         esp_err_t result = twai_new_node_onchip(&config, &node_);
         if (result == ESP_OK) {
@@ -147,7 +146,11 @@ public:
         slot.frame.buffer_len = dlc;
         if (dlc) std::memcpy(slot.data, source.data.data(), dlc);
 
+        inflight_slot_.store(index, std::memory_order_release);
+        inflight_us_.store(esp_timer_get_time(), std::memory_order_release);
+
         if (twai_node_transmit(node_, &slot.frame, timeout_ms) != ESP_OK) {
+            inflight_slot_.store(0xFF, std::memory_order_release);
             xQueueSend(free_tx_slots_, &index, 0);
             return false;
         }
@@ -167,7 +170,7 @@ public:
     }
 
     bool recovery() {
-        if (!initialized_ || !node_) return false;
+        if (!initialized_ || !node_) return init();
         if (xSemaphoreTake(control_mutex_, pdMS_TO_TICKS(200)) != pdTRUE) return false;
         twai_node_status_t info{};
         esp_err_t result = twai_node_get_info(node_, &info, nullptr);
@@ -177,13 +180,46 @@ public:
             ESP_LOGW("can", "state=bus_off recovery=start attempt=%lu tec=%u rec=%u",
                      static_cast<unsigned long>(attempt), info.tx_error_count, info.rx_error_count);
             result = twai_node_recover(node_);
-            recovery_in_progress_.store(result == ESP_OK, std::memory_order_release);
+            if (result != ESP_OK) {
+                xSemaphoreGive(control_mutex_);
+                return init();
+            }
+            recovery_in_progress_.store(true, std::memory_order_release);
+        } else if (result == ESP_OK && info.state != TWAI_ERROR_BUS_OFF) {
+            state_.store(info.state, std::memory_order_release);
+            recovery_in_progress_.store(false, std::memory_order_release);
         }
         xSemaphoreGive(control_mutex_);
         return result == ESP_OK;
     }
 
     bool service_recovery(int64_t now_us) {
+        // Reclaim leaked in-flight slot if on_tx_done_ never arrived (e.g. arbitration loss)
+        {
+            constexpr int64_t kTxSlotLeakTimeoutUs = 50'000;  // 50 ms
+            const uint8_t idx = inflight_slot_.load(std::memory_order_acquire);
+            if (idx < kTxSlots) {
+                const int64_t sent_us = inflight_us_.load(std::memory_order_acquire);
+                if (sent_us > 0 && now_us - sent_us > kTxSlotLeakTimeoutUs) {
+                    uint8_t expected = idx;
+                    if (inflight_slot_.compare_exchange_strong(
+                            expected, 0xFF, std::memory_order_acq_rel)) {
+                        xQueueSend(free_tx_slots_, &idx, 0);
+                        ESP_LOGW("can", "TX slot %u reclaimed after %lld ms without tx_done",
+                                 idx, static_cast<long long>((now_us - sent_us) / 1000));
+                    }
+                }
+            }
+        }
+
+        twai_node_status_t info{};
+        if (node_ && twai_node_get_info(node_, &info, nullptr) == ESP_OK) {
+            if (info.state != TWAI_ERROR_BUS_OFF && state_.load(std::memory_order_acquire) == TWAI_ERROR_BUS_OFF) {
+                state_.store(info.state, std::memory_order_release);
+                recovery_in_progress_.store(false, std::memory_order_release);
+                recovery_completed_pending_.store(true, std::memory_order_release);
+            }
+        }
         if (recovery_completed_pending_.exchange(false, std::memory_order_acq_rel)) {
             const TickType_t elapsed = xTaskGetTickCount()
                 - bus_off_started_tick_.load(std::memory_order_relaxed);
@@ -209,8 +245,14 @@ public:
         }
         if (state_.load(std::memory_order_acquire) != TWAI_ERROR_BUS_OFF) return false;
         const int64_t last = last_recovery_attempt_us_.load(std::memory_order_relaxed);
-        if (recovery_in_progress_.load(std::memory_order_acquire)
-            && now_us - last < 3'000'000) return false;
+        if (recovery_in_progress_.load(std::memory_order_acquire)) {
+            if (now_us - last > 300'000) {
+                ESP_LOGW("can", "recovery stalled (>300ms), reinitializing TWAI peripheral");
+                recovery_in_progress_.store(false, std::memory_order_release);
+                return init();
+            }
+            return false;
+        }
         return recovery();
     }
 
@@ -231,11 +273,9 @@ public:
     }
 
 private:
-    static constexpr uint8_t kTxSlots = 4;
-    static int64_t recovery_backoff_us_(uint32_t streak) {
-        const uint32_t shift = streak > 4 ? 4 : (streak > 0 ? streak - 1 : 0);
-        const int64_t delay = 500'000LL << shift;
-        return delay > 5'000'000LL ? 5'000'000LL : delay;
+    static constexpr uint8_t kTxSlots = 1;
+    static int64_t recovery_backoff_us_(uint32_t) {
+        return 50'000LL;  // 50 ms max backoff
     }
     struct TxSlot {
         twai_frame_t frame{};
@@ -270,6 +310,8 @@ private:
     }
 
     void reset_tx_slots_() {
+        inflight_slot_.store(0xFF, std::memory_order_release);
+        inflight_us_.store(0, std::memory_order_release);
         xQueueReset(free_tx_slots_);
         for (uint8_t index = 0; index < kTxSlots; ++index) {
             xQueueSend(free_tx_slots_, &index, 0);
@@ -283,6 +325,8 @@ private:
     SemaphoreHandle_t control_mutex_{nullptr};
     TxSlot tx_slots_[kTxSlots]{};
     bool initialized_{false};
+    std::atomic<uint8_t> inflight_slot_{0xFF};
+    std::atomic<int64_t> inflight_us_{0};
     std::atomic<twai_error_state_t> state_{TWAI_ERROR_ACTIVE};
     std::atomic<bool> recovery_in_progress_{false};
     std::atomic<bool> recovery_completed_pending_{false};

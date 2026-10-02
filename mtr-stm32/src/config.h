@@ -8,8 +8,11 @@
 
 namespace mtr {
 
-// ── CAN Bus (FDCAN1 Classic CAN @ 500 kbit/s) ──────────────────────
+// ── CAN Bus (Classic CAN @ 500 kbit/s) ────────────────────────────
 constexpr int kCanBitrateHz = 500'000;
+// When false: MTR operates in receive-only mode (matching mtr-stm architecture §1).
+// Controls relays and DAC from CAN without broadcasting frames or expecting ACKs.
+constexpr bool kEnableCanBroadcast = false;
 // PA11: FDCAN1_RX (AF9)
 // PA12: FDCAN1_TX (AF9)
 
