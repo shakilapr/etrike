@@ -47,7 +47,7 @@ public:
         hfdcan_.Instance = FDCAN1;
         hfdcan_.Init.FrameFormat = FDCAN_FRAME_CLASSIC;
         hfdcan_.Init.Mode = FDCAN_MODE_NORMAL;
-        hfdcan_.Init.AutoRetransmission = ENABLE;
+        hfdcan_.Init.AutoRetransmission = DISABLE;
         hfdcan_.Init.TransmitPause = DISABLE;
         hfdcan_.Init.ProtocolException = DISABLE;
 

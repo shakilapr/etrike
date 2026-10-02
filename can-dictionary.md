@@ -393,6 +393,7 @@ Byte layout (big-endian): Byte 0=rx_overflow(6b)+can_state(2b), 1=tec, 2=rec, 3=
 ### 0x500 — SYS_NODE_STATUS
 
 Execution/readiness/blocker status + cockpit hardware inputs + relay/lamp outputs.
+Per-bit detail: `docs/communications/sys-frame-bit-reference.md`.
 
 | Property | Value |
 |----------|-------|
