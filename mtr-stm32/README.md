@@ -17,7 +17,8 @@ Dedicated STM32G431CBU6 motor actuation and relay control board for the E-Trike 
     $$\text{Code} \in [655, 1966] \implies \approx 0.8\text{ V}\dots 2.4\text{ V}$$
 - **Canonical CAN Integration**:
   - **RX**: Decodes `0x204` (`RT_DRIVE_CMD`), `0x110` (`SYS_MODE_CMD`, mode authority), `0x113` (`SYS_PWR_CMD`, power authority), and `0x001` (`SAFETY_ESTOP`).
-  - **TX**: Broadcasts `0x120` (`SYS_THROTTLE_STS`) at 100 Hz and `0x206` (`MTR_MOTOR_FBK`) at 50 Hz.
+  - **TX** *(compiled out while `kEnableCanBroadcast = false` — receive-only bench mode)*: broadcasts `0x120` (`SYS_THROTTLE_STS`) at 100 Hz, `0x206` (`MTR_MOTOR_FBK`) at 50 Hz, and `0x502` (`MTR_NODE_STATUS`) at 50 Hz; the 0x631 diagnostic drain is gated on the same flag.
+  - **Bench TX probe**: set `kTxProbe = true` to send one `0x206`/s and read the TX-path verdict off the PC6 status LED (solid = TX proven, slow = ACK error, fast = transceiver TX-stage error, dark = Bus-Off).
   - **Gap #15 ESTOP Confirmation**: When ESTOP occurs, `0x206` asserts `kMtrFaultEstopActive`, providing SYS with redundant hardware confirmation.
 - **500 ms Comms Watchdog**:
   - Automatically de-energizes all relays and forces DAC to $0.0\text{ V}$ on CAN silence.

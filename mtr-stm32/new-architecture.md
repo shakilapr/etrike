@@ -43,9 +43,22 @@ Jetson ─► RT ESP32-S3                FlySky RC ─► RM ESP32
 
 `src/config.h:16` sets `kEnableCanBroadcast = false`: the fitted transceiver is receive-only, and any TX attempt produces bit errors on PA12 → Bus-Off. Therefore:
 
-- The periodic TX blocks in `main.cpp:169-200` (0x120 / 0x206 / 0x502) are compiled out via `if constexpr`.
+- The periodic TX blocks in `main.cpp` (0x120 / 0x206 / 0x502) are compiled out via `if constexpr`.
+- The **0x631 diagnostic drain is gated on the same flag** — receive-only mode emits nothing: a diagnostic TX attempt into a non-ACKing bus racks TEC on every try, and the accumulated churn reproduces the bus-off/recovery cycle that halts RX and trips the drive-command watchdog. Pending reports accumulate in the bounded `DiagnosticManager` queue until TX is enabled.
 - TX-capable builders remain in the code (`build_throttle_status_frame`, `build_motor_feedback_frame`, `fill_node_status`) and are exercised by native tests.
-- **Exception:** diagnostic reports (`0x631`) are emitted unconditionally through `CanDriver::send()` (`main.cpp:149-165`); on a receive-only transceiver these adds simply fail/never ACK and do not gate reception logic.
+
+### 1.3 Bench TX Diagnostic Probe (`kTxProbe`)
+
+Until the physical TX path is proven, a bench-only probe (`constexpr bool kTxProbe`, `config.h:77`, default `false`) sends **one 0x206 per second** and reports the outcome on the PC6 status LED — the only output channel available when TX itself is broken, since a failing frame cannot carry its own error report onto the bus. Verdict coding (judge ≥3 s after power-on; LED starts solid):
+
+| PC6 LED | Meaning |
+|---|---|
+| **Solid ON** | Frame transmitted: TXBRP drained, TEC unchanged, LEC clean → TX path proven |
+| **Slow blink** (1 Hz) | LEC 3 — ACK error: frame reached the bus, nobody acknowledged (partner/termination) |
+| **Fast blink** (5 Hz) | LEC 1/2/4/5/6 — bus-level error: transceiver TX stage dead, silent, or miswired |
+| **Dark** | Bus-Off latched (controller disconnected itself) |
+
+Mechanics: verdict comes from the `CanDriver` TX-health shadow (`service_recovery()` is the **single PSR/ECR reader** — PSR.LEC is read-destructive — exposing `tx_health()`/`tx_pending()`); rate-coded patterns avoid human flash-counting (no double/triple-blink discrimination). Probe builds compile out the PC6 relay-transition toggle and the 0x631 drain; all production safety logic (authority supervision, watchdogs, failsafe) runs unchanged. The 1 Hz rate violates the 0x206 20 ms contract — keep RT offline (bench topology 2) or expect RT-side staleness flags.
 
 ---
 
@@ -296,6 +309,8 @@ CI runs `pio test -e native` on `mtr-stm32/**` changes (`.github/workflows/ci.ym
 | Constant | Value | Meaning |
 |---|---|---|
 | `kCanBitrateHz` | 500 000 | Classic CAN Low bus |
+| `kEnableCanBroadcast` | `false` | Receive-only mode: periodic TX and 0x631 drain compiled out |
+| `kTxProbe` | `false` | Bench TX diagnostic probe (1 Hz 0x206 + PC6 LED verdict) |
 | `kMainLoopPeriodMs` | 5 | Control tick |
 | `kWatchdogTimeoutMs` | 500 | Generic any-frame comms deadman |
 | `kDriveCmdTimeoutMs` | 150 | Dedicated 0x204 watchdog (while drive expected) |
