@@ -202,10 +202,11 @@ public:
         }
 
         // Report the bus-off event with TEC/REC snapshot (BITFIELD16: tec 15:8, rec 7:0).
+        // RM0440 FDCAN_ECR layout: TEC[7:0] = bits 7:0, REC[6:0] = bits 14:8.
         if (diag_) {
             const std::uint32_t ecr = hfdcan_.Instance->ECR;
-            const std::uint16_t tec = static_cast<std::uint16_t>((ecr >> 8) & 0xFFu);
-            const std::uint16_t rec = static_cast<std::uint16_t>(ecr & 0xFFu);
+            const std::uint16_t tec = static_cast<std::uint16_t>(ecr & 0xFFu);
+            const std::uint16_t rec = static_cast<std::uint16_t>((ecr >> 8) & 0x7Fu);
             diag_->raise(etrike::diagnostics::DiagId::MtrFdcanBusOff,
                          static_cast<std::uint16_t>((tec << 8u) | rec));
         }
