@@ -148,20 +148,26 @@ int main(void) {
 
             // Phase B: bounded drain of pending diagnostic reports to 0x631 (MTR_DIAG_EVENT_RPT).
             // pop_pending_report() is non-blocking; cap frames per iteration to avoid TX floods.
-            static constexpr std::uint8_t kDiagDrainBudget = 8;
-            std::uint8_t diag_budget = kDiagDrainBudget;
-            etrike::diagnostics::DiagReport diag_rpt{};
-            while (diag_budget-- > 0 && g_diag.pop_pending_report(diag_rpt)) {
-                can::gen::MtrDiagEventRpt out{};
-                out.diag_id = static_cast<std::uint16_t>(diag_rpt.id);
-                out.state = static_cast<std::uint8_t>(diag_rpt.state);
-                out.occurrence_count = diag_rpt.occurrence_count;
-                out.report_counter = diag_rpt.report_counter;
-                out.flags = diag_rpt.flags;
-                out.snapshot_data = diag_rpt.snapshot_data;
-                can::Frame diag_frame{};
-                can::gen::encode_mtr_diag_event_rpt(out, diag_frame);
-                g_can.send(diag_frame);
+            // Gated on kEnableCanBroadcast: in receive-only mode a diagnostic TX attempt
+            // cannot be ACKed, racks up TEC, and — at broadcast rates — would reproduce the
+            // bus-off churn that halts RX and trips the drive-command watchdog. Pending
+            // reports simply accumulate (bounded, saturating counters) until TX is enabled.
+            if constexpr (mtr::kEnableCanBroadcast) {
+                static constexpr std::uint8_t kDiagDrainBudget = 8;
+                std::uint8_t diag_budget = kDiagDrainBudget;
+                etrike::diagnostics::DiagReport diag_rpt{};
+                while (diag_budget-- > 0 && g_diag.pop_pending_report(diag_rpt)) {
+                    can::gen::MtrDiagEventRpt out{};
+                    out.diag_id = static_cast<std::uint16_t>(diag_rpt.id);
+                    out.state = static_cast<std::uint8_t>(diag_rpt.state);
+                    out.occurrence_count = diag_rpt.occurrence_count;
+                    out.report_counter = diag_rpt.report_counter;
+                    out.flags = diag_rpt.flags;
+                    out.snapshot_data = diag_rpt.snapshot_data;
+                    can::Frame diag_frame{};
+                    can::gen::encode_mtr_diag_event_rpt(out, diag_frame);
+                    g_can.send(diag_frame);
+                }
             }
         }
 
