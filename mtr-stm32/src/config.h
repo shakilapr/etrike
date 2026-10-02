@@ -10,9 +10,10 @@ namespace mtr {
 
 // ── CAN Bus (Classic CAN @ 500 kbit/s) ────────────────────────────
 constexpr int kCanBitrateHz = 500'000;
-// When false: MTR operates in receive-only mode (matching mtr-stm architecture §1).
-// Controls relays and DAC from CAN without broadcasting frames or expecting ACKs.
-constexpr bool kEnableCanBroadcast = true;
+// Pure receive-only mode (strictly matches mtr-stm architecture §1, §6, §13).
+// MTR hardware transceiver is receive-only. Attempting to transmit triggers
+// bus bit errors on PA12, causing Bus-Off and tripping the 150ms relay watchdog.
+constexpr bool kEnableCanBroadcast = false;
 // PA11: FDCAN1_RX (AF9)
 // PA12: FDCAN1_TX (AF9)
 
