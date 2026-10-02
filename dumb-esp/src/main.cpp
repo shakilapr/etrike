@@ -99,7 +99,8 @@ static std::atomic<bool>     g_rearm_ses_req{false};
 // ─── Rolling Counters ────────────────────────────────────────────────────────
 static uint8_t g_roll_ses{0};
 static uint8_t g_roll_seb{0};
-static uint8_t g_roll_rt_hb{0};
+static uint8_t g_roll_rt_hb_low{0};
+static uint8_t g_roll_rt_hb_high{0};
 static uint8_t g_roll_sys_hb{0};
 static uint8_t g_roll_rt_motion{0};
 static uint8_t g_roll_sys_safety_low{0};
@@ -353,8 +354,21 @@ static void emit_high_rt_motion(int16_t speed_mmps, int32_t yaw_mrad_s, uint8_t 
     g_can_high.send(fr, 2);
 }
 
-// 0x501 RT_NODE_STATUS — RT node state (10 Hz, both buses)
-static void emit_rt_node_status() {
+// 0x501 RT_NODE_STATUS — RT node state (10 Hz, independent per bus)
+static void emit_low_rt_node_status() {
+    Frame fr = Frame::standard(0x501u, 8);
+    fr.data[0] = 3u;    // node_state = ACTIVE (3)
+    fr.data[1] = 0u;    // block_mask low
+    fr.data[2] = 0u;    // block_mask high
+    fr.data[3] = 0x12u; // ready=1, output_enabled=1
+    fr.data[4] = 0u;
+    fr.data[5] = 0u;
+    fr.data[6] = 0u;
+    fr.data[7] = 0u;
+    g_can_low.send(fr, 2);
+}
+
+static void emit_high_rt_node_status() {
     Frame fr = Frame::standard(0x501u, 8);
     fr.data[0] = 3u;    // node_state = ACTIVE (3)
     fr.data[1] = 0u;    // block_mask low
@@ -365,11 +379,10 @@ static void emit_rt_node_status() {
     fr.data[6] = 0u;
     fr.data[7] = 0u;
     g_can_high.send(fr, 2);
-    g_can_low.send(fr, 2);
 }
 
-// 0x500 SYS_NODE_STATUS — SYS node state (5 Hz, both buses)
-static void emit_sys_node_status() {
+// 0x500 SYS_NODE_STATUS — SYS node state (10 Hz, independent per bus)
+static void emit_low_sys_node_status() {
     Frame fr = Frame::standard(0x500u, 6);
     fr.data[0] = 0x07u; // cmd_received | cmd_nonzero | cmd_executing
     fr.data[1] = 0x01u; // system_ready
@@ -377,11 +390,21 @@ static void emit_sys_node_status() {
     fr.data[3] = 0u;    // block_mask_high
     fr.data[4] = 0u;    // hw inputs (none pressed)
     fr.data[5] = 0x09u; // power_12v_relay_on | ready_bulb_on
-    g_can_high.send(fr, 2);
     g_can_low.send(fr, 2);
 }
 
-// 0x310 STEER_DIAG — Steer feedback report to Autoware (20 Hz)
+static void emit_high_sys_node_status() {
+    Frame fr = Frame::standard(0x500u, 6);
+    fr.data[0] = 0x07u;
+    fr.data[1] = 0x01u;
+    fr.data[2] = 0u;
+    fr.data[3] = 0u;
+    fr.data[4] = 0u;
+    fr.data[5] = 0x09u;
+    g_can_high.send(fr, 2);
+}
+
+// 0x310 STEER_DIAG — Steer feedback report to Autoware (10 Hz)
 static void emit_high_steer_diag(uint16_t angle_raw) {
     Frame fr = Frame::standard(can::kIdSteerDiag, 8);
     be_write_u16(&fr.data[0], angle_raw); // 30000 = 0.0°
@@ -393,7 +416,7 @@ static void emit_high_steer_diag(uint16_t angle_raw) {
 }
 
 // 0x210 RT_STATE_RPT — Confirms mode to Autoware & Control Toolkit (10 Hz)
-static void emit_rt_state(bool reversing, bool host_active) {
+static void emit_low_rt_state(bool reversing, bool host_active) {
     Frame fr = Frame::standard(can::kIdRtStateRpt, 6);
     fr.data[0] = (g_mode_auto.load(std::memory_order_relaxed) && host_active) ? 1u : 0u; // mode: 1=AUTO, 0=MANUAL
     fr.data[1] = 0u;                      // safety_state = 0 (Healthy), estop_reason = 0
@@ -401,8 +424,18 @@ static void emit_rt_state(bool reversing, bool host_active) {
     fr.data[3] = 0u;                      // rx_overflow = 0
     fr.data[4] = 0xFFu;                   // task_health = all healthy
     fr.data[5] = host_active ? 2u /*STEER_ACTIVE*/ : 1u /*STEER_LISTEN_SYNC*/;
-    g_can_high.send(fr, 2);
     g_can_low.send(fr, 2);
+}
+
+static void emit_high_rt_state(bool reversing, bool host_active) {
+    Frame fr = Frame::standard(can::kIdRtStateRpt, 6);
+    fr.data[0] = (g_mode_auto.load(std::memory_order_relaxed) && host_active) ? 1u : 0u;
+    fr.data[1] = 0u;
+    fr.data[2] = reversing ? 1u : 0u;
+    fr.data[3] = 0u;
+    fr.data[4] = 0xFFu;
+    fr.data[5] = host_active ? 2u /*STEER_ACTIVE*/ : 1u /*STEER_LISTEN_SYNC*/;
+    g_can_high.send(fr, 2);
 }
 
 // 0x011 SYS_SAFETY_STS — Confirms ESTOP clear & HB OK to Autoware (10 Hz)
@@ -416,34 +449,49 @@ static void emit_high_sys_safety(uint8_t lights) {
     g_can_high.send(fr, 2);
 }
 
-// 0x120 SYS_THROTTLE_STS — Velocity report (10 Hz, both buses)
-static void emit_sys_throttle(int16_t speed_mmps) {
+// 0x120 SYS_THROTTLE_STS — Velocity report (10 Hz)
+static void emit_low_sys_throttle(int16_t speed_mmps) {
     Frame fr = Frame::standard(can::kIdSysThrottleSts, 2);
     be_write_i16(fr.data.data(), speed_mmps);
-    g_can_high.send(fr, 2);
     g_can_low.send(fr, 2);
 }
 
-// 0x7FD RT_HEARTBEAT — RT keepalive (2 Hz)
-static void emit_rt_heartbeat() {
-    Frame fr = Frame::standard(can::kIdRtHeartbeat, 2);
-    fr.data[0] = g_roll_rt_hb++;
-    fr.data[1] = 0xFDu; // bit0=heartbeat_ok, bit1=estop(0), bit2=mode_auto, bit3=can_ok, bit4-7=tasks_ok
+static void emit_high_sys_throttle(int16_t speed_mmps) {
+    Frame fr = Frame::standard(can::kIdSysThrottleSts, 2);
+    be_write_i16(fr.data.data(), speed_mmps);
     g_can_high.send(fr, 2);
-    g_can_low.send(fr, 20);
 }
 
-// 0x7FE SYS_HEARTBEAT — SYS keepalive (2 Hz, Low bus ONLY per protocol contract)
-static void emit_sys_heartbeat() {
+// 0x7FD RT_HEARTBEAT — RT keepalive (10 Hz)
+static void emit_low_rt_heartbeat() {
+    Frame fr = Frame::standard(can::kIdRtHeartbeat, 2);
+    fr.data[0] = g_roll_rt_hb_low++;
+    const bool is_auto = g_mode_auto.load(std::memory_order_relaxed);
+    fr.data[1] = is_auto ? 0xFDu : 0xF9u; // bit0=hb_ok, bit1=estop(0), bit2=auto, bit3=can_ok, bit4-7=tasks_ok
+    g_can_low.send(fr, 2);
+}
+
+static void emit_high_rt_heartbeat() {
+    Frame fr = Frame::standard(can::kIdRtHeartbeat, 2);
+    fr.data[0] = g_roll_rt_hb_high++;
+    const bool is_auto = g_mode_auto.load(std::memory_order_relaxed);
+    fr.data[1] = is_auto ? 0xFDu : 0xF9u;
+    g_can_high.send(fr, 2);
+}
+
+// 0x7FE SYS_HEARTBEAT — SYS keepalive (10 Hz, Low bus ONLY per protocol contract)
+static void emit_low_sys_heartbeat() {
     Frame fr = Frame::standard(0x7FEu, 2);
     fr.data[0] = g_roll_sys_hb++;
-    fr.data[1] = 0xFDu; // bit0=heartbeat_ok, bit1=estop(0), bit2=mode_auto, bit3=can_ok, bit4-7=tasks_ok
-    g_can_low.send(fr, 20);
+    const bool is_auto = g_mode_auto.load(std::memory_order_relaxed);
+    // bit0=heartbeat_ok, bit1=estop(0), bit2=mode_auto, bit3=can_ok, bit4=task_safety_ok,
+    // bit5=task_brake_ok, bit6=task_dispatch_ok, bit7=task_can_tx_ok
+    fr.data[1] = is_auto ? 0xFDu : 0xF9u;
+    g_can_low.send(fr, 2);
 }
 
 // 0x600 SYS_DIAG_RPT — Host diagnostic keepalive (1 Hz, pure ECU/bus health)
-static void emit_sys_diag(bool braking) {
-    (void)braking;
+static void emit_low_sys_diag() {
     uint8_t low_tec = 0, low_rec = 0;
     g_can_low.get_error_counters(low_tec, low_rec);
     const auto health = g_can_low.health_snapshot();
@@ -458,12 +506,29 @@ static void emit_sys_diag(bool braking) {
     fr.data[5] = 0u;                  // mcu_reset_reason = POWER_ON
     const uint16_t uptime = static_cast<uint16_t>(esp_timer_get_time() / 1'000'000);
     be_write_u16(&fr.data[6], uptime);
-    g_can_high.send(fr, 2);
     g_can_low.send(fr, 2);
 }
 
-// 0x620 RT_DIAG_RPT — RT diagnostic keepalive (1 Hz)
-static void emit_rt_diag() {
+static void emit_high_sys_diag() {
+    uint8_t low_tec = 0, low_rec = 0;
+    g_can_low.get_error_counters(low_tec, low_rec);
+    const auto health = g_can_low.health_snapshot();
+    const uint8_t can_state = static_cast<uint8_t>(health.state);
+
+    Frame fr = Frame::standard(can::kIdSysDiagRpt, 8);
+    fr.data[0] = can_state & 0x03u;
+    fr.data[1] = low_tec;
+    fr.data[2] = low_rec;
+    fr.data[3] = 0xFFu;
+    fr.data[4] = 120u;
+    fr.data[5] = 0u;
+    const uint16_t uptime = static_cast<uint16_t>(esp_timer_get_time() / 1'000'000);
+    be_write_u16(&fr.data[6], uptime);
+    g_can_high.send(fr, 2);
+}
+
+// 0x620 RT_DIAG_RPT — RT diagnostic keepalive (1 Hz, High CAN)
+static void emit_high_rt_diag() {
     uint8_t high_tec = 0, high_rec = 0;
     g_can_high.get_error_counters(high_tec, high_rec);
     Frame fr = Frame::standard(0x620u, 8);
@@ -476,7 +541,6 @@ static void emit_rt_diag() {
     fr.data[6] = 0u;                                // mcp_recovery_attempts
     fr.data[7] = g_roll_rt_diag++;
     g_can_high.send(fr, 2);
-    g_can_low.send(fr, 2);
 }
 
 // ─── FreeRTOS Tasks ──────────────────────────────────────────────────────────
@@ -513,7 +577,11 @@ static void emit_rt_diag() {
         const int64_t now_us = esp_timer_get_time();
         g_can_low.service_recovery(now_us);
         if (g_can_high.bus_off()) {
-            g_can_high.recover();
+            static int64_t last_mcp_recover_us = 0;
+            if (now_us - last_mcp_recover_us > 1'000'000) {
+                last_mcp_recover_us = now_us;
+                g_can_high.recover();
+            }
         }
 
         // ── Real Actuator & Host Liveness ────────────────────────────
@@ -616,63 +684,94 @@ static void emit_rt_diag() {
             : static_cast<uint16_t>(ses_angle_raw);
 
         // ═════════════════════════════════════════════════════════════
-        //  A. LOW CAN EMISSIONS (Direct Actuator Control)
+        //  A. LOW & HIGH CONTINUOUS EMISSIONS (100 Hz)
         // ═════════════════════════════════════════════════════════════
-        // 100 Hz: RT_DRIVE_CMD
+        // 100 Hz: RT_DRIVE_CMD on Low CAN
         emit_low_rt_drive(motor_speed_mmps, gear_in);
 
-        // 50 Hz: Actuator commands (SES + SEB)
-        // Silent stop: only emit active actuator commands when host is driving
-        if (tick % 2u == 0u) {
+        // 100 Hz: RT_MOTION_RPT on High CAN (satisfies Autoware 100ms watchdog)
+        emit_high_rt_motion(telemetry_speed, yaw_out, gear_in);
+
+        // ═════════════════════════════════════════════════════════════
+        //  B. 10-PHASE INTERLEAVED SCHEDULE (10 Hz & 50 Hz Emissions)
+        // ═════════════════════════════════════════════════════════════
+        switch (tick % 10u) {
+        case 0u:
+            // 50 Hz: SES Actuator command
             if (host_active || g_rearm_ses_ticks > 0) {
                 emit_low_ses(ses_angle_raw, motor_speed_mmps, ses_armed);
             }
+            break;
+
+        case 1u:
+            // 10 Hz: SYS Mode & RT State reports
+            emit_low_sys_mode();
+            emit_low_rt_state(gear_in == 3 /*R*/, host_active);
+            emit_high_rt_state(gear_in == 3 /*R*/, host_active);
+            break;
+
+        case 2u:
+            // 50 Hz: SEB Actuator command
             if (host_active) {
                 emit_low_seb(seb_stroke_raw, host_active);
             }
-        }
+            break;
 
-        // 10 Hz: Phase Slot 1 (SYS Mode & Power)
-        if (tick % 10u == 1u) {
-            emit_low_sys_mode();
+        case 3u:
+            // 10 Hz: SYS Power command & Steer Diag
             emit_low_sys_pwr();
-        }
+            emit_high_steer_diag(telemetry_steer_raw);
+            break;
 
-        // 10 Hz: Phase Slot 3 (SYS Safety & Throttle)
-        if (tick % 10u == 3u) {
+        case 4u:
+            // 10 Hz: SYS Heartbeat (0x7FE Low) & SYS Node Status (0x500)
+            emit_low_sys_heartbeat();
+            emit_low_sys_node_status();
+            emit_high_sys_node_status();
+            break;
+
+        case 5u:
+            // 10 Hz: RT Heartbeats (0x7FD Low & High)
+            emit_low_rt_heartbeat();
+            emit_high_rt_heartbeat();
+            break;
+
+        case 6u:
+            // 50 Hz: SES Actuator command
+            if (host_active || g_rearm_ses_ticks > 0) {
+                emit_low_ses(ses_angle_raw, motor_speed_mmps, ses_armed);
+            }
+            break;
+
+        case 7u:
+            // 10 Hz: SYS Safety & Velocity reports
             emit_low_sys_safety(lights_in);
             emit_high_sys_safety(lights_in);
-            emit_sys_throttle(telemetry_speed);
+            emit_low_sys_throttle(telemetry_speed);
+            emit_high_sys_throttle(telemetry_speed);
+            break;
+
+        case 8u:
+            // 50 Hz: SEB Actuator command
+            if (host_active) {
+                emit_low_seb(seb_stroke_raw, host_active);
+            }
+            break;
+
+        case 9u:
+            // 10 Hz: RT Node Status (0x501)
+            emit_low_rt_node_status();
+            emit_high_rt_node_status();
+            break;
         }
 
-        // 10 Hz: Phase Slot 5 (Heartbeats for RT-L 0x7FD and SYS 0x7FE)
-        if (tick % 10u == 5u) {
-            emit_sys_heartbeat();
-            emit_rt_heartbeat();
+        // 1 Hz Diagnostics (staggered across 100-tick boundaries)
+        if (tick % 100u == 4u) {
+            emit_low_sys_diag();
+            emit_high_sys_diag();
         }
-
-        // 10 Hz: Phase Slot 7 (RT State & Node Status)
-        if (tick % 10u == 7u) {
-            emit_rt_state(gear_in == 3 /*R*/, host_active);
-            emit_rt_node_status();
-            emit_sys_node_status();
-        }
-
-        // ═════════════════════════════════════════════════════════════
-        //  B. HIGH CAN EMISSIONS (Jetson Autoware Gateway & Telemetry)
-        // ═════════════════════════════════════════════════════════════
-        // 100 Hz: RT_MOTION_RPT (satisfies Autoware 100ms watchdog)
-        emit_high_rt_motion(telemetry_speed, yaw_out, gear_in);
-
-        // 20 Hz: STEER_DIAG (Autoware steering status)
-        if (tick % 5u == 0u) {
-            emit_high_steer_diag(telemetry_steer_raw);
-        }
-
-        // 1 Hz: Diagnostics report
-        if (tick % 100u == 9u) {
-            emit_sys_diag(brake_kpa > 100);
-            emit_rt_diag();
+        if (tick % 100u == 5u) {
+            emit_high_rt_diag();
 
             const auto snap = g_can_low.health_snapshot();
             ESP_LOGI(TAG, "diag 1Hz: Low CAN state=%d tec=%u rec=%u [err: bit=%lu ack=%lu form=%lu stuff=%lu recov_attempts=%lu in_prog=%d]",
