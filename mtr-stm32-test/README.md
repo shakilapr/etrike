@@ -70,7 +70,9 @@ pio run -d mtr-stm32-test -e can_rx -t upload
 
 ### CAN Transmit Path Test (`env:can_tx`)
 
-Sends one `0x206` frame per second (DLC 4, payload zeros) with production-identical bit timing (500 kbit/s, 87.5 % sample point, matching `mtr-stm32`), then reads the FDCAN transmit outcome (`TXBRP` drained, `TEC`, `LEC`) and reports it on the **PC6 LED** — the only output channel available while the TX path itself is broken, since a failing frame cannot carry its own error report onto the bus. Judge **3+ seconds after power-on**:
+Sends one `0x206` **Classic CAN 2.0A** frame per second (DLC 4, payload zeros) with production-identical bit timing (500 kbit/s, 87.5 % sample point, matching `mtr-stm32`), then reads the FDCAN transmit outcome (`TXBRP` drained, `TEC`, `LEC`) and reports it on the **PC6 LED** — the only output channel available while the TX path itself is broken, since a failing frame cannot carry its own error report onto the bus. Judge **3+ seconds after power-on**:
+
+> **Wire format note:** "FDCAN" is the STM32G431's only CAN controller (there is no bxCAN on this silicon) — the bus itself runs **Classic CAN 2.0A**, matching the ESP32 TWAI peers. No FD frames, no bit-rate switching.
 
 | PC6 LED | Meaning |
 | :--- | :--- |

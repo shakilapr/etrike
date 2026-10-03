@@ -579,7 +579,7 @@ All firmware builds with PlatformIO. Three environments per ECU:
 |-----|-------|-----------|--------------|-------------|
 | RT | esp32-s3-devkitc-1 | espidf | `-D CONFIG_FREERTOS_HZ=1000 -D CONFIG_TWAI_ISR_IN_IRAM=1` | Same as Vehicle |
 | SYS | esp32-s3-devkitc-1 | espidf | `-D CONFIG_FREERTOS_HZ=1000 -D CONFIG_TWAI_ISR_IN_IRAM=1` | `TESTING` |
-| MTR | genericSTM32F103C8 | stm32cube | HAL calls | Same as Vehicle |
+| MTR | genericSTM32G431CB | stm32cube | `-D STM32G431xx -D USE_HAL_DRIVER` | — (env:native host tests) |
 | PWT | esp32-s3-devkitc-1 | espidf | 250k CAN | Same as Vehicle |
 
 **ESP-IDF requirement:** 5.0 or later (`#error` guard in both RT and SYS `main.cpp`).

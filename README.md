@@ -46,7 +46,7 @@ embedded control layer, connected over three CAN buses.
 |-----|----------|------|
 | RT | ESP32-S3 | Realtime kinematics, steering control, high↔low CAN gateway |
 | SYS | ESP32-S3 | Safety and mode authority, body control, EGAS L2 monitor |
-| MTR | STM32 | Planned motor actuation (hardware layer incomplete) |
+| MTR | STM32G431 | Motor & relay actuator node (`mtr-stm32`), currently receive-only CAN |
 | PWT | ESP32-S3 | Standalone 250 kbit/s powertrain node |
 
 **CAN buses:**
@@ -57,10 +57,15 @@ embedded control layer, connected over three CAN buses.
 | Low-level | 500 kbit/s | RT, SYS, MTR, SES (steering), SEB (brake) |
 | Powertrain | 250 kbit/s | PWT, DC-DC converter, motor controller (telemetry) |
 
-> **Deployment status:** RT high-to-low CAN is implemented. MTR hardware
-> initialization and ESTOP are incomplete, so no vehicle motor-actuation path
-> is approved. PWT has a single 250 kbit/s CAN interface and is not a
-> low-to-powertrain gateway.
+> All three buses run **Classic CAN 2.0A** — no CAN FD anywhere in the fleet.
+> The STM32G431's "FDCAN" peripheral in MTR is the controller *name*; it is
+> configured in Classic mode to match the ESP32 TWAI peers.
+
+> **Deployment status:** RT high-to-low CAN is implemented. MTR firmware is
+> functional on the bench (RM-driven commands) but runs receive-only CAN until
+> its transmit path is verified (see `mtr-stm32-test`, `env:can_tx`), so no
+> vehicle motor-actuation path is approved yet. PWT has a single 250 kbit/s
+> CAN interface and is not a low-to-powertrain gateway.
 
 Detailed architecture, CAN catalog, and design rationale are documented in
 [`architecture.md`](architecture.md). The complete bit-level CAN catalog is in
