@@ -83,9 +83,10 @@ Mechanics: verdict comes from the `CanDriver` TX-health shadow (`service_recover
 
 - **Core:** 16 MHz HSI direct, no PLL (`RCC_PLL_NONE`, `main.cpp:116-139`). `SYSCLK = HCLK = PCLK1 = PCLK2 = 16 MHz`, flash latency 0, `PWR_REGULATOR_VOLTAGE_SCALE1`.
 - **FDCAN kernel clock:** PCLK1 = 16 MHz (`can_driver.h:26-32`).
-- **Bit timing (500 kbit/s, 81.25 % sample point, `can_driver.h:54-60`):**
-  - Nominal prescaler 2 → t_q = 125 ns; Seg1 = 12 t_q, Seg2 = 3 t_q, SJW = 3.
-  - 1 + 12 + 3 = 16 t_q = 2.0 µs → 500 kbit/s. Sample point 81.25 %, aligned with the ESP32 TWAI nodes (80.0 %, SJW = 3).
+- **Bit timing (500 kbit/s, 87.5 % sample point, `can_driver.h:57-66`):**
+  - Nominal prescaler 2 → t_q = 125 ns; Seg1 = 13 t_q, Seg2 = 2 t_q, SJW = 2.
+  - 1 + 13 + 2 = 16 t_q = 2.0 µs → 500 kbit/s. Sample point **87.5 %** — the CiA 301 / CANopen standard for 500 kbit/s.
+  - **ESP32 peers** take IDF defaults (new `twai_new_node_onchip` API, bitrate-only → resolver `twai_node_timing_calc_param`, `esp_twai.c:34-55`): 20 t_q, **85.0 %** sample point, SJW = 1. Offset to MTR: 2.5 points — within tolerance; RM↔MTR reception is bench-proven at exactly this configuration (it was MTR's original timing).
 - **Loop cadence:** `HAL_Delay(1)` polling loop (`main.cpp:292`) with a 5 ms control tick (`kMainLoopPeriodMs`, `config.h:48`).
 - **DWT cycle counter** enabled at boot (`main.cpp:156-158`).
 
@@ -96,12 +97,12 @@ The entire Low bus is **Classic CAN 2.0A @ 500 kbit/s** — no FD frames, no bit
 | Term seen in the code | What it actually means |
 |---|---|
 | `FDCAN` (peripheral, `HAL_FDCAN_*`, `hfdcan1`) | The STM32G431's **only** CAN controller (M_CAN-based). There is **no bxCAN** on G4 silicon — the name is ST's peripheral naming, not the wire format. |
-| `Init.FrameFormat = FDCAN_FRAME_CLASSIC` (`can_driver.h:48`) | Classic CAN 2.0A frame format at the controller level. |
-| `TxHeader.BitRateSwitch = FDCAN_BRS_OFF`, `FDFormat = FDCAN_CLASSIC_CAN` (`can_driver.h:115-116`) | Every transmitted frame is a Classic frame — no BRS, no FD payload. |
-| `Data*` timing registers set to 1/1/1/1 (`can_driver.h:62-65`) | FD data-phase placeholders; unused in Classic mode. |
+| `Init.FrameFormat = FDCAN_FRAME_CLASSIC` (`can_driver.h:51`) | Classic CAN 2.0A frame format at the controller level. |
+| `TxHeader.BitRateSwitch = FDCAN_BRS_OFF`, `FDFormat = FDCAN_CLASSIC_CAN` (`can_driver.h:122-123`) | Every transmitted frame is a Classic frame — no BRS, no FD payload. |
+| `Data*` timing registers set to 1/1/1/1 (`can_driver.h:69-72`) | FD data-phase placeholders; unused in Classic mode. |
 | All frames ≤ 8 bytes, standard 11-bit IDs | `can::Frame` caps DLC at 8; all RX filters are standard-ID. |
 
-- **Peers:** RT/SYS/RM run ESP32 **TWAI** controllers — Classic CAN 2.0 hardware @ 500 kbit/s (`rt-esp32/src/can_driver_twai.cpp`). Sample points aligned: MTR 81.25 % vs TWAI 80.0 %, SJW = 3 (see `ee2abd42`).
+- **Peers:** RT/SYS/RM run ESP32 **TWAI** controllers — Classic CAN 2.0 hardware @ 500 kbit/s (`rt-esp32/src/can_driver_twai.cpp`). Sample points: peers **85.0 %** (IDF default resolver, SJW = 1) vs MTR **87.5 %** (CiA 301 standard, SJW = 2) — 2.5-point offset, interoperable; bench-proven configuration.
 - **Repo-wide scan:** zero FD frame configurations exist (`FDCAN_FRAME_FD` / `FDCAN_BRS_ON` / FD frame format: no matches outside vendor drivers).
 - **Drift guard:** the native suite pins this — `test_fdcan_driver_classic_guard` asserts Classic init format and Classic TX headers (see §9.2), so an accidental FD switch fails CI instead of silently breaking bus parity.
 
@@ -595,6 +596,7 @@ probe_tick(now):
 | Constant | Value | Meaning |
 |---|---|---|
 | `kCanBitrateHz` | 500 000 | Classic CAN Low bus |
+| Nominal timing | prescaler 2, 1+13+2 = 16 Tq, SJW 2 | 500 kbit/s @ 87.5 % sample point (CiA 301 standard); peers 85.0 %/SJW 1 |
 | `kEnableCanBroadcast` | `false` | Receive-only mode: periodic TX and 0x631 drain compiled out |
 | `kTxProbe` | `false` | Bench TX diagnostic probe (1 Hz 0x206 + PC6 LED verdict) |
 | `kRelayRevPin` / `kRelayDrivePin` / `kRelayIgnitionPin` | PA0 / PA2 / PA4 | Active-low relay outputs |
