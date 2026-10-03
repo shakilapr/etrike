@@ -56,6 +56,15 @@ Standalone bench test firmware for the **STM32G431CBU6** MTR board. Designed for
 | `can_tx` | 1 | **CAN transmit path** — 1 Hz `0x206` frame, verdict on PC6 LED |
 | `can_rx` | 2 | **CAN receive path** — passive listener, activity on PC6 LED |
 
+### CAN Clock Experiment (`env:can_tx_hse` / `env:can_rx_hse`)
+
+Same tests as `can_tx` / `can_rx`, but with the FDCAN kernel clock taken from the **external 8 MHz HSE crystal** instead of the 16 MHz internal HSI (ST recommends an accurate clock for real CAN; HSI is fine for loopback). Wire timing is identical (500 kbit/s, 16 Tq, 87.5 % sample point) — only clock accuracy changes (crystal ppm vs HSI ±1 %).
+
+**Decision rule:**
+- Both HSI and HSE variants work → adopt **HSE** in production (robust for the real vehicle).
+- HSE fails (init failure LED) but HSI works → crystal missing or faulty on this board.
+- HSI fails but HSE works → clock-integrity issue found by the experiment.
+
 ### Option A: PlatformIO CLI
 ```bash
 # Relay + DAC hardware test (default)

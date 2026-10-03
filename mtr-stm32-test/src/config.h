@@ -67,6 +67,17 @@ constexpr uint32_t kCanSeg2      = 2;
 constexpr uint32_t kTxTestFrameId  = CAN_TEST_FRAME_ID;
 constexpr uint8_t  kTxTestFrameDlc = 4;
 
+// ── CAN Clock Source Experiment ────────────────────────────────────
+// 0 = HSI (PCLK1, 16 MHz internal RC) — current production setup
+// 1 = HSE (external 8 MHz crystal)    — ST-recommended for real buses
+// Both yield identical wire timing (500 kbit/s, 16 Tq, 87.5 % sample
+// point); only the clock accuracy differs (HSI ±1 % vs crystal ppm).
+// Build the *_hse environments to compare on the bench (see TESTING.md).
+#ifndef CAN_USE_HSE
+#define CAN_USE_HSE 0
+#endif
+constexpr bool kCanUseHse = CAN_USE_HSE;
+
 // ── CAN Test Timings ───────────────────────────────────────────────
 constexpr uint32_t kTxTestPeriodMs     = 1'000;  // one test frame per second
 constexpr uint32_t kTxTestSampleMs     = 10;     // verdict sampled after send completes

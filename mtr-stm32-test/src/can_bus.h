@@ -25,10 +25,26 @@ public:
     };
 
     bool init(bool enable_rx) {
-        // FDCAN kernel clock = PCLK1 (16 MHz), identical to production
+#if CAN_USE_HSE
+        // Enable the external 8 MHz HSE crystal first, then wait for it to
+        // stabilize before using it as the FDCAN kernel clock source.
+        RCC_OscInitTypeDef osc{};
+        osc.OscillatorType = RCC_OSCILLATORTYPE_HSE;
+        osc.HSEState = RCC_HSE_ON;
+        osc.PLL.PLLState = RCC_PLL_NONE;
+        if (HAL_RCC_OscConfig(&osc) != HAL_OK) {
+            return false;
+        }
+#endif
+
+        // FDCAN kernel clock selection, identical to production when on HSI
         RCC_PeriphCLKInitTypeDef periph_clk{};
         periph_clk.PeriphClockSelection = RCC_PERIPHCLK_FDCAN;
+#if CAN_USE_HSE
+        periph_clk.FdcanClockSelection = RCC_FDCANCLKSOURCE_HSE;
+#else
         periph_clk.FdcanClockSelection = RCC_FDCANCLKSOURCE_PCLK1;
+#endif
         if (HAL_RCCEx_PeriphCLKConfig(&periph_clk) != HAL_OK) {
             return false;
         }
@@ -52,8 +68,14 @@ public:
         hfdcan1.Init.TransmitPause = DISABLE;
         hfdcan1.Init.ProtocolException = DISABLE;
 
-        // Production-identical nominal timing
-        hfdcan1.Init.NominalPrescaler = kCanPrescaler;
+        // Production-identical nominal timing. Kernel clock: HSI/PCLK1 =
+        // 16 MHz (prescaler 2) or HSE = 8 MHz (prescaler 1) — both give
+        // 500 kbit/s with the same 16-Tq, 87.5 % sample point shape.
+#if CAN_USE_HSE
+        hfdcan1.Init.NominalPrescaler = 1u;   // 8 MHz / (1 x 16) = 500 kbit/s
+#else
+        hfdcan1.Init.NominalPrescaler = kCanPrescaler;  // 16 MHz / (2 x 16)
+#endif
         hfdcan1.Init.NominalSyncJumpWidth = kCanSJW;
         hfdcan1.Init.NominalTimeSeg1 = kCanSeg1;
         hfdcan1.Init.NominalTimeSeg2 = kCanSeg2;
