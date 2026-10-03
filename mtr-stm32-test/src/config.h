@@ -39,4 +39,38 @@ constexpr uint32_t kDacUpdateIntervalMs = 20;   // 50 Hz DAC modulation rate
 constexpr uint32_t kRelayOnTimeMs    = 2'000;   // 2.0 s ON per relay
 constexpr uint32_t kRelayOffTimeMs   = 1'000;   // 1.0 s gap between relays
 
+// ── Test Mode Selection ────────────────────────────────────────────
+// Compile-time test mode, selected by the build environment:
+//   TEST_MODE 0 (HW)     — relay sequencing + DAC sine sweep (default env:vehicle)
+//   TEST_MODE 1 (CAN_TX) — CAN transmit path test          (env:can_tx)
+//   TEST_MODE 2 (CAN_RX) — CAN receive path test           (env:can_rx)
+#ifndef TEST_MODE
+#define TEST_MODE 0
+#endif
+constexpr int kTestMode = TEST_MODE;
+
+// ── CAN Test Configuration (production-identical) ──────────────────
+constexpr uint32_t kCanBitrateHz = 500'000;    // Classic CAN, Low bus
+// Nominal bit timing — identical to mtr-stm32 production (16 MHz PCLK1
+// kernel): prescaler 2, 1 + 13 + 2 = 16 Tq, SJW 2 -> 500 kbit/s at the
+// 87.5% sample point (CiA 301 standard). ESP32 peers resolve to 85.0%/SJW 1.
+constexpr uint32_t kCanPrescaler = 2;
+constexpr uint32_t kCanSJW       = 2;
+constexpr uint32_t kCanSeg1      = 13;
+constexpr uint32_t kCanSeg2      = 2;
+
+// Transmitted test frame. 0x206 matches the production telemetry ID; on the
+// bench (RT offline, SYS absent) no peer reacts to a 1 Hz stream.
+#ifndef CAN_TEST_FRAME_ID
+#define CAN_TEST_FRAME_ID 0x206u
+#endif
+constexpr uint32_t kTxTestFrameId  = CAN_TEST_FRAME_ID;
+constexpr uint8_t  kTxTestFrameDlc = 4;
+
+// ── CAN Test Timings ───────────────────────────────────────────────
+constexpr uint32_t kTxTestPeriodMs     = 1'000;  // one test frame per second
+constexpr uint32_t kTxTestSampleMs     = 10;     // verdict sampled after send completes
+constexpr uint32_t kRxActivityWindowMs = 500;    // "recent traffic" window (LED solid)
+constexpr uint32_t kBusOffRecoveryDebounceMs = 150;  // same debounce as production
+
 }  // namespace mtr_test

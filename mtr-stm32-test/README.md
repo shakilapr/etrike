@@ -26,8 +26,9 @@ Standalone bench test firmware for the **STM32G431CBU6** MTR board. Designed for
    - Default max amplitude: `1966` (~2.4 V at 5.0 V VCC reference, matching the safe motor controller throttle window).
    - Can be set to `4095` (full-scale 5.0 V) via `DAC_MAX_CODE` in `src/config.h`.
 
-3. **No CAN Bus Dependency**:
-   - Zero CAN traffic, no watchdog timeouts, no external masters required.
+3. **No CAN Bus Dependency (default mode)**:
+   - Default `vehicle` mode needs zero CAN traffic, no watchdog timeouts, no external masters.
+   - Dedicated CAN test modes (`can_tx`, `can_rx`; see section 3) exercise the CAN paths explicitly.
 
 ---
 
@@ -47,19 +48,54 @@ Standalone bench test firmware for the **STM32G431CBU6** MTR board. Designed for
 
 ## 3. Build & Flash
 
+### Test Modes
+
+| Environment | TEST_MODE | What it tests |
+| :--- | :--- | :--- |
+| `vehicle` (default) | 0 | Relay sequencing + DAC sine sweep (sections 1 & 2) |
+| `can_tx` | 1 | **CAN transmit path** — 1 Hz `0x206` frame, verdict on PC6 LED |
+| `can_rx` | 2 | **CAN receive path** — passive listener, activity on PC6 LED |
+
 ### Option A: PlatformIO CLI
 ```bash
-# Build firmware
-pio run -d mtr-stm32-test -e vehicle
-
-# Upload via DFU
+# Relay + DAC hardware test (default)
 pio run -d mtr-stm32-test -e vehicle -t upload
 
-# Upload via ST-Link (if using ST-Link programmer)
-pio run -d mtr-stm32-test -e vehicle -t upload --upload-port stlink
+# CAN transmit path test
+pio run -d mtr-stm32-test -e can_tx -t upload
+
+# CAN receive path test
+pio run -d mtr-stm32-test -e can_rx -t upload
 ```
 
-### Option B: Binary Flashing
-The compiled binary will be located at:
-- `mtr-stm32-test/.pio/build/vehicle/firmware.bin`
-- `mtr-stm32-test/.pio/build/vehicle/firmware.elf`
+### CAN Transmit Path Test (`env:can_tx`)
+
+Sends one `0x206` frame per second (DLC 4, payload zeros) with production-identical bit timing (500 kbit/s, 87.5 % sample point, matching `mtr-stm32`), then reads the FDCAN transmit outcome (`TXBRP` drained, `TEC`, `LEC`) and reports it on the **PC6 LED** — the only output channel available while the TX path itself is broken, since a failing frame cannot carry its own error report onto the bus. Judge **3+ seconds after power-on**:
+
+| PC6 LED | Meaning |
+| :--- | :--- |
+| **Solid ON** | Frame transmitted (`TXBRP` drained, `TEC` flat, `LEC` clean) — **TX path proven** |
+| **Slow blink** (1 Hz) | `LEC = 3` — ACK error: frame reached the bus, nobody acknowledged (partner missing / listen-only partner / termination) |
+| **Fast blink** (5 Hz) | `LEC = 1/2/4/5/6` — bus-level error: PA12 / transceiver TX stage dead, silent, or miswired |
+| **Dark** | Bus-Off latched (controller disconnected itself) |
+
+Notes:
+- Relays are held OFF and the DAC is untouched in this mode; the LED is owned entirely by the tester.
+- Keep at least one ACKing node on the bus (Canalyst-II in normal mode counts) — otherwise a *correct* TX still reads as an ACK error.
+- When the LED shows solid ON, the physical TX path is proven; production publishing can then be re-enabled in `mtr-stm32` (`kEnableCanBroadcast = true`).
+- Expected on Canalyst-II when working: `0x206` frames at 1 Hz.
+
+### CAN Receive Path Test (`env:can_rx`)
+
+Passive listener (accept-all filter): verifies PA11 / transceiver RX stage / wiring independently of the production firmware.
+
+| PC6 LED | Meaning |
+| :--- | :--- |
+| **Solid ON** | Frames are being received (traffic within the last 500 ms) |
+| **Slow blink** (1 Hz) | FDCAN up and listening, but no frames received |
+| **Fast blink** (5 Hz) | FDCAN init failure |
+
+### Binary Locations
+The compiled binaries are located at:
+- `mtr-stm32-test/.pio/build/<env>/firmware.bin`
+- `mtr-stm32-test/.pio/build/<env>/firmware.elf`

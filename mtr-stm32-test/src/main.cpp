@@ -4,12 +4,37 @@
 #include <cmath>
 #include "main.h"
 #include "config.h"
+
+// Compile-time test modes (TEST_MODE, see src/config.h):
+//   0 (default, env:vehicle) - relay sequencing + DAC sine sweep (no CAN)
+//   1 (env:can_tx)           - CAN transmit path test, PC6 LED verdicts
+//   2 (env:can_rx)           - CAN receive path test, PC6 LED activity
+
+#if TEST_MODE == 1
+#include "can_tx_tester.h"
+#elif TEST_MODE == 2
+#include "can_rx_tester.h"
+#else
 #include "dac_controller.h"
 #include "relay_tester.h"
+#endif
 
+#if TEST_MODE != 0
+// FDCAN1 handle for the CAN test modes (defined here; no CubeMX instance)
+extern "C" {
+    FDCAN_HandleTypeDef hfdcan1;
+}
+#endif
+
+#if TEST_MODE == 1
+static mtr_test::CanTxTester g_can_tx;
+#elif TEST_MODE == 2
+static mtr_test::CanRxTester g_can_rx;
+#else
 // Subsystem instances
 static mtr_test::RelayTester g_relays;
 static mtr_test::DacController g_dac;
+#endif
 
 // Forward declaration of system clock setup
 extern "C" void SystemClock_Config(void);
@@ -60,6 +85,22 @@ int main(void) {
     // 3. Configure 16 MHz system clock
     SystemClock_Config();
 
+    // 4/5/6. Mode-specific init and test loop
+#if TEST_MODE == 1
+    // CAN TX test: relays held OFF, DAC untouched, LED owned by the tester
+    g_can_tx.init();
+    while (1) {
+        g_can_tx.tick(HAL_GetTick());
+        HAL_Delay(1);
+    }
+#elif TEST_MODE == 2
+    // CAN RX test: relays held OFF, DAC untouched, LED owned by the tester
+    g_can_rx.init();
+    while (1) {
+        g_can_rx.tick(HAL_GetTick());
+        HAL_Delay(1);
+    }
+#else
     // 4. Initialize Relay Outputs (PA4 Ignition, PA2 Drive, PA0 Reverse, PC6 LED)
     g_relays.init();
 
@@ -98,4 +139,5 @@ int main(void) {
 
         HAL_Delay(1);
     }
+#endif
 }
