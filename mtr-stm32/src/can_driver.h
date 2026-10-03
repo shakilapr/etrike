@@ -44,8 +44,11 @@ public:
         HAL_GPIO_Init(GPIOA, &gpio);
 
         // 2. Configure FDCAN peripheral
+        // "FDCAN" is the STM32G431's only CAN controller (M_CAN-based; there is no
+        // bxCAN on this silicon). The bus wire format is Classic CAN 2.0A to match
+        // the ESP32 TWAI peers — see FrameFormat below and the init guard test.
         hfdcan_.Instance = FDCAN1;
-        hfdcan_.Init.FrameFormat = FDCAN_FRAME_CLASSIC;
+        hfdcan_.Init.FrameFormat = FDCAN_FRAME_CLASSIC;  // Classic 2.0A on the wire, never FD
         hfdcan_.Init.Mode = FDCAN_MODE_NORMAL;
         hfdcan_.Init.AutoRetransmission = DISABLE;
         hfdcan_.Init.TransmitPause = DISABLE;
@@ -112,8 +115,8 @@ public:
         header.TxFrameType = FDCAN_DATA_FRAME;
         header.DataLength = dlc_to_fdcan_(frame.dlc);
         header.ErrorStateIndicator = FDCAN_ESI_ACTIVE;
-        header.BitRateSwitch = FDCAN_BRS_OFF;
-        header.FDFormat = FDCAN_CLASSIC_CAN;
+        header.BitRateSwitch = FDCAN_BRS_OFF;   // Classic CAN 2.0A (TWAI peers) — no FD bit-rate switch
+        header.FDFormat = FDCAN_CLASSIC_CAN;    // Classic frame, never FD (guard: test_fdcan_driver_classic_guard)
         header.TxEventFifoControl = FDCAN_NO_TX_EVENTS;
         header.MessageMarker = 0;
 

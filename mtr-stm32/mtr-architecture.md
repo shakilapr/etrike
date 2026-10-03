@@ -89,6 +89,22 @@ Mechanics: verdict comes from the `CanDriver` TX-health shadow (`service_recover
 - **Loop cadence:** `HAL_Delay(1)` polling loop (`main.cpp:292`) with a 5 ms control tick (`kMainLoopPeriodMs`, `config.h:48`).
 - **DWT cycle counter** enabled at boot (`main.cpp:156-158`).
 
+### 3.1 Wire Format: Classic CAN 2.0A
+
+The entire Low bus is **Classic CAN 2.0A @ 500 kbit/s** — no FD frames, no bit-rate switching, anywhere in the fleet:
+
+| Term seen in the code | What it actually means |
+|---|---|
+| `FDCAN` (peripheral, `HAL_FDCAN_*`, `hfdcan1`) | The STM32G431's **only** CAN controller (M_CAN-based). There is **no bxCAN** on G4 silicon — the name is ST's peripheral naming, not the wire format. |
+| `Init.FrameFormat = FDCAN_FRAME_CLASSIC` (`can_driver.h:48`) | Classic CAN 2.0A frame format at the controller level. |
+| `TxHeader.BitRateSwitch = FDCAN_BRS_OFF`, `FDFormat = FDCAN_CLASSIC_CAN` (`can_driver.h:115-116`) | Every transmitted frame is a Classic frame — no BRS, no FD payload. |
+| `Data*` timing registers set to 1/1/1/1 (`can_driver.h:62-65`) | FD data-phase placeholders; unused in Classic mode. |
+| All frames ≤ 8 bytes, standard 11-bit IDs | `can::Frame` caps DLC at 8; all RX filters are standard-ID. |
+
+- **Peers:** RT/SYS/RM run ESP32 **TWAI** controllers — Classic CAN 2.0 hardware @ 500 kbit/s (`rt-esp32/src/can_driver_twai.cpp`). Sample points aligned: MTR 81.25 % vs TWAI 80.0 %, SJW = 3 (see `ee2abd42`).
+- **Repo-wide scan:** zero FD frame configurations exist (`FDCAN_FRAME_FD` / `FDCAN_BRS_ON` / FD frame format: no matches outside vendor drivers).
+- **Drift guard:** the native suite pins this — `test_fdcan_driver_classic_guard` asserts Classic init format and Classic TX headers (see §9.2), so an accidental FD switch fails CI instead of silently breaking bus parity.
+
 ---
 
 ## 4. Software Architecture
@@ -296,9 +312,9 @@ Shared `DiagnosticManager` (`shared/diagnostics.h`) wired into MotorManager + Ca
 
 ### 9.2 Native host tests (`pio test -e native`)
 
-Unity environment restricted (via `test_filter = *full_suite*`) to `test/test_full_suite/test_mtr_full_suite.cpp` against the HAL stub (`test/stub/stm32g4xx_hal.h`) — the production headers are tested unmodified. 18 tests:
+Unity environment restricted (via `test_filter = *full_suite*`) to `test/test_full_suite/test_mtr_full_suite.cpp` against the HAL stub (`test/stub/stm32g4xx_hal.h`) — the production headers are tested unmodified. 19 tests:
 
-relay mutual exclusion · DAC software-I2C & clamps · DAC default-state-zero & late power-on · ESTOP & recovery · direction-shift dwell · comms watchdog · DAC curves · DAC golden vectors · mode-cmd does not clear ESTOP · asymmetric two-frame clear · safety-stream freshness fail-safe · safety CRC corruption fail-safe · recovery requires REARM · FIFO0 ring buffer · ESTOP via 0x011 SYS_SAFETY_STS · dedicated 0x204 watchdog · REARM-timeout stays inhibited · multi-stream readiness latch.
+relay mutual exclusion · DAC software-I2C & clamps · DAC default-state-zero & late power-on · ESTOP & recovery · direction-shift dwell · comms watchdog · DAC curves · DAC golden vectors · mode-cmd does not clear ESTOP · asymmetric two-frame clear · safety-stream freshness fail-safe · safety CRC corruption fail-safe · recovery requires REARM · FIFO0 ring buffer · **Classic CAN wire-format guard** · ESTOP via 0x011 SYS_SAFETY_STS · dedicated 0x204 watchdog · REARM-timeout stays inhibited · multi-stream readiness latch.
 
 CI runs `pio test -e native` on `mtr-stm32/**` changes (`.github/workflows/ci.yml`). Legacy suites under `test/legacy/` remain as standalone flat executables but are excluded from the native env.
 
