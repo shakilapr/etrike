@@ -978,6 +978,14 @@ void test_fdcan_driver_classic_guard() {
     // Peripheral init must request Classic frame format.
     ASSERT_EQ(hfdcan1.Init.FrameFormat, FDCAN_FRAME_CLASSIC);
 
+    // Pin the nominal bit timing: 500 kbit/s, 87.5% sample point (CiA 301
+    // standard), prescaler 2 / 16 Tq. The timing silently drifted once before
+    // (81.25% "alignment" built on a wrong premise); it must never do so again.
+    ASSERT_EQ(hfdcan1.Init.NominalPrescaler, 2u);
+    ASSERT_EQ(hfdcan1.Init.NominalSyncJumpWidth, 2u);
+    ASSERT_EQ(hfdcan1.Init.NominalTimeSeg1, 13u);
+    ASSERT_EQ(hfdcan1.Init.NominalTimeSeg2, 2u);
+
     // Every transmitted frame must be a Classic (non-FD), non-BRS, standard-ID
     // frame of at most 8 data bytes.
     can::Frame tx_frame(0x206, false, 4);

@@ -55,12 +55,16 @@ public:
         hfdcan_.Init.ProtocolException = DISABLE;
 
         // Bit timing for 500 kbps @ 16 MHz kernel:
-        // Prescaler 2 -> Tq = 125 ns. (1 + 12 + 3) = 16 Tq = 2 us -> 500 kbps (81.25% sample point, SJW=3)
-        // Aligned with ESP32 TWAI (80.0% sample point, SJW=3) and provides ample margin for IPT and transceiver delay.
+        // Prescaler 2 -> Tq = 125 ns. (1 + 13 + 2) = 16 Tq = 2 us -> 500 kbps.
+        // Sample point 87.5% (CiA 301 / CANopen standard for 500 kbit/s), SJW = 2.
+        // ESP32 peers use IDF defaults: 20 Tq, 85.0% sample point, SJW = 1
+        // (resolved by twai_node_timing_calc_param, esp_twai.c). 2.5% sample-point
+        // offset — within tolerance; RM<->MTR reception proven on the bench at
+        // this exact configuration (it was MTR's original timing).
         hfdcan_.Init.NominalPrescaler = 2;
-        hfdcan_.Init.NominalSyncJumpWidth = 3;
-        hfdcan_.Init.NominalTimeSeg1 = 12;
-        hfdcan_.Init.NominalTimeSeg2 = 3;
+        hfdcan_.Init.NominalSyncJumpWidth = 2;
+        hfdcan_.Init.NominalTimeSeg1 = 13;
+        hfdcan_.Init.NominalTimeSeg2 = 2;
 
         hfdcan_.Init.DataPrescaler = 1;
         hfdcan_.Init.DataSyncJumpWidth = 1;
