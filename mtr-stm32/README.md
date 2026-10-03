@@ -106,20 +106,24 @@ g++ -static -std=c++17 -I .. -I ../shared -o test_mtr_runner.exe test/test_mtr_m
 
 ```
 mtr-stm32/
-├── platformio.ini         # Multi-env PlatformIO configuration
-├── new-architecture.md    # Detailed technical architecture specification
-├── STM32G431CBUX_FLASH.ld # Linker script
-├── Core/                  # ST Vendor Drivers & Startup
-│   ├── Inc/               # main.h, stm32g4xx_hal_conf.h, stm32g4xx_it.h
-│   ├── Src/               # HAL MSP, IRQ dispatchers, system clock, newlib stubs
-│   └── Startup/           # startup_stm32g431cbux.s
-├── src/                   # Modern C++ Actuator Stack
-│   ├── config.h           # Pin assignments, DAC voltage limits, timings
-│   ├── can_driver.h       # FDCAN1 Classic CAN 500 kbps driver with FIFO0 ringbuffer
-│   ├── relay_controller.h # Active-low relay controller with mutual exclusion
-│   ├── dac_controller.h   # Bit-banged I2C MCP4725 driver with address scanning
-│   ├── motor_manager.h    # Speed-to-DAC conversion, gear interlocking, CAN telemetry
-│   └── main.cpp           # 16 MHz HSI boot, 500 ms watchdog, 5 ms execution loop
+├── platformio.ini          # Multi-env PlatformIO configuration (vehicle + native)
+├── mtr-architecture.md     # Detailed technical architecture specification
+├── STM32G431CBUX_FLASH.ld  # Linker script (128 KB flash / 32 KB RAM)
+├── VCU_2.ioc               # CubeMX project
+├── Core/                   # ST Vendor Drivers & Startup
+│   ├── Inc/                # main.h, stm32g4xx_hal_conf.h, stm32g4xx_it.h
+│   ├── Src/                # HAL MSP, IRQ dispatchers, system clock, newlib stubs
+│   └── Startup/            # startup_stm32g431cbux.s
+├── src/                    # Modern C++ Actuator Stack
+│   ├── config.h            # Pin assignments, DAC voltage limits, timings, probe flag
+│   ├── can_driver.h        # FDCAN1 Classic CAN 500 kbps driver, FIFO0 ringbuffer, TX-health shadow
+│   ├── relay_controller.h  # Active-low relay controller with mutual exclusion
+│   ├── dac_controller.h    # Bit-banged I2C MCP4725 driver with address scanning + EEPROM provisioning
+│   ├── motor_manager.h     # Authority supervision, E-stop latch/clear/REARM, speed-to-DAC, telemetry
+│   └── main.cpp            # 16 MHz HSI boot, IWDG, 1 ms poll loop / 5 ms control tick, TX probe
+├── legacy_v1/              # Archived FreeRTOS-era firmware (not built)
 └── test/
-    └── test_mtr_motor.cpp # Native unit test suite (36 assertions)
+    ├── stub/               # HAL stub for host-native builds
+    ├── test_full_suite/    # 18-test Unity suite (env:native)
+    └── legacy/             # Older standalone suites (excluded from env:native)
 ```

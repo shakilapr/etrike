@@ -7,7 +7,7 @@ Implementation-level description of how the etrike distributed controllers actua
 given) and describes the *as-built* behaviour, including a few places where the code diverges from
 older markdown specs ? those are called out explicitly.
 
-> **Trust note.** Where this document disagrees with `architecture.md`, `new-architecture.md`, or
+> **Trust note.** Where this document disagrees with `architecture.md`, `mtr-stm32/mtr-architecture.md`, or
 > `CONTROLLER.md`, the firmware is authoritative. Two notable divergences:
 > 1. **RM does not emit `HMI_MODE_REQ`/`HMI_PWR_REQ` (0x111/0x112).** It *emulates* the authoritative
 >    `SYS_MODE_CMD` (0x110) and `SYS_PWR_CMD` (0x113) instead (`rm-esp32/src/main.cpp:207-225`).

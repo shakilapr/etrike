@@ -304,26 +304,334 @@ CI runs `pio test -e native` on `mtr-stm32/**` changes (`.github/workflows/ci.ym
 
 ---
 
-## 10. Timing & Constant Summary (`src/config.h`, `src/motor_manager.h`)
+## 10. Core Algorithms (Pseudo-code)
+
+Faithful abstractions of the production code — use for review; the source files remain authoritative.
+
+### 10.1 Boot (`main.cpp`)
+
+```
+main():
+    if RCC.CSR.IWDGRSTF:                    # capture reset cause BEFORE clearing
+        iwdg_reset = true; RCC.CSR.RMVF = 1
+    HAL_Init(); enable DWT cycle counter
+    SystemClock_Config()                    # HSI 16 MHz, no PLL, flash WS 0
+    motor.init()                            # relays -> OFF, DAC EEPROM <- 0 V
+    if not can.init(): Error_Handler()      # disable IRQ + halt; outputs stay safe
+    motor.set_diag(diag); can.set_diag(diag)
+    if iwdg_reset: diag.raise(MtrWatchdogReset); diag.recover(MtrWatchdogReset)
+    IWDG.init(prescaler=128, reload=400)    # ~32 kHz/128 = 250 Hz -> 1.6 s window
+    loop forever:                           # see 10.2
+```
+
+### 10.2 Main Loop
+
+```
+loop:
+    now = HAL_GetTick()
+    while can.poll_rx(frame):               # every pass (~1 ms)
+        motor.handle_frame(frame, now)
+    if now - last_loop >= 5 ms:
+        last_loop = now
+        can.service_recovery()              # bus-off recovery + TX-health shadow
+        motor.tick(now)                     # safety evaluation
+        probe_tick(now)                     # no-op unless kTxProbe
+        if kEnableCanBroadcast:             # diagnostics drain (gated)
+            for up to 8: if diag.pop_pending(r): can.send(encode_0x631(r))
+        if kEnableCanBroadcast:             # periodic telemetry (compiled out otherwise)
+            every 10 ms: can.send(motor.build_throttle_status_frame())   # 0x120
+            every 20 ms: can.send(motor.build_motor_feedback_frame())    # 0x206
+            every 20 ms (+10 ms phase): can.send(encode_0x502(motor.fill_node_status()))
+    IWDG.refresh()                          # ONLY after the full cycle above
+    HAL_Delay(1)
+```
+
+### 10.3 RX Dispatch (`motor.handle_frame`)
+
+```
+handle_frame(frame, now):
+    last_rx = now; first_frame_seen = true; comms_timed_out = false
+    switch frame.id:
+    case 0x001:                             # hardwired ESTOP broadcast
+        trigger_estop()
+    case 0x011:                             # persistent E-stop authority
+        handle_safety_status(frame, now)    # see 10.5
+    case 0x110:                             # mode authority
+        decode; if not mode_val.observe(rc, now):
+            if was_valid: on_authority_loss()
+            break                           # keep last mode, inhibit drive
+        current_mode = mode ? AUTO : MANUAL; ready |= MODE
+    case 0x204:                             # drive command
+        decode; if not mode_valid: diag(MtrCmdStreamUnauthorised); break
+        target_speed, target_gear = cmd
+        gap = drive_seen ? now - last_drive : 0; last_drive = now; drive_seen = true
+        if gap > 100:   recover_count = 1
+        elif recover_count < 3: recover_count++
+        if not timed_out or recover_count >= 3:
+            timed_out = false; ready |= DRIVE
+    case 0x113:                             # power authority
+        decode; if not pwr_val.observe(rc, now):
+            if was_valid: on_authority_loss(); break
+        pwr_on = power_state != 0
+        if not pwr_on:              rearm_off_seen = true; ready &= ~POWER
+        elif rearm_required and rearm_off_seen and mode_valid:
+                                    rearm_observed = true; ready |= POWER
+        elif rearm_required and not rearm_off_seen:
+                                    diag(MtrRearmSequenceViolation); ready &= ~POWER
+        else:                       ready |= POWER
+        power_on = pwr_on
+```
+
+### 10.4 Periodic Evaluation (`motor.tick`)
+
+```
+tick(now):
+    # 1. Generic comms deadman
+    comms_timed_out = first_frame_seen and (now - last_rx > 500)
+    if comms_timed_out: on_authority_loss()
+
+    # 2. 0x011 freshness (checked every tick, not only on frame arrival)
+    if safety_valid and now - last_safety > 700:
+        safety_valid = false; safety_val.invalidate(); on_authority_loss()
+        diag(MtrSysSafetyStsTimeout, now - last_safety)
+    ignition = power_valid and power_on and safety_valid
+               and (not rearm_required or rearm_observed)
+
+    # 2b. Dedicated 0x204 drive watchdog
+    expect_drive = mode_valid and power_valid and safety_valid and power_on
+                   and current_mode == AUTO and (not rearm_required or rearm_observed)
+    if expect_drive:
+        ref = drive_seen ? last_drive : arm_time     # dead-sender case still trips
+        if not timed_out and now - ref > 150:
+            timed_out = true; recover_count = 0; ready &= ~DRIVE
+            diag(MtrRtDriveCmdTimeout, now - arm_time)
+    else:
+        timed_out = false; arm_time = 0; recover_count = 0
+
+    # 3. Fail-safe gate (single point of propulsion cutoff)
+    if estop or comms_timed_out or timed_out or not power_valid or not safety_valid
+       or (rearm_required and not rearm_observed) or not all_ready_bits:
+        target_speed = 0; relays.set_state(OFF); dac.force_zero()
+        if rearm pending and now - rearm_start >= 10 s: diag(MtrRearmSequenceViolation)
+        return
+
+    if not mode_valid: target_speed = 0          # keep power, zero propulsion
+
+    # 4. D<->R shift arc protection
+    if (active==D and target==R) or (active==R and target==D):
+        if dwell not started: dwell = now; dac.force_zero(); relays.set_gear(N, ignition)
+    if dwell started:
+        if now - dwell < 50: dac.force_zero(); return
+        dwell = 0
+    active = target
+    relays.set_gear(active, ignition)
+    if not ignition: dac.force_zero(); return
+
+    # 5. Throttle
+    speed_mag =  target_speed  if active==D and target_speed > 0
+    speed_mag = -target_speed  if active==R and target_speed < 0    # canonical negative
+    speed_mag =  target_speed  if active==R and target_speed > 0    # legacy positive
+    if neutral or speed_mag == 0: dac.force_zero()
+    else: dac.set_throttle(dac_code(speed_mag), true)
+```
+
+### 10.5 E-stop Latch / Asymmetric Clear / REARM
+
+```
+trigger_estop():
+    estop = true; targets = 0; relays.set_state(OFF); dac.force_zero()
+    on_authority_loss(); clear_confirm = 0; last_zero = false   # stale zeros never pair
+
+handle_safety_status(frame, now):            # 0x011, DLC 5
+    decode; if crc8_h2f(data[0..3], 0x3C11) != e2e_crc:
+        safety_val.invalidate(); safety_valid = false; clear state reset
+        on_authority_loss(); diag(MtrSysSafetyCrcError); return
+    if not safety_val.observe(rc, now):      # duplicate expiry / gap / reorder
+        clear state reset; if was_valid: on_authority_loss()
+        diag(MtrSysSafetyCounterStale); return
+    last_safety = now
+    if estop_source != 0:                    # assert frame
+        if not estop: trigger_estop()
+        clear_confirm = 0; last_zero = false; return
+    # estop_source == 0: two-frame asymmetric clear
+    if not estop:                            # healthy: observe only, no credit
+        clear_confirm = 0; last_zero = true; clear_seq_rc = rc; return
+    first = not last_zero
+    advances = (rc == (clear_seq_rc + 1) mod 256)
+    clear_confirm = 1 if (first or not advances) else clear_confirm + 1
+    clear_seq_rc = rc; last_zero = true
+    if clear_confirm >= 2: authorized_clear(now)
+
+authorized_clear(now):
+    estop = false; mode_valid = false; power_valid = false
+    mode_val.invalidate(); pwr_val.invalidate()   # cached commands cannot re-enable motion
+    clear state reset; rearm_required = true; rearm_observed = false
+    # rearm_off_seen intentionally NOT reset: OFF edge observed during ESTOP carries over
+    rearm_start = now; on_authority_loss()
+```
+
+### 10.6 Stream Validity (shared, per supervised stream)
+
+```
+observe(rc, now):                            # modulus 256, max forward delta 2
+    event = counter_tracker.observe(rc)      # increment/wrap/gap/recovery/duplicate/reorder
+    if not valid:                            # reacquiring: baseline keeps authority invalid
+        valid = event in {increment, wrap, gap, recovery}; return valid
+    if event == duplicate:                   # delta 0: reject, DO NOT refresh freshness
+        if freshness expired: invalidate()
+        return valid
+    if event == reorder or not freshness_ok(now):   # delta > 2 or stale
+        invalidate(); return false
+    return true
+```
+
+### 10.7 Relay Controller
+
+```
+set_gear(gear, ignition):
+    if not ignition: set_state(OFF); return
+    D or S -> DRIVE; R -> REVERSE; N/default -> PARK
+
+apply_state(s):                              # active-low: RESET = relay ON, SET = relay OFF
+    DRIVE:   rev=SET;  ign=RESET; drive=RESET
+    REVERSE: drive=SET; ign=RESET; rev=RESET      # drive/rev can never both be RESET
+    PARK:    drive=SET, rev=SET; ign=RESET
+    OFF:     all SET
+
+set_state(s):
+    if s != current: apply(s); if not kTxProbe: toggle PC6 LED
+```
+
+### 10.8 DAC Controller
+
+```
+set_throttle(code, enabled):
+    target = 0 if (not enabled or code == 0) else clamp(code, 655, 1966)
+    if target == 0: force_zero(); return
+    if target != current and write_dac_raw(target): current = target
+
+force_zero():
+    if not eeprom_burned and write_dac_eeprom(0):    # one-time: hardware powers up at 0 V
+        current = 0; return
+    if current == 0:
+        if ++zero_refresh >= 50: zero_refresh = 0; write_dac_raw(0)   # ~250 ms refresh
+        return
+    if write_dac_raw(0): current = 0
+
+write_dac_raw(value, eeprom=false):
+    if cached_addr and try_write(cached_addr): return true
+    cached_addr = 0                                  # NACK invalidates cache
+    for addr in {0x60, 0x61, 0x62} << 1:             # bit-banged I2C, ACK on 9th clock
+        if try_write(addr): cached_addr = addr; return true
+    return false
+    # payload: [cmd (0x60 reg+EEPROM | 0x40 reg), value>>4, (value<<4)&0xF0]
+    # EEPROM write waits 50 ms (t_prog)
+```
+
+### 10.9 CAN Driver
+
+```
+isr_fifo0():                                  # NVIC priority 5
+    while GetRxMessage(FIFO0) ok:
+        push frame into 32-slot ring; on full: rx_overflow++, diag(MtrFdcanRxOverflow)
+
+poll_rx(out):
+    disable IRQ; if empty: enable IRQ; return false
+    out = ring[tail++]; enable IRQ; return true
+
+service_recovery():                           # 5 ms; SINGLE PSR/ECR reader
+    shadow.tec = ECR[7:0]; shadow.rec = ECR[14:8]
+    shadow.lec = PSR[2:0]; shadow.bus_off = PSR.BO
+    if not shadow.bus_off and State != ERROR: recovery_in_progress = false; return
+    if recovery_in_progress and now - last < 150: return          # debounce
+    recovery_in_progress = true; last = now
+    if State == ERROR: State = READY; start()                     # repair HAL state
+    else: clear CCCR.INIT                     # ISO 11898-1: 128 x 11 recessive bits
+    diag(MtrFdcanBusOff, (tec << 8) | rec)
+    re-arm FIFO0 notification
+```
+
+### 10.10 TX Diagnostic Probe (kTxProbe builds only)
+
+```
+probe_tick(now):
+    render LED: SolidOn=steady, Slow=500/500 ms, Fast=100/100 ms, Dark=off
+    if awaiting_sample:
+        if now - sent >= 10 ms:              # shadow refreshed by service_recovery
+            h = tx_health()
+            if h.bus_off:                                   led = Dark
+            elif not tx_pending() and h.lec in {0,7} and h.tec <= tec_at_send: led = SolidOn
+            elif h.lec == 3:                                led = Slow   # ACK error
+            else:                                           led = Fast   # bus-level error
+            awaiting_sample = false
+    elif now - last_send >= 1000 ms:
+        last_send = now; tec_at_send = tx_health().tec
+        if send(build_motor_feedback_frame()): awaiting_sample = true
+        else: led = Fast                    # TX FIFO rejected
+```
+
+---
+
+## 11. Parameter Reference
+
+### 11.1 Configuration constants (`src/config.h`)
 
 | Constant | Value | Meaning |
 |---|---|---|
 | `kCanBitrateHz` | 500 000 | Classic CAN Low bus |
 | `kEnableCanBroadcast` | `false` | Receive-only mode: periodic TX and 0x631 drain compiled out |
 | `kTxProbe` | `false` | Bench TX diagnostic probe (1 Hz 0x206 + PC6 LED verdict) |
-| `kMainLoopPeriodMs` | 5 | Control tick |
+| `kRelayRevPin` / `kRelayDrivePin` / `kRelayIgnitionPin` | PA0 / PA2 / PA4 | Active-low relay outputs |
+| `kI2cSclPin` / `kI2cSdaPin` | PA5 / PA7 | Bit-banged I2C to MCP4725 (open-drain) |
+| `kLedPin` | PC6 | Status LED, active-low |
+| `kDacMinCode` / `kDacMaxCode` / `kDacZeroCode` | 655 / 1966 / 0 | 0.8 V / 2.4 V / 0.0 V @ 5.0 V ref |
+| `kMaxForwardSpeedMmps` / `kMaxReverseSpeedMmps` | 3000 / 500 | Setpoint envelope (mm/s) |
 | `kWatchdogTimeoutMs` | 500 | Generic any-frame comms deadman |
+| `kFeedbackPeriodMs` / `kThrottlePeriodMs` | 20 / 10 | 0x206+0x502 / 0x120 periods (compiled out) |
+| `kMainLoopPeriodMs` | 5 | Control tick |
 | `kDriveCmdTimeoutMs` | 150 | Dedicated 0x204 watchdog (while drive expected) |
-| `kDriveCmdRecoverFrames` / `MaxGapMs` | 3 / 100 | Confirmed 0x204 recovery |
-| `kAuthFreshMs` | 500 | 0x110/0x113 stream freshness (5 × 100 ms cycle) |
-| `kSafetyFreshMs` | 700 | 0x011 freshness (FTTI-derived, non-multiple of 200 ms) |
-| `kRearmTimeoutMs` | 10 000 | Diagnostic timeout for unobserved REARM |
-| `kShiftDwellMs` | 50 | D↔R neutral dwell |
-| `kThrottlePeriodMs` / `kFeedbackPeriodMs` | 10 / 20 | 0x120 / 0x206+0x502 periods (compiled out) |
-| `kDacMinCode` / `kDacMaxCode` | 655 / 1966 | 0.8 V / 2.4 V throttle window @ 5 V |
-| `kDacActiveFloor` | 700 | Motion floor ≈ 0.855 V (clears actuator deadband) |
-| `kMaxForwardSpeedMmps` / `kMaxReverseSpeedMmps` | 3000 / 500 | Setpoint envelope |
-| `shared::kLowSpeedThreshMmps` | 50 | Below this → DAC 0 (no idle-voltage jitter) |
-| IWDG | 1.6 s (presc 128, reload 400) | Independent watchdog, refreshed end-of-cycle |
-| RX ring | 32 frames | FIFO0 ISR → main-loop handoff |
-| Bus-off debounce | 150 ms | `service_recovery()` retry interval |
+| `kDriveCmdRecoverFrames` / `kDriveCmdRecoverMaxGapMs` | 3 / 100 | Confirmed 0x204 recovery |
+
+### 11.2 Supervisor and actuation constants
+
+| Constant | Value | Source | Meaning |
+|---|---|---|---|
+| `kAuthFreshMs` | 500 | `motor_manager.h` | 0x110/0x113 stream freshness (5 × 100 ms cycle) |
+| `kSafetyFreshMs` | 700 | `motor_manager.h` | 0x011 freshness (FTTI-derived, non-multiple of 200 ms) |
+| `kRearmTimeoutMs` | 10 000 | `motor_manager.h` | Diagnostic timeout for unobserved REARM |
+| `kShiftDwellMs` | 50 | `motor_manager.h` | D↔R neutral dwell |
+| `kDacActiveFloor` | 700 | `motor_manager.h` | Motion floor ≈ 0.855 V (clears actuator deadband) |
+| `MTR_READY_MODE/POWER/DRIVE` | bits 0/1/2 | `motor_manager.h` | Multi-stream readiness latch |
+| `shared::kLowSpeedThreshMmps` | 50 | `shared_config.h` | Below this → DAC 0 (no idle-voltage jitter) |
+| `shared::kMtrFault*` | 0x01/0x02/0x04/0x08/0x10 | `shared_config.h` | 0x206 fault flags (estop/timeout/adc/gear/ready) |
+
+### 11.3 Driver, watchdog and probe parameters
+
+| Parameter | Value | Source | Meaning |
+|---|---|---|---|
+| RX ring size | 32 frames | `can_driver.h` | FIFO0 ISR → main-loop handoff |
+| Bus-off debounce | 150 ms | `can_driver.h` | `service_recovery()` retry interval |
+| FDC1 IRQ priority | 5 | `can_driver.h` | Below HAL critical sections (priority 0) |
+| IWDG prescaler / reload | 128 / 400 | `main.cpp` | ~32 kHz LSI → 250 Hz → ~1.6 s window |
+| Diag drain budget | 8 frames / 5 ms tick | `main.cpp` | 0x631 burst limit (gated) |
+| Probe send period / sample delay | 1000 ms / 10 ms | `main.cpp` | 1 Hz 0x206, verdict after shadow refresh |
+| Probe LED periods | 500/500 ms, 100/100 ms | `main.cpp` | Slow (1 Hz) / Fast (5 Hz) patterns |
+| DAC settle after power-up | 50 ms | `dac_controller.h` | ISO1540 + MCP4725 rail stabilization |
+| DAC EEPROM t_prog wait | 50 ms | `dac_controller.h` | MCP4725 EEPROM programming time |
+| DAC zero refresh | 50 × 5 ms = 250 ms | `dac_controller.h` | Keeps 0 V through brown-out/hot-plug |
+
+### 11.4 Protocol frame parameters (generated contracts)
+
+| Frame | ID | DLC | Cycle | Direction |
+|---|---|---|---|---|
+| `SAFETY_ESTOP` | 0x001 | 0 | event | RX |
+| `SYS_SAFETY_STS` | 0x011 | 5 | 200 ms | RX |
+| `SYS_MODE_CMD` | 0x110 | 2 | 100 ms | RX |
+| `SYS_PWR_CMD` | 0x113 | 2 | 100 ms | RX |
+| `RT_DRIVE_CMD` | 0x204 | 5 | 10 ms | RX |
+| `SYS_THROTTLE_STS` | 0x120 | 2 | 10 ms | TX (gated) |
+| `MTR_MOTOR_FBK` | 0x206 | 4 | 20 ms | TX (gated) |
+| `MTR_NODE_STATUS` | 0x502 | 8 | 20 ms | TX (gated) |
+| `MTR_DIAG_EVENT_RPT` | 0x631 | 8 | event | TX (gated) |
+
+
