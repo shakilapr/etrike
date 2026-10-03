@@ -18,7 +18,7 @@ Dedicated STM32G431CBU6 motor actuation and relay control board for the E-Trike 
 - **Canonical CAN Integration**:
   - **RX**: Decodes `0x204` (`RT_DRIVE_CMD`), `0x110` (`SYS_MODE_CMD`, mode authority), `0x113` (`SYS_PWR_CMD`, power authority), and `0x001` (`SAFETY_ESTOP`).
   - **TX** *(compiled out while `kEnableCanBroadcast = false` — receive-only bench mode)*: broadcasts `0x120` (`SYS_THROTTLE_STS`) at 100 Hz, `0x206` (`MTR_MOTOR_FBK`) at 50 Hz, and `0x502` (`MTR_NODE_STATUS`) at 50 Hz; the 0x631 diagnostic drain is gated on the same flag.
-  - **Bench TX probe**: set `kTxProbe = true` to send one `0x206`/s and read the TX-path verdict off the PC6 status LED (solid = TX proven, slow = ACK error, fast = transceiver TX-stage error, dark = Bus-Off).
+  - **TX-path verification**: done by the standalone `mtr-stm32-test` firmware (`env:can_tx`) — sends one `0x206`/s with production-identical timing and reports the verdict on the PC6 LED (solid = TX proven, slow = ACK error, fast = transceiver TX-stage error, dark = Bus-Off).
   - **Gap #15 ESTOP Confirmation**: When ESTOP occurs, `0x206` asserts `kMtrFaultEstopActive`, providing SYS with redundant hardware confirmation.
 - **500 ms Comms Watchdog**:
   - Automatically de-energizes all relays and forces DAC to $0.0\text{ V}$ on CAN silence.
@@ -115,12 +115,12 @@ mtr-stm32/
 │   ├── Src/                # HAL MSP, IRQ dispatchers, system clock, newlib stubs
 │   └── Startup/            # startup_stm32g431cbux.s
 ├── src/                    # Modern C++ Actuator Stack
-│   ├── config.h            # Pin assignments, DAC voltage limits, timings, probe flag
+│   ├── config.h            # Pin assignments, DAC voltage limits, timings
 │   ├── can_driver.h        # FDCAN1 Classic CAN 500 kbps driver, FIFO0 ringbuffer, TX-health shadow
 │   ├── relay_controller.h  # Active-low relay controller with mutual exclusion
 │   ├── dac_controller.h    # Bit-banged I2C MCP4725 driver with address scanning + EEPROM provisioning
 │   ├── motor_manager.h     # Authority supervision, E-stop latch/clear/REARM, speed-to-DAC, telemetry
-│   └── main.cpp            # 16 MHz HSI boot, IWDG, 1 ms poll loop / 5 ms control tick, TX probe
+│   └── main.cpp            # 16 MHz HSI boot, IWDG, 1 ms poll loop / 5 ms control tick
 ├── legacy_v1/              # Archived FreeRTOS-era firmware (not built)
 └── test/
     ├── stub/               # HAL stub for host-native builds

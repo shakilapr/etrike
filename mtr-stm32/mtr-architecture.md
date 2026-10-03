@@ -47,9 +47,9 @@ Jetson ─► RT ESP32-S3                FlySky RC ─► RM ESP32
 - The **0x631 diagnostic drain is gated on the same flag** — receive-only mode emits nothing: a diagnostic TX attempt into a non-ACKing bus racks TEC on every try, and the accumulated churn reproduces the bus-off/recovery cycle that halts RX and trips the drive-command watchdog. Pending reports accumulate in the bounded `DiagnosticManager` queue until TX is enabled.
 - TX-capable builders remain in the code (`build_throttle_status_frame`, `build_motor_feedback_frame`, `fill_node_status`) and are exercised by native tests.
 
-### 1.3 Bench TX Diagnostic Probe (`kTxProbe`)
+### 1.3 TX-Path Verification: Standalone Bench Tester
 
-Until the physical TX path is proven, a bench-only probe (`constexpr bool kTxProbe`, `config.h:77`, default `false`) sends **one 0x206 per second** and reports the outcome on the PC6 status LED — the only output channel available when TX itself is broken, since a failing frame cannot carry its own error report onto the bus. Verdict coding (judge ≥3 s after power-on; LED starts solid):
+The CAN transmit path is verified **outside** the production firmware, by the standalone hardware test firmware `mtr-stm32-test` (`env:can_tx`): it sends **one 0x206 per second** with production-identical bit timing and reports the outcome on the PC6 status LED — the only output channel available when TX itself is broken, since a failing frame cannot carry its own error report onto the bus. Verdict coding (judge ≥3 s after power-on):
 
 | PC6 LED | Meaning |
 |---|---|
@@ -58,7 +58,7 @@ Until the physical TX path is proven, a bench-only probe (`constexpr bool kTxPro
 | **Fast blink** (5 Hz) | LEC 1/2/4/5/6 — bus-level error: transceiver TX stage dead, silent, or miswired |
 | **Dark** | Bus-Off latched (controller disconnected itself) |
 
-Mechanics: verdict comes from the `CanDriver` TX-health shadow (`service_recovery()` is the **single PSR/ECR reader** — PSR.LEC is read-destructive — exposing `tx_health()`/`tx_pending()`); rate-coded patterns avoid human flash-counting (no double/triple-blink discrimination). Probe builds compile out the PC6 relay-transition toggle and the 0x631 drain; all production safety logic (authority supervision, watchdogs, failsafe) runs unchanged. The 1 Hz rate violates the 0x206 20 ms contract — keep RT offline (bench topology 2) or expect RT-side staleness flags.
+The tester isolates **hardware** (board, PA12, transceiver, wiring) from **production code**: if `can_tx` succeeds but production publishing still fails, the fault is in the vehicle firmware path, not the board. Rate-coded LED patterns avoid human flash-counting. Once the LED shows solid ON, re-enable publishing by flipping `kEnableCanBroadcast = true` (§1.2) and soak-test. See `mtr-stm32-test/README.md` for usage; a passive `env:can_rx` mode in the same firmware verifies the RX path independently.
 
 ---
 
@@ -81,14 +81,14 @@ Mechanics: verdict comes from the `CanDriver` TX-health shadow (`service_recover
 
 ## 3. Clock, Timing & CAN Bit Timing
 
-- **Core:** 16 MHz HSI direct, no PLL (`RCC_PLL_NONE`, `main.cpp:116-139`). `SYSCLK = HCLK = PCLK1 = PCLK2 = 16 MHz`, flash latency 0, `PWR_REGULATOR_VOLTAGE_SCALE1`.
+- **Core:** 16 MHz HSI direct, no PLL (`RCC_PLL_NONE`, `main.cpp:41-65`). `SYSCLK = HCLK = PCLK1 = PCLK2 = 16 MHz`, flash latency 0, `PWR_REGULATOR_VOLTAGE_SCALE1`.
 - **FDCAN kernel clock:** PCLK1 = 16 MHz (`can_driver.h:26-32`).
 - **Bit timing (500 kbit/s, 87.5 % sample point, `can_driver.h:57-66`):**
   - Nominal prescaler 2 → t_q = 125 ns; Seg1 = 13 t_q, Seg2 = 2 t_q, SJW = 2.
   - 1 + 13 + 2 = 16 t_q = 2.0 µs → 500 kbit/s. Sample point **87.5 %** — the CiA 301 / CANopen standard for 500 kbit/s.
   - **ESP32 peers** take IDF defaults (new `twai_new_node_onchip` API, bitrate-only → resolver `twai_node_timing_calc_param`, `esp_twai.c:34-55`): 20 t_q, **85.0 %** sample point, SJW = 1. Offset to MTR: 2.5 points — within tolerance; RM↔MTR reception is bench-proven at exactly this configuration (it was MTR's original timing).
-- **Loop cadence:** `HAL_Delay(1)` polling loop (`main.cpp:292`) with a 5 ms control tick (`kMainLoopPeriodMs`, `config.h:48`).
-- **DWT cycle counter** enabled at boot (`main.cpp:156-158`).
+- **Loop cadence:** `HAL_Delay(1)` polling loop (`main.cpp:214`) with a 5 ms control tick (`kMainLoopPeriodMs`, `config.h:48`).
+- **DWT cycle counter** enabled at boot (`main.cpp:81-83`).
 
 ### 3.1 Wire Format: Classic CAN 2.0A
 
@@ -129,22 +129,22 @@ mtr-stm32/
     └── legacy/…                       # Older standalone suites (flat test_*.cpp; excluded from env:native)
 ```
 
-### 4.1 Boot Sequence (`main.cpp:142-207`)
+### 4.1 Boot Sequence (`main.cpp:67-127`)
 
-1. **Capture reset cause before it is cleared**: `RCC->CSR.IWDGRSTF`; if the independent watchdog reset the MCU, raise-then-recover `DiagId::MtrWatchdogReset` (one-shot boot notification, `main.cpp:147-150,178-182`).
+1. **Capture reset cause before it is cleared**: `RCC->CSR.IWDGRSTF`; if the independent watchdog reset the MCU, raise-then-recover `DiagId::MtrWatchdogReset` (one-shot boot notification, `main.cpp:72-75,104-107`).
 2. `HAL_Init()`, DWT cycle counter enable, `SystemClock_Config()` (HSI 16 MHz).
 3. `g_motor.init()` → relays to safe OFF + DAC init (EEPROM 0 V provisioning).
 4. `g_can.init()` → on failure `Error_Handler()` (`__disable_irq()` + halt; outputs remain in the safe OFF state established above).
 5. Wire shared `DiagnosticManager` into MotorManager and CanDriver (reporting only — bookkeeping never changes safety reactions).
-6. Start **IWDG**: LSI ~32 kHz / 128 = 250 Hz (4 ms/tick), reload 400 → **~1.6 s window** (`main.cpp:190-205`). Cannot be stopped except by reset. If it cannot start → `Error_Handler()`.
+6. Start **IWDG**: LSI ~32 kHz / 128 = 250 Hz (4 ms/tick), reload 400 → **~1.6 s window** (`main.cpp:115-127`). Cannot be stopped except by reset. If it cannot start → `Error_Handler()`.
 7. Enter main loop.
 
-### 4.2 Main Loop Schedule (`main.cpp:209-293`)
+### 4.2 Main Loop Schedule (`main.cpp:134-215`)
 
 | Rate | Work |
 |---|---|
 | Every pass (~1 ms) | Drain `poll_rx()` ring → `g_motor.handle_frame()` per frame |
-| Every 5 ms | `g_can.service_recovery()` (bus-off + TX-health shadow refresh), `g_motor.tick()` (safety evaluation), TX-probe tick (`kTxProbe` builds only), bounded diagnostic drain (≤ 8 × `0x631` frames/iteration, gated on `kEnableCanBroadcast`) |
+| Every 5 ms | `g_can.service_recovery()` (bus-off + TX-health shadow refresh), `g_motor.tick()` (safety evaluation), bounded diagnostic drain (≤ 8 × `0x631` frames/iteration, gated on `kEnableCanBroadcast`) |
 | Every 10 ms *(compiled out: `kEnableCanBroadcast=false`)* | 0x120 SYS_THROTTLE_STS |
 | Every 20 ms *(compiled out)* | 0x206 MTR_MOTOR_FBK; 0x502 MTR_NODE_STATUS (10 ms phase offset) |
 | End of every full cycle | `HAL_IWDG_Refresh()` — fed **only** after CAN drain + `tick()` + periodic sends complete; a hang anywhere above resets the MCU into the safe all-OFF boot state |
@@ -259,7 +259,7 @@ A direct D↔R transition forces a **50 ms neutral dwell** (`kShiftDwellMs`, `mo
 | Drive | ON | ON | OFF (**mutual exclusion**) |
 | Reverse | ON | OFF (**mutual exclusion**) | ON |
 
-- Canonical gear mapping (`set_gear`, `relay_controller.h:57-75`): `D`/`S` → Drive, `R` → Reverse, `N`/default → Park; `ignition_on == false` forces Off. PC6 LED toggles on every state change (except TX-probe builds, where the LED is reserved for the probe verdict — §1.3).
+- Canonical gear mapping (`set_gear`, `relay_controller.h:57-75`): `D`/`S` → Drive, `R` → Reverse, `N`/default → Park; `ignition_on == false` forces Off. PC6 LED toggles on every state change.
 - Drive and Reverse relays can **never** be energized simultaneously (structural in `apply_state_`).
 
 ### 7.4 Throttle Mapping → MCP4725 DAC
@@ -285,7 +285,7 @@ clamp(code, kDacMinCode=655, kDacMaxCode=1966)   # 0.8 V … 2.4 V @ 5.0 V ref
 
 ## 8. Diagnostics Plane (Phase B)
 
-Shared `DiagnosticManager` (`shared/diagnostics.h`) wired into MotorManager + CanDriver (`main.cpp:172-173`). Reporting only — raising/recovering never changes a safety reaction. Reports drain to the bus as **0x631 MTR_DIAG_EVENT_RPT**, capped at 8 frames per 5 ms iteration (`main.cpp:231-249`), **gated on `kEnableCanBroadcast`** — in receive-only mode pending reports accumulate in the bounded queue instead of being emitted into a bus that cannot ACK them.
+Shared `DiagnosticManager` (`shared/diagnostics.h`) wired into MotorManager + CanDriver (`main.cpp:97-98`). Reporting only — raising/recovering never changes a safety reaction. Reports drain to the bus as **0x631 MTR_DIAG_EVENT_RPT**, capped at 8 frames per 5 ms iteration (`main.cpp:152-172`), **gated on `kEnableCanBroadcast`** — in receive-only mode pending reports accumulate in the bounded queue instead of being emitted into a bus that cannot ACK them.
 
 | DiagId | Code | Raised when |
 |---|---|---|
@@ -352,7 +352,6 @@ loop:
         last_loop = now
         can.service_recovery()              # bus-off recovery + TX-health shadow
         motor.tick(now)                     # safety evaluation
-        probe_tick(now)                     # no-op unless kTxProbe
         if kEnableCanBroadcast:             # diagnostics drain (gated)
             for up to 8: if diag.pop_pending(r): can.send(encode_0x631(r))
         if kEnableCanBroadcast:             # periodic telemetry (compiled out otherwise)
@@ -516,7 +515,7 @@ apply_state(s):                              # active-low: RESET = relay ON, SET
     OFF:     all SET
 
 set_state(s):
-    if s != current: apply(s); if not kTxProbe: toggle PC6 LED
+    if s != current: apply(s); toggle PC6 LED
 ```
 
 ### 10.8 DAC Controller
@@ -568,25 +567,6 @@ service_recovery():                           # 5 ms; SINGLE PSR/ECR reader
     re-arm FIFO0 notification
 ```
 
-### 10.10 TX Diagnostic Probe (kTxProbe builds only)
-
-```
-probe_tick(now):
-    render LED: SolidOn=steady, Slow=500/500 ms, Fast=100/100 ms, Dark=off
-    if awaiting_sample:
-        if now - sent >= 10 ms:              # shadow refreshed by service_recovery
-            h = tx_health()
-            if h.bus_off:                                   led = Dark
-            elif not tx_pending() and h.lec in {0,7} and h.tec <= tec_at_send: led = SolidOn
-            elif h.lec == 3:                                led = Slow   # ACK error
-            else:                                           led = Fast   # bus-level error
-            awaiting_sample = false
-    elif now - last_send >= 1000 ms:
-        last_send = now; tec_at_send = tx_health().tec
-        if send(build_motor_feedback_frame()): awaiting_sample = true
-        else: led = Fast                    # TX FIFO rejected
-```
-
 ---
 
 ## 11. Parameter Reference
@@ -598,7 +578,6 @@ probe_tick(now):
 | `kCanBitrateHz` | 500 000 | Classic CAN Low bus |
 | Nominal timing | prescaler 2, 1+13+2 = 16 Tq, SJW 2 | 500 kbit/s @ 87.5 % sample point (CiA 301 standard); peers 85.0 %/SJW 1 |
 | `kEnableCanBroadcast` | `false` | Receive-only mode: periodic TX and 0x631 drain compiled out |
-| `kTxProbe` | `false` | Bench TX diagnostic probe (1 Hz 0x206 + PC6 LED verdict) |
 | `kRelayRevPin` / `kRelayDrivePin` / `kRelayIgnitionPin` | PA0 / PA2 / PA4 | Active-low relay outputs |
 | `kI2cSclPin` / `kI2cSdaPin` | PA5 / PA7 | Bit-banged I2C to MCP4725 (open-drain) |
 | `kLedPin` | PC6 | Status LED, active-low |
@@ -632,8 +611,6 @@ probe_tick(now):
 | FDCAN IRQ priority | 5 | `can_driver.h` | Below HAL critical sections (priority 0) |
 | IWDG prescaler / reload | 128 / 400 | `main.cpp` | ~32 kHz LSI → 250 Hz → ~1.6 s window |
 | Diag drain budget | 8 frames / 5 ms tick | `main.cpp` | 0x631 burst limit (gated) |
-| Probe send period / sample delay | 1000 ms / 10 ms | `main.cpp` | 1 Hz 0x206, verdict after shadow refresh |
-| Probe LED periods | 500/500 ms, 100/100 ms | `main.cpp` | Slow (1 Hz) / Fast (5 Hz) patterns |
 | DAC settle after power-up | 50 ms | `dac_controller.h` | ISO1540 + MCP4725 rail stabilization |
 | DAC EEPROM t_prog wait | 50 ms | `dac_controller.h` | MCP4725 EEPROM programming time |
 | DAC zero refresh | 50 × 5 ms = 250 ms | `dac_controller.h` | Keeps 0 V through brown-out/hot-plug |
