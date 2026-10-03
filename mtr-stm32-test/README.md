@@ -2,6 +2,9 @@
 
 Standalone bench test firmware for the **STM32G431CBU6** MTR board. Designed for hardware bringup, wiring verification, and sanity testing without requiring CAN communication, masters (RT/SYS/RM/Jetson), or complex safety state machines.
 
+> **Full step-by-step bench procedure** (what to flash, what to observe, pass
+> criteria, and a results log): see [`TESTING.md`](TESTING.md).
+
 ---
 
 ## 1. What This Firmware Does
