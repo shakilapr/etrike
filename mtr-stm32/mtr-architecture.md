@@ -611,7 +611,7 @@ probe_tick(now):
 |---|---|---|---|
 | RX ring size | 32 frames | `can_driver.h` | FIFO0 ISR → main-loop handoff |
 | Bus-off debounce | 150 ms | `can_driver.h` | `service_recovery()` retry interval |
-| FDC1 IRQ priority | 5 | `can_driver.h` | Below HAL critical sections (priority 0) |
+| FDCAN IRQ priority | 5 | `can_driver.h` | Below HAL critical sections (priority 0) |
 | IWDG prescaler / reload | 128 / 400 | `main.cpp` | ~32 kHz LSI → 250 Hz → ~1.6 s window |
 | Diag drain budget | 8 frames / 5 ms tick | `main.cpp` | 0x631 burst limit (gated) |
 | Probe send period / sample delay | 1000 ms / 10 ms | `main.cpp` | 1 Hz 0x206, verdict after shadow refresh |
