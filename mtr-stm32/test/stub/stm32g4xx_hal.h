@@ -308,17 +308,27 @@ struct MockMsg {
     uint8_t data[8];
 };
 
+// Captured TX header fields for the Classic-CAN wire-format guard test.
+struct TxHeaderRec {
+    uint32_t fd_format{0};
+    uint32_t brs{0};
+    uint32_t id_type{0};
+    uint32_t data_length{0};
+};
+
 inline std::vector<MockMsg> g_tx_msgs;
 inline std::deque<MockMsg>  g_rx_queue;
+inline TxHeaderRec          g_last_tx_header;
 
-    inline void reset() {
-        g_tx_msgs.clear();
-        g_rx_queue.clear();
-        g_fdcan1_regs.CCCR = 0;
-        g_fdcan1_regs.ECR = 0;
-        g_fdcan1_regs.PSR = 0;
-        g_fdcan1_regs.TXBRP = 0;
-    }
+inline void reset() {
+    g_tx_msgs.clear();
+    g_rx_queue.clear();
+    g_last_tx_header = TxHeaderRec{};
+    g_fdcan1_regs.CCCR = 0;
+    g_fdcan1_regs.ECR = 0;
+    g_fdcan1_regs.PSR = 0;
+    g_fdcan1_regs.TXBRP = 0;
+}
 } // namespace fdcan_mock
 
 inline HAL_StatusTypeDef HAL_RCCEx_PeriphCLKConfig(RCC_PeriphCLKInitTypeDef*) { return HAL_OK; }
@@ -349,6 +359,10 @@ inline HAL_StatusTypeDef HAL_FDCAN_AddMessageToTxFifoQ(FDCAN_HandleTypeDef*, FDC
     if (m.dlc > 8) m.dlc = 8;
     if (data) std::memcpy(m.data, data, m.dlc);
     fdcan_mock::g_tx_msgs.push_back(m);
+    fdcan_mock::g_last_tx_header.fd_format = header->FDFormat;
+    fdcan_mock::g_last_tx_header.brs = header->BitRateSwitch;
+    fdcan_mock::g_last_tx_header.id_type = header->IdType;
+    fdcan_mock::g_last_tx_header.data_length = header->DataLength;
     return HAL_OK;
 }
 

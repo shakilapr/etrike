@@ -960,6 +960,37 @@ void test_fdcan_driver_ringbuffer() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
+// 7f-bis. FDCAN Driver: Classic CAN wire-format guard. The STM32G431 has
+//     exactly one CAN controller — the FDCAN peripheral (M_CAN based, no
+//     bxCAN on this silicon) — and the Low bus peers are ESP32 TWAI nodes,
+//     i.e. Classic CAN 2.0 controllers. This test pins the configuration to
+//     Classic mode at init and to Classic frame headers on every transmit so
+//     an accidental FD drift (frame format, bit-rate switch, extended ID,
+//     or DLC > 8) fails the suite instead of silently breaking bus parity.
+// ═══════════════════════════════════════════════════════════════════════
+void test_fdcan_driver_classic_guard() {
+    std::printf("[TEST GROUP] FDCAN Driver: Classic CAN wire-format guard...\n");
+    fdcan_mock::reset();
+
+    mtr::CanDriver driver(hfdcan1);
+    ASSERT_TRUE(driver.init());
+
+    // Peripheral init must request Classic frame format.
+    ASSERT_EQ(hfdcan1.Init.FrameFormat, FDCAN_FRAME_CLASSIC);
+
+    // Every transmitted frame must be a Classic (non-FD), non-BRS, standard-ID
+    // frame of at most 8 data bytes.
+    can::Frame tx_frame(0x206, false, 4);
+    tx_frame.data[0] = 0x12;
+    ASSERT_TRUE(driver.send(tx_frame));
+
+    ASSERT_EQ(fdcan_mock::g_last_tx_header.fd_format, FDCAN_CLASSIC_CAN);
+    ASSERT_EQ(fdcan_mock::g_last_tx_header.brs, FDCAN_BRS_OFF);
+    ASSERT_EQ(fdcan_mock::g_last_tx_header.id_type, FDCAN_STANDARD_ID);
+    ASSERT_TRUE(fdcan_mock::g_last_tx_header.data_length <= FDCAN_DLC_BYTES_8);
+}
+
+// ═══════════════════════════════════════════════════════════════════════
 // 7g. Motor Manager: SYS asserts the E-stop purely via 0x011 estop_active
 //     (the SYS_SAFETY_STS authority) — NO 0x001 SAFETY_ESTOP needed. This is
 //     the SYS->MTR cross-node estop propagation (item #8): when SYS decides to
@@ -1334,6 +1365,7 @@ int main() {
     RUN_TEST(test_motor_manager_rearm_timeout_stays_inhibited);
     RUN_TEST(test_motor_manager_multi_stream_readiness_latch);
     RUN_TEST(test_fdcan_driver_ringbuffer);
+    RUN_TEST(test_fdcan_driver_classic_guard);
 
     return UNITY_END();
 }
