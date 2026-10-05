@@ -109,7 +109,6 @@ static uint8_t g_roll_sys_mode{0};
 static uint8_t g_roll_sys_pwr{0};
 static uint8_t g_roll_rt_diag{0};
 
-static uint8_t g_rearm_pwr_ticks{4};  // MTR ignition rearm pulse
 static uint8_t g_rearm_ses_ticks{20}; // SES rising edge pulse (200 ms)
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -307,7 +306,7 @@ static void emit_low_rt_drive(int32_t speed_mmps, uint8_t gear) {
     g_can_low.send(fr, 2);
 }
 
-// 0x110 SYS_MODE_CMD — Enables MTR AUTO mode for CAN control (10 Hz)
+// 0x110 SYS_MODE_CMD — Enables MTR AUTO mode for CAN control (10 Hz, always ON)
 static void emit_low_sys_mode() {
     Frame fr = Frame::standard(can::kIdSysModeCmd, 2);
     fr.data[0] = 1u; // AUTO (1)
@@ -315,17 +314,26 @@ static void emit_low_sys_mode() {
     g_can_low.send(fr, 2);
 }
 
-// 0x113 SYS_PWR_CMD — Performs 0->1 rearm edge for MTR ignition (10 Hz)
+static void emit_high_sys_mode() {
+    Frame fr = Frame::standard(can::kIdSysModeCmd, 2);
+    fr.data[0] = 1u; // AUTO (1)
+    fr.data[1] = g_roll_sys_mode++;
+    g_can_high.send(fr, 2);
+}
+
+// 0x113 SYS_PWR_CMD — Traction motor power/ignition command (10 Hz, always ON)
 static void emit_low_sys_pwr() {
     Frame fr = Frame::standard(can::kIdSysPwrCmd, 2);
-    if (g_rearm_pwr_ticks > 0) {
-        --g_rearm_pwr_ticks;
-        fr.data[0] = 0u; // initial power OFF
-    } else {
-        fr.data[0] = 1u; // power ON
-    }
+    fr.data[0] = 1u; // power ON (always ON)
     fr.data[1] = g_roll_sys_pwr++;
     g_can_low.send(fr, 2);
+}
+
+static void emit_high_sys_pwr() {
+    Frame fr = Frame::standard(can::kIdSysPwrCmd, 2);
+    fr.data[0] = 1u; // power ON (always ON)
+    fr.data[1] = g_roll_sys_pwr++;
+    g_can_high.send(fr, 2);
 }
 
 // 0x011 SYS_SAFETY_STS — Unlocks MTR ignition via AUTOSAR CRC-8 (10 Hz)
@@ -706,6 +714,7 @@ static void emit_high_rt_diag() {
         case 1u:
             // 10 Hz: SYS Mode & RT State reports
             emit_low_sys_mode();
+            emit_high_sys_mode();
             emit_low_rt_state(gear_in == 3 /*R*/, host_active);
             emit_high_rt_state(gear_in == 3 /*R*/, host_active);
             break;
@@ -720,6 +729,7 @@ static void emit_high_rt_diag() {
         case 3u:
             // 10 Hz: SYS Power command & Steer Diag
             emit_low_sys_pwr();
+            emit_high_sys_pwr();
             emit_high_steer_diag(telemetry_steer_raw);
             break;
 
