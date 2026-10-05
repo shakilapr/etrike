@@ -234,3 +234,28 @@ Scope: Host → RT → SYS → MTR/SES/SEB control and ESTOP lifecycle.
   - Updated `test_cpp_generated.py` and `test_diagnostics_manager.py` to use `find_cpp_compiler`, skipping cleanly with an informative skip message if no C++17-capable compiler is present.
   - Synced metadata and vector checks in `test_generated_vectors.cpp` for BUG-10 reset commands.
 
+
+### BUG-13: [RESOLVED] Low-Bus Bench Overload / Triple-Termination (30–40 Ω) Forces MTR and RM Into Bus-Off
+
+- **Files / Hardware Scope**
+  - `mtr-stm32` (FDCAN1, SN65HVD230 3.3V transceiver)
+  - `rm-esp32` (TWAI, SN65HVD230 3.3V transceiver)
+  - `CANalyst-II` USB analyzer (Channel 1 Low-bus interface)
+  - `docs/hardware/wiring.md` §16
+- **Symptom**
+  - MTR and RM both work independently when connected one-at-a-time to CANalyst-II.
+  - When MTR and RM are connected together on the Low bus with CANalyst-II attached, all MTR signals (`0x120 SYS_THROTTLE_STS`, `0x206 MTR_MOTOR_FBK`, `0x502 MTR_NODE_STATUS`) completely disappear from the CAN monitor, and MTR stops transmitting.
+- **Root Cause**
+  - MTR hardware has an onboard $120\,\Omega$ termination resistor.
+  - RM hardware (SN65HVD230 breakout board) also has an onboard $120\,\Omega$ termination resistor.
+  - Together on the bench, MTR and RM form the two endpoints with $120\,\Omega \parallel 120\,\Omega = 60\,\Omega$ (ideal ISO 11898-2 impedance).
+  - When CANalyst-II was connected with its internal $120\,\Omega$ termination switch turned **ON**, it placed a third $120\,\Omega$ resistor in parallel:
+    $$R_{\text{total}} = 120\,\Omega \parallel 120\,\Omega \parallel 120\,\Omega \approx 30\dots 40\,\Omega$$
+  - The 3.3 V `SN65HVD230` transceivers lack the driver current capacity to drive a $< 45\,\Omega$ load. The differential dominant voltage ($V_{\text{OD}}$) collapsed below the $0.9\,\text{V}$ dominant threshold.
+  - Both MTR (STM32 FDCAN) and RM (ESP32 TWAI) sampled their own transmissions, detected persistent bit mismatches (Bit Errors), emitted Active Error Frames, and their Transmit Error Counters (`TEC`) rapidly exceeded 256, sending both controllers into **Bus-Off**.
+  - In Bus-Off, the STM32 hardware controller completely disconnects from the bus, silencing all telemetry frames.
+  - *Telemetry Architecture Clarification*: MTR firmware unconditionally broadcasts `0x120`, `0x206`, and `0x502` on hardware timer ticks. Even if RM is in a disarmed state (`0x113 power_state=0`, `0x110 mode=0`), MTR continues to broadcast its frames with zeroed payload values. Complete frame disappearance was purely a physical Bus-Off failure caused by bus overload.
+- **Resolution**
+  - Turn the CANalyst-II Channel 1 internal $120\,\Omega$ termination switch **OFF** when bench-testing MTR and RM together.
+  - Always measure unpowered bus resistance with a multimeter across `CAN_H` and `CAN_L`: it must read $60\,\Omega$ ($\pm 5\,\Omega$).
+

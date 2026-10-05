@@ -5,6 +5,8 @@ import {
   getBrakePipeline,
   getSpeedPipeline,
   getSteeringPipeline,
+  getVehicleGear,
+  getControllerModes,
 } from '../lib/signals'
 import { runFullProtocolAudit } from '../lib/protocolAudit'
 import { evaluateActivationGates } from '../lib/activationGates'
@@ -123,6 +125,30 @@ export function Dashboard() {
   const sysOutputVal = toDisplaySpeed(rawSysOutputSpeed)
   const targetSpeedVal = rtSpeedVal ?? hostSpeedVal
 
+  // Drive Mode & Gear (Host High Bus vs RT/MTR Low Bus)
+  const confirmedGear = isDemo ? 'D' : getVehicleGear(messages)
+  const controllerModes = getControllerModes(messages)
+  const activeMode = isDemo
+    ? 'AUTO'
+    : controllerModes.sys !== '—'
+      ? controllerModes.sys
+      : controllerModes.rt !== '—'
+        ? controllerModes.rt
+        : 'STANDBY'
+
+  const modeTone: 'ok' | 'warn' | 'danger' | 'info' | 'muted' =
+    activeMode === 'AUTO'
+      ? 'ok'
+      : activeMode === 'MANUAL'
+        ? 'info'
+        : activeMode === 'ESTOP'
+          ? 'danger'
+          : 'muted'
+
+  const hostGear = isDemo ? 'D' : (speed.hostGear && speed.hostGear !== '—' ? speed.hostGear : confirmedGear)
+  const rtGear = isDemo ? 'D' : (speed.rtGear && speed.rtGear !== '—' ? speed.rtGear : confirmedGear)
+  const mtrGear = isDemo ? 'D' : (speed.mtrGear && speed.mtrGear !== '—' ? speed.mtrGear : confirmedGear)
+
   // 2. Steering values (deg & dynamics)
   const sesAngleVal = isDemo ? 12.4 : (steer.sesAngleDeg ?? null)
   const hostSteerVal = isDemo
@@ -217,6 +243,19 @@ export function Dashboard() {
                       ? 'Simulated Telemetry'
                       : 'No CAN Telemetry'}
                 </button>
+              </div>
+            </div>
+
+            {/* Drive Mode & Gear */}
+            <div className="dashboard-hud-item">
+              <span className="dashboard-hud-k">Mode / Gear</span>
+              <div className="dashboard-hud-v">
+                <span className="dashboard-gear-pill" data-testid="dashboard-hud-gear">
+                  {confirmedGear !== '—' ? confirmedGear : (demoMode ? 'D' : '—')}
+                </span>
+                <span className="text-[11px] font-bold text-text-secondary font-mono">
+                  {activeMode !== '—' ? activeMode : (demoMode ? 'AUTO' : '—')}
+                </span>
               </div>
             </div>
           </div>
@@ -420,6 +459,14 @@ export function Dashboard() {
               title="Velocity"
               badge={demoMode ? 'Simulated' : undefined}
               badgeTone="ok"
+              mode={activeMode !== '—' ? activeMode : (demoMode ? 'AUTO' : undefined)}
+              modeTone={modeTone}
+              gear={confirmedGear !== '—' ? confirmedGear : (demoMode ? 'D' : undefined)}
+              pipelineTiers={[
+                { label: 'Host High (0x300)', tier: 'host' },
+                { label: 'RT Low (0x204)', tier: 'rt' },
+                { label: 'MTR Low (0x206)', tier: 'actual' },
+              ]}
               protocolAudit={
                 speedAudit
                   ? {
@@ -434,33 +481,39 @@ export function Dashboard() {
                 unit: speedUnit,
                 digits: 0,
                 canId: '0x204',
-                varName: 'RT_DRIVE_CMD: motor_speed_mmps (Low) · Active setpoint',
+                varName: 'RT_DRIVE_CMD: motor_speed_mmps (Low Bus Supervisor Setpoint)',
               }}
               targetValue={targetSpeedVal}
               subColumns={[
                 {
                   label: 'FROM HOST',
+                  busTag: 'HIGH · 0x300',
                   value: hostSpeedVal,
                   unit: speedUnit,
                   digits: 0,
                   canId: '0x300',
-                  varName: 'HOST_DRIVE_CMD: speed_mmps (Autonomy Target)',
+                  varName: 'HOST_DRIVE_CMD: speed_mmps (High Bus Planner Target)',
+                  extra: `Gear: ${hostGear} · ${hostYawVal != null ? `${(hostYawVal * 0.0573).toFixed(0)}°/s` : '0°/s'}`,
                 },
                 {
-                  label: 'RT TO SYS',
+                  label: 'SENT TO LOW BUS',
+                  busTag: 'LOW · 0x204',
                   value: rtSpeedVal,
                   unit: speedUnit,
                   digits: 0,
                   canId: '0x204',
-                  varName: 'RT_DRIVE_CMD: motor_speed_mmps (Supervisor Setpoint)',
+                  varName: 'RT_DRIVE_CMD: motor_speed_mmps (Low Bus Setpoint)',
+                  extra: `Gear: ${rtGear} · ${activeMode}`,
                 },
                 {
-                  label: 'SYS OUTPUT',
-                  value: sysOutputVal,
+                  label: 'MTR FEEDBACK',
+                  busTag: 'LOW · 0x206',
+                  value: mtrSpeedVal,
                   unit: speedUnit,
                   digits: 0,
-                  canId: '0x120',
-                  varName: 'SYS_THROTTLE_STS: speed_mmps (Actuator Command Output)',
+                  canId: '0x206',
+                  varName: 'MTR_MOTOR_FBK: motor_command_speed_mmps (Low Bus Actuator Feedback)',
+                  extra: `Gear: ${mtrGear} · Nominal`,
                 },
               ]}
               secondaryMetrics={[
@@ -468,7 +521,13 @@ export function Dashboard() {
                   label: 'Wheel Speed',
                   value: `${wheelSpeedVal != null ? wheelSpeedVal.toFixed(0) : '—'} ${speedUnit}`,
                   canId: '0x122',
-                  varName: 'RT_WHEEL_SPEED_STS: measured_speed_mmps (Low)',
+                  varName: 'RT_WHEEL_SPEED_STS: measured_speed_mmps (Low Bus Hall Sensor)',
+                },
+                {
+                  label: 'Drive Mode',
+                  value: `${activeMode} (0x110)`,
+                  canId: '0x110',
+                  varName: `SYS_MODE_CMD: ${activeMode} (Low Bus)`,
                 },
                 {
                   label: 'Plausibility',

@@ -71,9 +71,16 @@ the full dual-topology flow.
 | **PA4** | Ignition Relay | Output Push-Pull | **Active-Low** | RESET = Relay ON (Ignition ON), SET = Relay OFF |
 | **PA5** | SW-I2C SCL | Output Open-Drain | Pull-Up | MCP4725 DAC Clock line |
 | **PA7** | SW-I2C SDA | Output Open-Drain | Pull-Up | MCP4725 DAC Data line |
-| **PA11** | FDCAN1_RX | AF9 Alternate Function | — | CAN receiver input from transceiver |
-| **PA12** | FDCAN1_TX | AF9 Alternate Function | — | CAN transmitter output to transceiver |
+| **PA11** | FDCAN1_RX | AF9 Alternate Function | — | CAN receiver input from transceiver (Pin 4 RXD) |
+| **PA12** | FDCAN1_TX | AF9 Alternate Function | — | CAN transmitter output to transceiver (Pin 1 TXD) |
 | **PC6** | Status LED | Output Push-Pull | **Active-Low** | Toggles on relay/mode transitions |
+
+> [!IMPORTANT]
+> **CAN Transceiver (SN65HVD230) & Termination Notes**:
+> - **Transceiver Mode (`Rs` Pin 8)**: Must be tied to GND (0V) for high-speed operation. If floating or high, the transceiver driver is disabled (Listen-Only/Standby).
+> - **Onboard Termination**: MTR has an onboard $120\,\Omega$ termination resistor across `CAN_H` and `CAN_L`.
+> - **Bench Testing with RM ($60\,\Omega$ Bus)**: The RM node also has an onboard $120\,\Omega$ resistor, forming the ideal $120\,\Omega \parallel 120\,\Omega = 60\,\Omega$ bus. **The CANalyst-II $120\,\Omega$ switch must be OFF** to avoid a triple-termination overload ($30\,\Omega$) that forces the FDCAN controller into Bus-Off.
+> - **Telemetry Persistence**: MTR's firmware broadcasts `0x120` (100 Hz), `0x206` (50 Hz), and `0x502` (50 Hz) unconditionally on hardware timer ticks. Even when disarmed or unpowered by command, MTR continues to broadcast its feedback frames with zeroed payload values (`speed=0`, `gear=N`). A complete absence of frames indicates a physical Bus-Off condition.
 
 ---
 

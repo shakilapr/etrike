@@ -298,13 +298,13 @@ export function evaluateActivationGates(
   }
 
   // ── GATE 4: SEB Brake-by-Wire (Smart Electronic Brake) ──
-  const sebAutoReqVal = useSim ? 1 : (signalNum(sysSebReq, 'auto_brake') ?? 1)
+  const sebAutoReqVal = useSim ? 1 : (signalNum(sysSebReq, 'auto_brake') ?? (signalIsOn(sysSebReq, 'auto_brake') ? 1 : (frameRecent(sysSebReq) ? 1 : 0)))
   const sebAutoReqMet = sebAutoReqVal === 1
 
   const sebErrVal = useSim ? 0 : (signalNum(sebStatus, 'error_status') ?? 0)
   const sebErrMet = sebErrVal < 3
 
-  const sebStatusVal = useSim ? 1 : (signalNum(sebStatus, 'auto_brake_status') ?? (frameRecent(sebStatus) ? 1 : 0))
+  const sebStatusVal = useSim ? 1 : (signalNum(sebStatus, 'auto_brake_status') ?? (signalIsOn(sebStatus, 'auto_brake_status') ? 1 : (frameRecent(sebStatus) ? 1 : 0)))
   const sebStatusMet = sebStatusVal === 1
 
   const sebSignals: ActivationSignalItem[] = [

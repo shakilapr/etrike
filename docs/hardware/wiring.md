@@ -744,6 +744,22 @@ Both DACs operate in standard mode at 100 kHz I2C clock.
 - Low bus: ~60 Ω (RT ∥ SYS, both 120 Ω)
 - Powertrain bus: ~60 Ω (PWT ∥ Motor Controller, both 120 Ω)
 
+### 16.1 Bench-Test Termination Configuration (MTR + RM Standalone Rig)
+
+When testing MTR and RM in a standalone bench rig without the full vehicle harness:
+
+| Bus | Node | Terminator | Resistor | Notes |
+|-----|------|:----------:|----------|-------|
+| **Low** | MTR Node | ✅ ON | 120 Ω | Bench Endpoint 1 |
+| **Low** | RM Node | ✅ ON | 120 Ω | Bench Endpoint 2 |
+| **Low** | CANalyst-II Ch1 | ❌ OFF | — | Middle tap / Monitor only (**MUST BE OFF**) |
+
+> [!CAUTION]
+> **Triple-Termination Hazard (30 Ω Overload)**:
+> Both MTR and RM boards have onboard 120 Ω termination resistors, providing the ideal $120\,\Omega \parallel 120\,\Omega = 60\,\Omega$ bus impedance.
+> If the CANalyst-II Channel 1 internal 120 Ω termination switch is accidentally turned **ON**, the total bus resistance drops to $30\dots 40\,\Omega$. The 3.3 V SN65HVD230 transceivers will overload, differential voltage collapses below the dominant threshold, and both MTR and RM will crash into **Bus-Off** (silencing all telemetry).
+> **Always ensure CANalyst-II Ch1 termination is switched OFF when MTR and RM are both connected.** Measure resistance with power OFF across `CAN_H` and `CAN_L`: it must read $60\,\Omega$ ($\pm 5\,\Omega$).
+
 ---
 
 ## 16.1 Pre-production dual-bus smoke test

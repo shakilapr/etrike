@@ -14,6 +14,8 @@ export type MultiMeterSignal = {
   digits?: number
   canId?: string
   varName?: string
+  busTag?: string
+  extra?: string
 }
 
 export type MultiMeterProps = {
@@ -21,6 +23,10 @@ export type MultiMeterProps = {
   subtitle?: string
   badge?: string
   badgeTone?: 'ok' | 'warn' | 'danger' | 'info' | 'muted'
+  gear?: string
+  mode?: string
+  modeTone?: 'ok' | 'warn' | 'danger' | 'info' | 'muted'
+  pipelineTiers?: Array<{ label: string; tier: 'host' | 'rt' | 'actual' | 'info' }>
   primary: MultiMeterSignal
   targetValue?: number | null
   subLeft?: MultiMeterSignal
@@ -51,6 +57,10 @@ export function MultiMeter({
   subtitle,
   badge,
   badgeTone = 'info',
+  gear,
+  mode,
+  modeTone = 'info',
+  pipelineTiers,
   primary,
   targetValue,
   subLeft,
@@ -252,13 +262,31 @@ export function MultiMeter({
       aria-label={`${title ?? primary.label} digital meter`}
     >
       {/* Header with Title and subtle Status Indicators */}
-      {(title || badge || protocolAudit) && (
+      {(title || badge || protocolAudit || mode || gear) && (
         <div className="multi-meter-header">
           <div className="flex items-center gap-2">
             {title && <span className="multi-meter-title">{title}</span>}
             {subtitle && <span className="multi-meter-subtitle">{subtitle}</span>}
           </div>
           <div className="flex items-center gap-1.5">
+            {mode && (
+              <span
+                className={`status-pill tone-${modeTone} text-[10.5px] font-bold px-1.5 py-0.5 rounded font-mono`}
+                title={`Active Drive Mode: ${mode}`}
+                data-testid={`${testId}-mode-pill`}
+              >
+                {mode}
+              </span>
+            )}
+            {gear && (
+              <span
+                className="dashboard-gear-pill text-xs w-5 h-5 font-bold"
+                title={`Active Gear: ${gear}`}
+                data-testid={`${testId}-gear-pill`}
+              >
+                {gear}
+              </span>
+            )}
             {protocolAudit && (
               <span
                 className={`protocol-status-tag tone-${protocolAudit.status}`}
@@ -282,6 +310,18 @@ export function MultiMeter({
               </span>
             )}
           </div>
+        </div>
+      )}
+
+      {/* Optional Pipeline Sensor Tiers Legend */}
+      {pipelineTiers && pipelineTiers.length > 0 && (
+        <div className="steering-tier-legend" aria-label="Pipeline sensor tiers">
+          {pipelineTiers.map((tier, idx) => (
+            <div key={idx} className="tier-legend-item">
+              <span className={`tier-dot ${tier.tier}`} />
+              <span>{tier.label}</span>
+            </div>
+          ))}
         </div>
       )}
 
@@ -397,6 +437,13 @@ export function MultiMeter({
             {pNum != null ? pNum.toFixed(pDigits) : '—'}
           </div>
           <div className="multi-meter-center-unit">{primary.unit}</div>
+          {(mode || gear) && (
+            <div className="multi-meter-center-sub" data-testid={`${testId}-center-meta`}>
+              {mode && <span>MODE: <strong className="text-primary font-mono">{mode}</strong></span>}
+              {mode && gear && <span className="mx-1 text-border">·</span>}
+              {gear && <span>GEAR: <strong className="text-primary font-mono">{gear}</strong></span>}
+            </div>
+          )}
         </div>
       </div>
 
@@ -431,10 +478,20 @@ export function MultiMeter({
                 >
                   <span className="multi-meter-sub-label">{col.label}</span>
                 </div>
+                {col.busTag && (
+                  <span className="can-id-tag multi-meter-bus-tag">
+                    {col.busTag}
+                  </span>
+                )}
                 <span className="multi-meter-sub-value">
                   {formatSub(col.value, col.digits ?? pDigits)}
                 </span>
                 <span className="multi-meter-sub-unit">{col.unit}</span>
+                {col.extra && (
+                  <span className="multi-meter-sub-extra">
+                    {col.extra}
+                  </span>
+                )}
               </div>
             </Fragment>
           ))}

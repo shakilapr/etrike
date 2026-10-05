@@ -189,3 +189,13 @@ C:\TDM-GCC-64\bin\g++.exe -std=c++17 -Wall -Wextra -Irm-esp32-t12d/src -I. -Isha
 .\rm-esp32-t12d\test\test_rm_t12d_suite.exe
 ```
 All 158 test assertions validate SBUS parsing, microsecond calibration, steering deadband curves, gear selection, park hold logic, brake-over-throttle interlock, 3 runtime operating modes (BARE, SYS, RT), link loss failsafe, and CAN encoding.
+
+---
+
+## 8. CAN Bus Termination & Bench Testing with MTR
+
+- **Onboard Termination**: The RM SN65HVD230 breakout board includes an onboard $120\,\Omega$ termination resistor across `CAN_H` and `CAN_L`.
+- **Standalone Bench Rig with MTR ($60\,\Omega$ Nominal)**:
+  - MTR board ($120\,\Omega$) + RM board ($120\,\Omega$) provide the standard $120\,\Omega \parallel 120\,\Omega = 60\,\Omega$ bus impedance.
+  - **Triple-Termination Warning**: When connecting CANalyst-II on the bench, the CANalyst-II Channel 1 $120\,\Omega$ termination switch **MUST be OFF**. If left ON, total bus resistance collapses to $30\dots 40\,\Omega$, overloading the 3.3V SN65HVD230 transceivers and tripping both MTR and RM into Bus-Off.
+- **Disarmed State Invariant**: RM broadcasting default disarmed commands (`0x113 power_state=0`, `0x110 mode=0`) zeroes actuator motion setpoints on MTR, but **never stops MTR from broadcasting its periodic feedback frames (`0x120`, `0x206`, `0x502`)**. Complete disappearance of MTR frames indicates a physical Bus-Off fault.

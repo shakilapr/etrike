@@ -10,6 +10,7 @@
 import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import { useAppStore, type MessageState } from '../store'
 import { api } from '../api'
+import { frameRecent } from '../lib/signals'
 
 type Gear = 'N' | 'D' | 'S' | 'R'
 type ShiftMode = 'smart' | 'direct'
@@ -803,13 +804,13 @@ export function DriveConsole() {
         numSignal(motion, 'yaw_rate_valid') === 1 &&
         numSignal(motion, 'gear_valid') === 1
 
-      const lowLiveNow = lowDrive?.freshness?.toLowerCase() === 'live'
-      const highLiveNow = highDrive?.freshness?.toLowerCase() === 'live'
-      const sesStatusLiveNow = sesStatus?.freshness?.toLowerCase() === 'live'
-      const sesReqLiveNow = sesReq?.freshness?.toLowerCase() === 'live'
-      const sebStatusLiveNow = sebStatus?.freshness?.toLowerCase() === 'live'
-      const sebReqLiveNow = sebReq?.freshness?.toLowerCase() === 'live'
-      const mtrLiveNow = mtrFbk?.freshness?.toLowerCase() === 'live'
+      const lowLiveNow = frameRecent(lowDrive)
+      const highLiveNow = frameRecent(highDrive)
+      const sesStatusLiveNow = frameRecent(sesStatus)
+      const sesReqLiveNow = frameRecent(sesReq)
+      const sebStatusLiveNow = frameRecent(sebStatus)
+      const sebReqLiveNow = frameRecent(sebReq)
+      const mtrLiveNow = frameRecent(mtrFbk)
 
       // Speed selection based on mode:
       // high: measured (0x121) > high cmd (0x300) > shaped
@@ -916,6 +917,7 @@ export function DriveConsole() {
       const lowBrakeKpa = (mode === 'high')
         ? null
         : (numSignal(sebStatus, 'pressure_kpa') ??
+           (numSignal(sebStatus, 'pressure_value_raw') != null ? numSignal(sebStatus, 'pressure_value_raw')! * 50 : null) ??
            (numSignal(sebReq, 'pressure_request_raw') != null
              ? numSignal(sebReq, 'pressure_request_raw')! * 20
              : null))
@@ -923,7 +925,7 @@ export function DriveConsole() {
         state.brakePressureKpa = Math.min(2000, lowBrakeKpa)
         state.isBraking = true
       } else {
-        state.isBraking = Math.abs(targetV) < Math.abs(state.v) * 0.5 && Math.abs(state.v) > 5
+        state.isBraking = Math.abs(targetV) < Math.abs(state.v) * 0.5 && Math.abs(state.v) > 20
         state.brakePressureKpa = state.isBraking
           ? Math.min(state.brakePressureKpa + 8000 * dt, 2000)
           : Math.max(state.brakePressureKpa - 15000 * dt, 0)

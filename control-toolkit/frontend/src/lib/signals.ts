@@ -57,6 +57,7 @@ export function formatReqConf(req: unknown, conf: unknown): string {
 
 export function signalNum(m: MessageState | undefined, key: string): number | null {
   const v = m?.signals?.[key]?.engineering_value
+  if (typeof v === 'boolean') return v ? 1 : 0
   if (typeof v === 'number' && Number.isFinite(v)) return v
   if (typeof v === 'string' && v.trim() !== '' && !Number.isNaN(Number(v))) return Number(v)
   return null
@@ -445,28 +446,37 @@ export function getBrakePipeline(messages: MessageState[]) {
   const sebStatus = findMsg(messages, 'SEB_STATUS')
   const brakeDiag = findMsg(messages, 'BRAKE_DIAG')
 
-  const hostPressureKpa = frameRecent(hostBrake) ? signalNum(hostBrake, 'brake_pressure_kpa') : null
-  const rtPressureKpa = frameRecent(rtBrake) ? signalNum(rtBrake, 'brake_pressure_kpa') : null
+  const isHostRecent = frameRecent(hostBrake)
+  const isRtRecent = frameRecent(rtBrake)
+  const isSysRecent = frameRecent(sysSebReq)
+  const isSebRecent = frameRecent(sebStatus)
+  const isDiagRecent = frameRecent(brakeDiag)
 
-  const sebReqPressureRaw = frameRecent(sysSebReq) ? signalNum(sysSebReq, 'pressure_request_raw') : null
-  const sebReqStrokeRaw = frameRecent(sysSebReq) ? signalNum(sysSebReq, 'stroke_request_raw') : null
-  const sysPressureKpa =
-    signalNum(sysSebReq, 'brake_pressure_kpa') ??
-    (sebReqPressureRaw != null ? sebReqPressureRaw * 50 : null)
-  const sysStrokeMm =
-    signalNum(sysSebReq, 'stroke_mm') ??
-    (sebReqStrokeRaw != null ? sebReqStrokeRaw * 0.05 : null)
-  const sysControlMode = signalNum(sysSebReq, 'control_mode') // 0=Stroke, 1=Pressure
+  const hostPressureKpa = isHostRecent ? signalNum(hostBrake, 'brake_pressure_kpa') : null
+  const rtPressureKpa = isRtRecent ? signalNum(rtBrake, 'brake_pressure_kpa') : null
 
-  const sebFbkPressureRaw = signalNum(sebStatus, 'pressure_value_raw')
-  const sebFbkStrokeRaw = signalNum(sebStatus, 'stroke_value_raw')
-  const actualPressureKpa =
-    signalNum(sebStatus, 'pressure_kpa') ??
-    (sebFbkPressureRaw != null ? sebFbkPressureRaw * 50 : null) ??
-    signalNum(brakeDiag, 'pressure_raw')
-  const actualStrokeMm =
-    signalNum(sebStatus, 'stroke_mm') ??
-    (sebFbkStrokeRaw != null ? sebFbkStrokeRaw * 0.05 : null)
+  const sebReqPressureRaw = isSysRecent ? signalNum(sysSebReq, 'pressure_request_raw') : null
+  const sebReqStrokeRaw = isSysRecent ? signalNum(sysSebReq, 'stroke_request_raw') : null
+  const sysPressureKpa = isSysRecent
+    ? (signalNum(sysSebReq, 'brake_pressure_kpa') ??
+       (sebReqPressureRaw != null ? sebReqPressureRaw * 50 : null))
+    : null
+  const sysStrokeMm = isSysRecent
+    ? (signalNum(sysSebReq, 'stroke_mm') ??
+       (sebReqStrokeRaw != null ? sebReqStrokeRaw * 0.05 : null))
+    : null
+  const sysControlMode = isSysRecent ? signalNum(sysSebReq, 'control_mode') : null // 0=Stroke, 1=Pressure
+
+  const sebFbkPressureRaw = isSebRecent ? signalNum(sebStatus, 'pressure_value_raw') : null
+  const sebFbkStrokeRaw = isSebRecent ? signalNum(sebStatus, 'stroke_value_raw') : null
+  const actualPressureKpa = isSebRecent
+    ? (signalNum(sebStatus, 'pressure_kpa') ??
+       (sebFbkPressureRaw != null ? sebFbkPressureRaw * 50 : null))
+    : (isDiagRecent ? signalNum(brakeDiag, 'pressure_raw') : null)
+  const actualStrokeMm = isSebRecent
+    ? (signalNum(sebStatus, 'stroke_mm') ??
+       (sebFbkStrokeRaw != null ? sebFbkStrokeRaw * 0.05 : null))
+    : null
 
   const compositeBrakeKpa =
     actualPressureKpa ??
