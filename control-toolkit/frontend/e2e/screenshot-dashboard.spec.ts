@@ -4,12 +4,8 @@ test('capture dashboard viewport screenshot', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 })
   await page.goto('/dashboard')
   await page.waitForSelector('[data-testid="dashboard-hud"]')
-  // Click Preview button if present to showcase active dials & telemetry
-  const previewBtn = page.getByTestId('toggle-demo-mode')
-  if (await previewBtn.isVisible()) {
-    await previewBtn.click()
-    await page.waitForTimeout(500)
-  }
+  // Wait for live dummy CAN stream to populate over WebSocket
+  await page.waitForTimeout(1500)
 
   // Capture meter-speed element screenshot
   const meterSpeed = page.getByTestId('meter-speed')

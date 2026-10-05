@@ -305,7 +305,7 @@ export function MultiMeter({
               </span>
             )}
             {badge && (
-              <span className={`status-pill tone-${badgeTone} text-xs font-semibold px-2 py-0.5 rounded`}>
+              <span className={`status-pill tone-${badgeTone} text-[10px] font-semibold px-1.5 py-0.5 rounded whitespace-nowrap`}>
                 {badge}
               </span>
             )}

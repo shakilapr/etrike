@@ -296,19 +296,20 @@ class Lifecycle:
             except Exception:  # noqa: BLE001
                 usb_visible = False
             if not usb_visible:
-                self._tear_down_transport()
-                self.transport = None
-                detail = (
-                    "CANalyst-II USB device 04D8:0053 not found; "
-                    "Real mode active without physical link"
-                )
-                self.sessions.mark_link_absent(detail)
-                self.diagnostics.emit(
-                    code="transport.canalyst_absent",
-                    title="CANalyst-II not connected",
-                    detail=detail,
-                    severity="warning",
-                )
+                if self.transport is not None:
+                    self._tear_down_transport()
+                    self.transport = None
+                    detail = (
+                        "CANalyst-II USB device 04D8:0053 not found; "
+                        "Real mode active without physical link"
+                    )
+                    self.sessions.mark_link_absent(detail)
+                    self.diagnostics.emit(
+                        code="transport.canalyst_absent",
+                        title="CANalyst-II not connected",
+                        detail=detail,
+                        severity="warning",
+                    )
                 return False
         candidate = CanalystTransportAdapter(
             rx_queue_maxsize=self.config.rx_queue_maxsize,

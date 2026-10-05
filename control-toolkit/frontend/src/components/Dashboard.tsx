@@ -463,9 +463,9 @@ export function Dashboard() {
               modeTone={modeTone}
               gear={confirmedGear !== '—' ? confirmedGear : (demoMode ? 'D' : undefined)}
               pipelineTiers={[
-                { label: 'Host High (0x300)', tier: 'host' },
-                { label: 'RT Low (0x204)', tier: 'rt' },
-                { label: 'MTR Low (0x206)', tier: 'actual' },
+                { label: 'Host (0x300)', tier: 'host' },
+                { label: 'RT (0x204)', tier: 'rt' },
+                { label: 'MTR (0x206)', tier: 'actual' },
               ]}
               protocolAudit={
                 speedAudit
@@ -493,7 +493,7 @@ export function Dashboard() {
                   digits: 0,
                   canId: '0x300',
                   varName: 'HOST_DRIVE_CMD: speed_mmps (High Bus Planner Target)',
-                  extra: `Gear: ${hostGear} · ${hostYawVal != null ? `${(hostYawVal * 0.0573).toFixed(0)}°/s` : '0°/s'}`,
+                  extra: `Gear: ${hostGear} · Demand`,
                 },
                 {
                   label: 'SENT TO LOW BUS',
@@ -503,17 +503,7 @@ export function Dashboard() {
                   digits: 0,
                   canId: '0x204',
                   varName: 'RT_DRIVE_CMD: motor_speed_mmps (Low Bus Setpoint)',
-                  extra: `Gear: ${rtGear} · ${activeMode}`,
-                },
-                {
-                  label: 'MTR FEEDBACK',
-                  busTag: 'LOW · 0x206',
-                  value: mtrSpeedVal,
-                  unit: speedUnit,
-                  digits: 0,
-                  canId: '0x206',
-                  varName: 'MTR_MOTOR_FBK: motor_command_speed_mmps (Low Bus Actuator Feedback)',
-                  extra: `Gear: ${mtrGear} · Nominal`,
+                  extra: `Gear: ${rtGear} · Setpoint`,
                 },
               ]}
               secondaryMetrics={[
@@ -524,10 +514,10 @@ export function Dashboard() {
                   varName: 'RT_WHEEL_SPEED_STS: measured_speed_mmps (Low Bus Hall Sensor)',
                 },
                 {
-                  label: 'Drive Mode',
-                  value: `${activeMode} (0x110)`,
-                  canId: '0x110',
-                  varName: `SYS_MODE_CMD: ${activeMode} (Low Bus)`,
+                  label: 'Motor FBK',
+                  value: `${mtrSpeedVal != null ? mtrSpeedVal.toFixed(0) : '—'} ${speedUnit}`,
+                  canId: '0x206',
+                  varName: `MTR_MOTOR_FBK: motor_command_speed_mmps (Gear: ${mtrGear})`,
                 },
                 {
                   label: 'Plausibility',

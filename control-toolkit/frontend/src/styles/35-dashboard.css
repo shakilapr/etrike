@@ -216,9 +216,9 @@
 /* Center Digital Readout (Nested inside the arc) */
 .multi-meter-center-readout {
   position: absolute;
-  top: 53%;
+  top: 57%;
   left: 50%;
-  transform: translate(-50%, -24%);
+  transform: translate(-50%, -20%);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -231,13 +231,13 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 5px;
-  font-size: 11px;
-  font-weight: 600;
+  gap: 4px;
+  font-size: 10.5px;
+  font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: #52525b;
-  margin-bottom: 2px;
+  margin-bottom: 1px;
 }
 
 .can-id-tag {
@@ -320,8 +320,8 @@
   display: flex;
   align-items: center;
   justify-content: space-around;
-  margin-top: 14px;
-  padding-top: 14px;
+  margin-top: 10px;
+  padding-top: 10px;
   border-top: 1px solid var(--border);
 }
 
@@ -332,26 +332,28 @@
   align-items: center;
   justify-content: center;
   text-align: center;
+  padding: 0 6px;
 }
 
 .multi-meter-sub-label-row {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 5px;
+  gap: 4px;
   margin-bottom: 2px;
 }
 
 .multi-meter-sub-label {
-  font-size: 11px;
-  font-weight: 600;
+  font-size: 10px;
+  font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.05em;
   color: #71717a;
+  white-space: nowrap;
 }
 
 .multi-meter-sub-value {
-  font-size: 28px;
+  font-size: 24px;
   font-weight: 700;
   line-height: 1.1;
   letter-spacing: -0.02em;
@@ -360,17 +362,17 @@
 }
 
 .multi-meter-sub-unit {
-  font-size: 11px;
+  font-size: 10.5px;
   font-weight: 500;
   color: #71717a;
 }
 
 .multi-meter-sub-divider {
   width: 1px;
-  height: 44px;
+  height: 40px;
   background: #e4e4e7;
   flex-shrink: 0;
-  margin: 0 10px;
+  margin: 0 8px;
 }
 
 /* 3-Column Sub-meter Strip (Speed: Host -> RT -> SYS Output) */
@@ -406,7 +408,7 @@
 }
 
 .multi-meter-sub-extra {
-  font-size: 8.5px;
+  font-size: 9px;
   font-weight: 600;
   color: var(--text-secondary);
   line-height: 1.2;
@@ -415,14 +417,14 @@
 }
 
 .multi-meter-center-sub {
-  font-size: 10px;
+  font-size: 9.5px;
   font-weight: 600;
   color: var(--text-secondary);
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 2px;
-  margin-top: 2px;
+  margin-top: 1px;
 }
 
 /* Integrated Secondary Metrics (e.g. Steering Yaw/Torque, Brake Stroke) */
@@ -430,9 +432,9 @@
   width: 100%;
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 4px;
-  margin-top: 14px;
-  padding-top: 12px;
+  gap: 6px;
+  margin-top: 10px;
+  padding-top: 10px;
   border-top: 1px dashed var(--border);
 }
 
@@ -441,7 +443,7 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 3px;
+  gap: 2px;
   text-align: center;
 }
 
@@ -452,16 +454,16 @@
 }
 
 .integrated-label {
-  font-size: 8.5px;
-  font-weight: 600;
+  font-size: 9px;
+  font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.02em;
+  letter-spacing: 0.03em;
   color: var(--text-secondary);
   white-space: nowrap;
 }
 
 .integrated-value {
-  font-size: 11px;
+  font-size: 11.5px;
   font-weight: 700;
   color: var(--text);
   white-space: nowrap;
@@ -482,25 +484,27 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 12px;
+  gap: 6px;
   width: 100%;
-  padding: 4px 8px 6px;
+  padding: 2px 2px 4px;
   border-bottom: 1px solid var(--border-soft, #f4f4f5);
   margin-bottom: 4px;
+  flex-wrap: nowrap;
 }
 
 .tier-legend-item {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  font-size: 10.5px;
+  gap: 3px;
+  font-size: 8.5px;
   font-weight: 600;
   color: var(--text-secondary);
+  white-space: nowrap;
 }
 
 .tier-dot {
-  width: 7px;
-  height: 7px;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
   display: inline-block;
   flex-shrink: 0;
@@ -1001,7 +1005,7 @@
 
 @media (min-width: 1100px) {
   .dashboard-cluster-grid {
-    grid-template-columns: 1fr 1.95fr 1.25fr;
+    grid-template-columns: 0.95fr 2.25fr 1.15fr;
   }
 }
 
