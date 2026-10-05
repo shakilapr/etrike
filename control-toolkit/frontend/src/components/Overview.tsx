@@ -403,8 +403,8 @@ export function Overview() {
               </div>
               <div className="metric metric-discrete">
                 <StatusPill
-                  label={speed.rtGear}
-                  tone={speed.rtGear === 'N' || speed.rtGear === '—' ? 'muted' : 'accent'}
+                  label={speed.rtGear ?? '—'}
+                  tone={speed.rtGear === 'N' || speed.rtGear === '—' || !speed.rtGear ? 'muted' : 'accent'}
                   testId="status-rt-gear"
                 />
               </div>

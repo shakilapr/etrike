@@ -22,7 +22,7 @@ export type BrakeMeterProps = {
 
 export function BrakeMeter({
   title = 'Braking',
-  badge = 'Standby',
+  badge,
   badgeTone = 'ok',
   actualPressure,
   hostPressure,

@@ -42,7 +42,7 @@ function toVisualDeg(ratio: number) {
 
 export function SteeringMeter({
   title = 'Steering',
-  badge = 'Active',
+  badge,
   badgeTone = 'info',
   actualAngle,
   hostAngle,

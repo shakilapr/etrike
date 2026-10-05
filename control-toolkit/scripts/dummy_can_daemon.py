@@ -5,11 +5,10 @@ import sys
 
 URL = "http://127.0.0.1:8001/api/v1/synthetic-peers/feed"
 
-def make_payload(t):
+def make_payload(t, include_host=True):
     # slight dynamic variation over time
     speed_noise = 2500 + int(100 * ((t % 10) - 5))
-    return {
-        "messages": [
+    msgs = [
             {
                 "bus": "high",
                 "can_id": 0x300,
@@ -172,10 +171,12 @@ def make_payload(t):
                 }
             }
         ]
-    }
+    if not include_host:
+        msgs = [m for m in msgs if not (m.get("name", "").startswith("HOST_") or m.get("bus") == "high")]
+    return {"messages": msgs}
 
-def send_once(t=0):
-    payload = make_payload(t)
+def send_once(t=0, include_host=True):
+    payload = make_payload(t, include_host=include_host)
     req = urllib.request.Request(
         URL,
         data=json.dumps(payload).encode("utf-8"),
@@ -185,15 +186,16 @@ def send_once(t=0):
         return json.loads(resp.read().decode("utf-8"))
 
 if __name__ == "__main__":
-    if len(sys.argv) > 1 and sys.argv[1] == "--once":
-        res = send_once()
+    include_host = "--no-host" not in sys.argv
+    if "--once" in sys.argv:
+        res = send_once(include_host=include_host)
         print("Sent once:", res)
         sys.exit(0)
-    print("Starting Dummy CAN Daemon (broadcasts every 100ms)...")
+    print(f"Starting Dummy CAN Daemon (broadcasts every 100ms, include_host={include_host})...")
     count = 0
     while True:
         try:
-            send_once(count)
+            send_once(count, include_host=include_host)
             count += 1
             if count % 50 == 0:
                 print(f"Pushed {count} dummy CAN cycles...")

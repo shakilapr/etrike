@@ -106,7 +106,7 @@ def feed_state(request: Request, body: FeedStateBody) -> dict:
             freshness=FreshnessState.LIVE,
             expected_rate_hz=item.expected_rate_hz or 20.0,
             observed_rate_hz=item.expected_rate_hz or 20.0,
-            validation_status="conforming",
+            validation_status="ok",
             signals=sig_dict,
         )
         life.latest.upsert(st)

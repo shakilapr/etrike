@@ -67,14 +67,14 @@ export function findMsg(messages: MessageState[], name: string, bus?: string) {
   return messages.find((m) => m.name === name && (bus == null || m.bus === bus))
 }
 
-/** True for live/late, or recently seen event frames (cycle_ms=0 ages to missing quickly). */
-export function frameRecent(m: MessageState | undefined, maxAgeMs = 3000): boolean {
+/** True for live/late, or recently seen event frames. Missing/unseen/invalid frames return false immediately. */
+export function frameRecent(m: MessageState | undefined, maxAgeMs = 1500): boolean {
   if (!m) return false
   const f = String(m.freshness || '').toLowerCase()
   if (f === 'live' || f === 'late') return true
-  if (f === 'unseen') return false
-  if (typeof m.age_ms === 'number' && Number.isFinite(m.age_ms) && m.age_ms <= maxAgeMs) {
-    return true
+  if (f === 'unseen' || f === 'missing' || f === 'invalid') return false
+  if (typeof m.age_ms === 'number' && Number.isFinite(m.age_ms)) {
+    return m.age_ms <= maxAgeMs
   }
   return false
 }
@@ -342,16 +342,17 @@ export function getSpeedPipeline(messages: MessageState[]) {
   const hostSpeed = frameRecent(hostDrive) ? signalNum(hostDrive, 'speed_mmps') : null
   const hostGear = frameRecent(hostDrive) ? signalText(hostDrive, 'gear') : null
 
-  const rtSpeed =
-    signalNum(rtDrive, 'motor_speed_mmps') ?? signalNum(rtDrive, 'speed_mmps')
-  const rtGear = signalText(rtDrive, 'gear')
+  const rtSpeed = frameRecent(rtDrive)
+    ? (signalNum(rtDrive, 'motor_speed_mmps') ?? signalNum(rtDrive, 'speed_mmps'))
+    : null
+  const rtGear = frameRecent(rtDrive) ? signalText(rtDrive, 'gear') : null
 
-  const manualSpeed = signalNum(sysThrottle, 'speed_mmps')
-  const mtrFbkSpeed =
-    signalNum(motorFbk, 'motor_command_speed_mmps') ??
-    signalNum(motorFbk, 'speed_mmps')
-  const mtrGear = signalText(motorFbk, 'gear_state')
-  const physicalSpeed = signalNum(wheelSts, 'measured_speed_mmps')
+  const manualSpeed = frameRecent(sysThrottle) ? signalNum(sysThrottle, 'speed_mmps') : null
+  const mtrFbkSpeed = frameRecent(motorFbk)
+    ? (signalNum(motorFbk, 'motor_command_speed_mmps') ?? signalNum(motorFbk, 'speed_mmps'))
+    : null
+  const mtrGear = frameRecent(motorFbk) ? signalText(motorFbk, 'gear_state') : null
+  const physicalSpeed = frameRecent(wheelSts) ? signalNum(wheelSts, 'measured_speed_mmps') : null
 
   return {
     hostDrive,
@@ -380,7 +381,7 @@ export function getSteeringPipeline(messages: MessageState[]) {
   const steerDiag = findMsg(messages, 'STEER_DIAG')
 
   const hostYawRate = frameRecent(hostDrive) ? signalNum(hostDrive, 'yaw_rate_mrad_s') : null
-  const hostAngleRaw = signalNum(hostSteer, 'steer_angle_0_1deg')
+  const hostAngleRaw = frameRecent(hostSteer) ? signalNum(hostSteer, 'steer_angle_0_1deg') : null
   const hostSteerDeg = hostAngleRaw != null ? hostAngleRaw * 0.1 : null
 
   const rtAngleRaw = frameRecent(rtSesReq) ? signalNum(rtSesReq, 'target_angle_raw') : null
@@ -389,7 +390,7 @@ export function getSteeringPipeline(messages: MessageState[]) {
       ? (rtAngleRaw >= 10000 ? (rtAngleRaw - 30000) * 0.1 : rtAngleRaw * 0.1)
       : null
   const rtTargetSlewRate = frameRecent(rtSesReq) ? signalNum(rtSesReq, 'target_speed_raw') : null
-  const rtSteerStateCode = signalNum(rtState, 'steer_state')
+  const rtSteerStateCode = frameRecent(rtState) ? signalNum(rtState, 'steer_state') : null
   const steerStateLabels: Record<number, string> = {
     0: 'BOOT_WAIT',
     1: 'LISTEN_SYNC',
@@ -403,20 +404,23 @@ export function getSteeringPipeline(messages: MessageState[]) {
       ? steerStateLabels[rtSteerStateCode] ?? `STATE_${rtSteerStateCode}`
       : '—'
 
-  const sesAngleDeg =
-    signalNum(sesStatus, 'angle_deg') ??
-    signalNum(sesStatus, 'steer_angle_deg') ??
-    signalNum(sesStatus, 'angle') ??
-    (signalNum(sesStatus, 'steering_angle_raw') != null
-      ? (signalNum(sesStatus, 'steering_angle_raw')! * 0.1 - 3000.0)
-      : null)
-  const sesTorqueNm =
-    signalNum(sesStatus, 'torque_nm') ??
-    signalNum(sesStatus, 'steering_torque_raw')
-  const sesModeCode = signalNum(sesStatus, 'control_mode')
-  const sesMode = sesModeCode === 1 ? 'AUTO' : sesModeCode === 0 ? 'MANUAL' : '—'
-  const sesErrorCode = signalNum(sesStatus, 'error_status')
-  const diagAngle = signalNum(steerDiag, 'angle_0_1deg')
+  const isSesRecent = frameRecent(sesStatus)
+  const sesAngleDeg = isSesRecent
+    ? (signalNum(sesStatus, 'angle_deg') ??
+       signalNum(sesStatus, 'steer_angle_deg') ??
+       signalNum(sesStatus, 'angle') ??
+       (signalNum(sesStatus, 'steering_angle_raw') != null
+         ? (signalNum(sesStatus, 'steering_angle_raw')! * 0.1 - 3000.0)
+         : null))
+    : null
+  const sesTorqueNm = isSesRecent
+    ? (signalNum(sesStatus, 'torque_nm') ??
+       signalNum(sesStatus, 'steering_torque_raw'))
+    : null
+  const sesModeCode = isSesRecent ? signalNum(sesStatus, 'control_mode') : null
+  const sesMode = isSesRecent ? (sesModeCode === 1 ? 'AUTO' : sesModeCode === 0 ? 'MANUAL' : '—') : '—'
+  const sesErrorCode = isSesRecent ? signalNum(sesStatus, 'error_status') : null
+  const diagAngle = frameRecent(steerDiag) ? signalNum(steerDiag, 'angle_0_1deg') : null
 
   return {
     hostDrive,
@@ -512,19 +516,20 @@ export function getAuthorityPipeline(messages: MessageState[]) {
   const sysSafety = findMsg(messages, 'SYS_SAFETY_STS')
   const sysNode = findMsg(messages, 'SYS_NODE_STATUS')
 
-  const hmiReqMode = signalText(hmiMode, 'req_mode')
-  const hmiReqStart = signalText(hmiPwr, 'req_start')
-  const rtReportedMode = signalText(rtState, 'mode')
-  const sysCommandedMode = signalText(sysMode, 'mode')
-  const sysCommandedPower = signalText(sysPwr, 'power_state')
+  const hmiReqMode = frameRecent(hmiMode) ? signalText(hmiMode, 'req_mode') : '—'
+  const hmiReqStart = frameRecent(hmiPwr) ? signalText(hmiPwr, 'req_start') : '—'
+  const rtReportedMode = frameRecent(rtState) ? signalText(rtState, 'mode') : '—'
+  const sysCommandedMode = frameRecent(sysMode) ? signalText(sysMode, 'mode') : '—'
+  const sysCommandedPower = frameRecent(sysPwr) ? signalText(sysPwr, 'power_state') : '—'
 
   // 0x011 carries estop_source (nonzero = active); executed lamp outputs live
   // on 0x500 SYS_NODE_STATUS byte 5.
-  const safetyEstop = signalIsOn(sysSafety, 'estop_source') || signalIsOn(sysSafety, 'estop_active')
-  const lightBrake = signalIsOn(sysNode, 'light_brake_on')
-  const lightHead = signalIsOn(sysNode, 'light_head_on')
-  const lightLeft = signalIsOn(sysNode, 'light_left_on')
-  const lightRight = signalIsOn(sysNode, 'light_right_on')
+  const safetyEstop =
+    frameRecent(sysSafety) && (signalIsOn(sysSafety, 'estop_source') || signalIsOn(sysSafety, 'estop_active'))
+  const lightBrake = frameRecent(sysNode) && signalIsOn(sysNode, 'light_brake_on')
+  const lightHead = frameRecent(sysNode) && signalIsOn(sysNode, 'light_head_on')
+  const lightLeft = frameRecent(sysNode) && signalIsOn(sysNode, 'light_left_on')
+  const lightRight = frameRecent(sysNode) && signalIsOn(sysNode, 'light_right_on')
 
   return {
     hmiMode,

@@ -6,7 +6,7 @@ import threading
 import time
 
 from control_toolkit import protocol_bridge as proto
-from control_toolkit.models.state import LatestStateSnapshot, MessageState
+from control_toolkit.models.state import FreshnessState, LatestStateSnapshot, MessageState
 from control_toolkit.pipeline.freshness import classify
 
 
@@ -41,6 +41,8 @@ class LatestStore:
                     message.freshness = classify(
                         message.validation_status, message.last_seen_ns, cycle_ms, now_ns
                     )
+                    if message.freshness == FreshnessState.MISSING:
+                        message.observed_rate_hz = 0.0
             return LatestStateSnapshot(
                 sequence=self._sequence,
                 wire_hash=proto.WIRE_HASH,
@@ -93,6 +95,8 @@ class LatestStore:
                 st.freshness = classify(
                     st.validation_status, st.last_seen_ns, cycle_ms, now_ns
                 )
+                if st.freshness == FreshnessState.MISSING:
+                    st.observed_rate_hz = 0.0
 
     def clear(self) -> None:
         """Drop all latest-value rows (transport/profile switch — no ghost traffic)."""

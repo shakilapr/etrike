@@ -6,6 +6,7 @@
  */
 
 import type { MessageState } from '../store'
+import { frameRecent } from './signals'
 
 export type SignalContract = {
   id: string
@@ -299,7 +300,7 @@ export function auditSignal(
       m.bus === contract.bus,
   )
 
-  const present = msg != null && liveValue != null
+  const present = msg != null && liveValue != null && frameRecent(msg)
 
   // 1. Schema check against dictionary (or bundle if dictionary not yet loaded)
   let schemaValid = true

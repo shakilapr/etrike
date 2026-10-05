@@ -269,7 +269,7 @@ export function MultiMeter({
             {subtitle && <span className="multi-meter-subtitle">{subtitle}</span>}
           </div>
           <div className="flex items-center gap-1.5">
-            {mode && (
+            {mode && mode !== '—' && (
               <span
                 className={`status-pill tone-${modeTone} text-[10.5px] font-bold px-1.5 py-0.5 rounded font-mono`}
                 title={`Active Drive Mode: ${mode}`}
@@ -278,7 +278,7 @@ export function MultiMeter({
                 {mode}
               </span>
             )}
-            {gear && (
+            {gear && gear !== '—' && (
               <span
                 className="dashboard-gear-pill text-xs w-5 h-5 font-bold"
                 title={`Active Gear: ${gear}`}
@@ -437,11 +437,11 @@ export function MultiMeter({
             {pNum != null ? pNum.toFixed(pDigits) : '—'}
           </div>
           <div className="multi-meter-center-unit">{primary.unit}</div>
-          {(mode || gear) && (
+          {((mode && mode !== '—') || (gear && gear !== '—')) && (
             <div className="multi-meter-center-sub" data-testid={`${testId}-center-meta`}>
-              {mode && <span>MODE: <strong className="text-primary font-mono">{mode}</strong></span>}
-              {mode && gear && <span className="mx-1 text-border">·</span>}
-              {gear && <span>GEAR: <strong className="text-primary font-mono">{gear}</strong></span>}
+              {mode && mode !== '—' && <span>MODE: <strong className="text-primary font-mono">{mode}</strong></span>}
+              {mode && mode !== '—' && gear && gear !== '—' && <span className="mx-1 text-border">·</span>}
+              {gear && gear !== '—' && <span>GEAR: <strong className="text-primary font-mono">{gear}</strong></span>}
             </div>
           )}
         </div>

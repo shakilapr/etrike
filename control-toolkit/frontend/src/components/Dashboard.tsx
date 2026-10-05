@@ -7,6 +7,7 @@ import {
   getSteeringPipeline,
   getVehicleGear,
   getControllerModes,
+  frameRecent,
 } from '../lib/signals'
 import { runFullProtocolAudit } from '../lib/protocolAudit'
 import { evaluateActivationGates } from '../lib/activationGates'
@@ -25,7 +26,10 @@ import { WorkspaceShell } from './WorkspaceShell'
 import { StatusPill } from './primitives'
 
 export function Dashboard() {
-  const messages = useAppStore((s) => s.messages)
+  const streamQuality = useAppStore((s) => s.streamQuality)
+  const isStreamLost = streamQuality === 'lost'
+  const rawMessages = useAppStore((s) => s.messages)
+  const messages = isStreamLost ? [] : rawMessages
   const status = useAppStore((s) => s.status)
 
   const [unitMode, setUnitMode] = useState<'kmh' | 'mmps'>('kmh')
@@ -134,7 +138,9 @@ export function Dashboard() {
       ? controllerModes.sys
       : controllerModes.rt !== '—'
         ? controllerModes.rt
-        : 'STANDBY'
+        : controllerModes.mtr !== '—'
+          ? controllerModes.mtr
+          : '—'
 
   const modeTone: 'ok' | 'warn' | 'danger' | 'info' | 'muted' =
     activeMode === 'AUTO'
@@ -145,9 +151,9 @@ export function Dashboard() {
           ? 'danger'
           : 'muted'
 
-  const hostGear = isDemo ? 'D' : (speed.hostGear && speed.hostGear !== '—' ? speed.hostGear : confirmedGear)
-  const rtGear = isDemo ? 'D' : (speed.rtGear && speed.rtGear !== '—' ? speed.rtGear : confirmedGear)
-  const mtrGear = isDemo ? 'D' : (speed.mtrGear && speed.mtrGear !== '—' ? speed.mtrGear : confirmedGear)
+  const hostGear = isDemo ? 'D' : (speed.hostGear ?? '—')
+  const rtGear = isDemo ? 'D' : (speed.rtGear ?? '—')
+  const mtrGear = isDemo ? 'D' : (speed.mtrGear ?? '—')
 
   // 2. Steering values (deg & dynamics)
   const sesAngleVal = isDemo ? 12.4 : (steer.sesAngleDeg ?? null)
@@ -468,7 +474,7 @@ export function Dashboard() {
                 { label: 'MTR (0x206)', tier: 'actual' },
               ]}
               protocolAudit={
-                speedAudit
+                speedAudit && speedAudit.status !== 'unverified'
                   ? {
                       status: speedAudit.status,
                       note: `${speedAudit.summary} · ${speedAudit.consistencyDetail}`,
@@ -521,7 +527,9 @@ export function Dashboard() {
                 },
                 {
                   label: 'Plausibility',
-                  value: speedAudit?.consistencyPass ? '✓ Matched' : '⚠ Divergent',
+                  value: (speed.mtrFbkSpeed != null && speed.rtSpeed != null)
+                    ? (speedAudit?.consistencyPass ? '✓ Matched' : '⚠ Divergent')
+                    : '—',
                   varName: speedAudit?.consistencyDetail,
                 },
               ]}
@@ -540,7 +548,7 @@ export function Dashboard() {
             {(chassisView === 'both' || chassisView === 'steer') && (
               <SteeringMeter
                 title="Steering"
-                badge={steer.sesMode && steer.sesMode !== '—' ? steer.sesMode : 'Active'}
+                badge={steer.sesMode && steer.sesMode !== '—' ? steer.sesMode : (hasFrames && steer.sesStatus && frameRecent(steer.sesStatus) ? 'Active' : undefined)}
                 badgeTone="info"
                 actualAngle={sesAngleVal}
                 hostAngle={hostSteerVal}
@@ -552,7 +560,7 @@ export function Dashboard() {
                 compact={false}
                 testId="meter-steer"
                 protocolAudit={
-                  steerAudit
+                  steerAudit && steerAudit.status !== 'unverified'
                     ? {
                         status: steerAudit.status,
                         note: `${steerAudit.summary} · ${steerAudit.consistencyDetail}`,
@@ -565,7 +573,7 @@ export function Dashboard() {
             {(chassisView === 'both' || chassisView === 'brake') && (
               <BrakeMeter
                 title="Braking"
-                badge={actualBrakeVal != null && actualBrakeVal > 0 ? 'Active' : 'Standby'}
+                badge={actualBrakeVal != null && actualBrakeVal > 0 ? 'Active' : (hasFrames && brake.sebStatus && frameRecent(brake.sebStatus) ? 'Standby' : undefined)}
                 badgeTone={actualBrakeVal != null && actualBrakeVal > 3500 ? 'danger' : 'ok'}
                 actualPressure={actualBrakeVal}
                 hostPressure={hostBrakeVal}
@@ -578,7 +586,7 @@ export function Dashboard() {
                 compact={false}
                 testId="meter-brake"
                 protocolAudit={
-                  brakeAudit
+                  brakeAudit && brakeAudit.status !== 'unverified'
                     ? {
                         status: brakeAudit.status,
                         note: `${brakeAudit.summary} · ${brakeAudit.consistencyDetail}`,
