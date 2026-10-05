@@ -522,15 +522,20 @@ static void emit_high_rt_heartbeat() {
     g_can_high.send(fr, 2);
 }
 
-// 0x7FE SYS_HEARTBEAT — SYS keepalive (10 Hz, Low bus ONLY per protocol contract)
+// 0x7FE SYS_HEARTBEAT — SYS keepalive (10 Hz)
 static void emit_low_sys_heartbeat() {
     Frame fr = Frame::standard(0x7FEu, 2);
     fr.data[0] = g_roll_sys_hb++;
     const bool is_auto = g_mode_auto.load(std::memory_order_relaxed);
-    // bit0=heartbeat_ok, bit1=estop(0), bit2=mode_auto, bit3=can_ok, bit4=task_safety_ok,
-    // bit5=task_brake_ok, bit6=task_dispatch_ok, bit7=task_can_tx_ok
     fr.data[1] = is_auto ? 0xFDu : 0xF9u;
     g_can_low.send(fr, 2);
+}
+
+static void emit_high_sys_heartbeat() {
+    Frame fr = Frame::standard(0x7FEu, 2);
+    fr.data[0] = g_roll_sys_hb;
+    fr.data[1] = 0xFDu;
+    g_can_high.send(fr, 2);
 }
 
 // 0x600 SYS_DIAG_RPT — Host diagnostic keepalive (1 Hz, pure ECU/bus health)
@@ -630,7 +635,6 @@ static void emit_high_rt_diag() {
         // ── Real Actuator & Host Liveness ────────────────────────────
         const bool real_mtr_active = (now_us - g_last_real_mtr_us.load(std::memory_order_relaxed)) < 250'000;
         const bool real_ses_active = (now_us - g_last_real_ses_us.load(std::memory_order_relaxed)) < 250'000;
-        const bool real_seb_active = (now_us - g_last_real_seb_us.load(std::memory_order_relaxed)) < 250'000;
         const bool host_active     = (now_us - g_last_host_cmd_us.load(std::memory_order_relaxed)) < 500'000;
 
         // ── Command snapshot (all safety locks cleared, zero timeout purge) ────
@@ -716,9 +720,7 @@ static void emit_high_rt_diag() {
         case 0u:
             // 50 Hz: SES Actuator command -> always goes to SES
             emit_low_ses(ses_angle_raw, motor_speed_mmps, true);
-            if (!real_ses_active) {
-                emit_low_ses_status(telemetry_steer_raw);
-            }
+            emit_low_ses_status(telemetry_steer_raw);
             break;
 
         case 1u:
@@ -730,11 +732,9 @@ static void emit_high_rt_diag() {
             break;
 
         case 2u:
-            // 50 Hz: SEB Actuator command
+            // 50 Hz: SEB Actuator command -> always goes to SEB
             emit_low_seb(seb_stroke_raw, true);
-            if (!real_seb_active) {
-                emit_low_seb_status();
-            }
+            emit_low_seb_status();
             break;
 
         case 3u:
@@ -745,13 +745,12 @@ static void emit_high_rt_diag() {
             break;
 
         case 4u:
-            // 10 Hz: SYS Heartbeat (0x7FE Low) & SYS Node Status (0x500)
+            // 10 Hz: SYS Heartbeat (0x7FE Low & High) & SYS Node Status (0x500)
             emit_low_sys_heartbeat();
+            emit_high_sys_heartbeat();
             emit_low_sys_node_status();
             emit_high_sys_node_status();
-            if (!real_mtr_active) {
-                emit_low_mtr_status(telemetry_speed, gear_in);
-            }
+            emit_low_mtr_status(telemetry_speed, gear_in);
             break;
 
         case 5u:
