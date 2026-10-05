@@ -150,7 +150,15 @@ bool Mcp2515Driver::read_frame_burst(can::Frame& out, uint8_t base_addr) {
 
     out = {};
     out.extended = (buf[1] & 0x08) != 0;
-    out.id = (uint32_t(buf[0]) << 3) | ((buf[1] >> 5) & 0x07);
+    if (out.extended) {
+        out.id = (uint32_t(buf[0]) << 21)
+               | ((uint32_t(buf[1]) & 0xE0) << 13)
+               | ((uint32_t(buf[1]) & 0x03) << 16)
+               | (uint32_t(buf[2]) << 8)
+               | uint32_t(buf[3]);
+    } else {
+        out.id = (uint32_t(buf[0]) << 3) | ((buf[1] >> 5) & 0x07);
+    }
     out.dlc = buf[4] & 0x0F;
 
     for (int i = 0; i < out.dlc && i < 8; ++i) {

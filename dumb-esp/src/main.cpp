@@ -212,6 +212,7 @@ static void ingest_high(const Frame& fr) {
             rsp.data[2] = 0u;         // blocker_mask low byte
             rsp.data[3] = 0u;         // blocker_mask high byte
             g_can_high.send(rsp, 2);
+            g_can_low.send(rsp, 2);
         }
         break;
 
