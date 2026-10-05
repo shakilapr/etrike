@@ -24,13 +24,14 @@ import './App.css'
 export default function App() {
   useBackendStream()
   const workspace = useAppStore((s) => s.workspace)
+  const dashboardView = useAppStore((s) => s.dashboardView)
   const setWorkspace = useAppStore((s) => s.setWorkspace)
   const toggleSidebar = useAppStore((s) => s.toggleSidebar)
   const mainRef = useRef<HTMLElement>(null)
 
   useEffect(() => {
     mainRef.current?.scrollTo({ top: 0, left: 0 })
-  }, [workspace])
+  }, [workspace, dashboardView])
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -81,7 +82,9 @@ export default function App() {
           ref={mainRef}
           className={cn(
             'min-h-0 min-w-0 flex-1',
-            workspace === 'dashboard' ? 'overflow-hidden h-full max-h-full' : 'overflow-auto',
+            workspace === 'dashboard' && dashboardView === 'cluster'
+              ? 'overflow-hidden h-full max-h-full'
+              : 'overflow-auto',
           )}
         >
           {workspace === 'overview' && <Overview />}

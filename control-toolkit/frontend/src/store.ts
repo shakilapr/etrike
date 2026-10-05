@@ -153,6 +153,7 @@ type AppState = {
   reconnectAttempts: number
   protocolMismatch: boolean
   workspace: Workspace
+  dashboardView: 'cluster' | 'tables'
   activity: Activity
   sidebarCollapsed: boolean
   controlMethod: ControlMethod
@@ -165,6 +166,7 @@ type AppState = {
   setReconnectAttempts: (n: number) => void
   setProtocolMismatch: (v: boolean) => void
   setWorkspace: (w: Workspace, updateHistory?: boolean) => void
+  setDashboardView: (v: 'cluster' | 'tables') => void
   setActivity: (activity: Activity) => void
   setSidebarCollapsed: (v: boolean | ((prev: boolean) => boolean)) => void
   toggleSidebar: () => void
@@ -184,6 +186,7 @@ export const useAppStore = create<AppState>((set) => ({
   reconnectAttempts: 0,
   protocolMismatch: false,
   workspace: getWorkspaceFromPath(),
+  dashboardView: 'cluster',
   activity: 'explorer',
   sidebarCollapsed:
     typeof window !== 'undefined'
@@ -236,6 +239,7 @@ export const useAppStore = create<AppState>((set) => ({
     set({ workspace })
     syncUrlWithWorkspace(workspace, updateHistory ? 'push' : 'none')
   },
+  setDashboardView: (dashboardView) => set({ dashboardView }),
   setActivity: (activity) => set({ activity }),
   setSidebarCollapsed: (collapsedOrFn) =>
     set((state) => {

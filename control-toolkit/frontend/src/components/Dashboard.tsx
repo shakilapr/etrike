@@ -28,7 +28,8 @@ export function Dashboard() {
 
   const [unitMode, setUnitMode] = useState<'kmh' | 'mmps'>('kmh')
   const [demoMode, setDemoMode] = useState<boolean>(false)
-  const [activeView, setActiveView] = useState<'cluster' | 'tables'>('cluster')
+  const activeView = useAppStore((s) => s.dashboardView)
+  const setActiveView = useAppStore((s) => s.setDashboardView)
   const [activeTab, setActiveTab] = useState<'protocol' | 'pipeline' | 'gates'>('protocol')
   const [chassisView, setChassisView] = useState<'both' | 'steer' | 'brake'>('both')
   const [dictMessages, setDictMessages] = useState<Array<Record<string, unknown>> | null>(null)
@@ -184,10 +185,11 @@ export function Dashboard() {
     <WorkspaceShell
       testId="workspace-dashboard"
       title="Dashboard"
-      fitScreen={true}
+      fitScreen={activeView === 'cluster'}
       hideHeader={true}
+      className={activeView === 'tables' ? 'max-w-none w-full min-h-full' : undefined}
     >
-      <div className="dashboard-container">
+      <div className={`dashboard-container ${activeView === 'tables' ? 'is-tables-view' : 'is-cluster-view'}`}>
         {/* ── HUD Overview Strip ── */}
         <header className="dashboard-hud-strip" data-testid="dashboard-hud">
           <div className="dashboard-hud-group">
