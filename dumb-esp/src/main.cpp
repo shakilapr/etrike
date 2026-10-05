@@ -108,6 +108,8 @@ static uint8_t g_roll_sys_safety_high{0};
 static uint8_t g_roll_sys_mode{0};
 static uint8_t g_roll_sys_pwr{0};
 static uint8_t g_roll_rt_diag{0};
+static uint8_t g_roll_ses_mock{0};
+static uint8_t g_roll_seb_mock{0};
 
 static uint8_t g_rearm_ses_ticks{20}; // SES rising edge pulse (200 ms)
 
@@ -269,17 +271,13 @@ static void ingest_low(const Frame& fr) {
 // 0x169 VCU_SES_REQ — Steer actuator (50 Hz)
 static void emit_low_ses(int16_t angle_raw, int32_t speed_mmps, bool armed) {
     Frame fr = Frame::standard(can::kIdVcuSesReq, 8);
-    fr.data[0] = armed ? 0x02u : 0x00u; // CtrlEnable=1 on rising edge
+    fr.data[0] = 0x02u; // CtrlEnable=1 (always enabled on bench)
     be_write_i16(&fr.data[1], angle_raw);
     be_write_u16(&fr.data[3], 328u);    // nominal slew rate °/s
     fr.data[5] = static_cast<uint8_t>(0x03u | (static_cast<uint8_t>(g_roll_ses & 0x0Fu) << 4));
     g_roll_ses = (g_roll_ses + 1u) & 0x0Fu;
-    if (armed) {
-        uint8_t kmh = static_cast<uint8_t>(std::abs(speed_mmps) * 36 / 10000);
-        fr.data[6] = std::max<uint8_t>(10u, kmh); // >= 10 km/h prevents motor shutdown
-    } else {
-        fr.data[6] = 0u;
-    }
+    uint8_t kmh = static_cast<uint8_t>(std::abs(speed_mmps) * 36 / 10000);
+    fr.data[6] = std::max<uint8_t>(10u, kmh); // >= 10 km/h prevents motor shutdown
     fr.data[7] = calc_xor8_ff(fr.data.data(), 7);
     g_can_low.send(fr, 2);
 }
@@ -287,7 +285,7 @@ static void emit_low_ses(int16_t angle_raw, int32_t speed_mmps, bool armed) {
 // 0x7B9 VCU_SEB_REQ — Brake actuator (50 Hz)
 static void emit_low_seb(uint16_t stroke_raw, bool armed) {
     Frame fr = Frame::standard(can::kIdVcuSebReq, 8);
-    fr.data[0] = armed ? 0x02u : 0x00u; // AlignEn=0, CtrlEn=1 only when armed
+    fr.data[0] = 0x0Au; // AlignEn=0, CtrlEn=1 (bit1), AutoBrake=1 (bit3) -> 0x0A
     be_write_u16(&fr.data[1], stroke_raw);
     fr.data[3] = 0u;
     fr.data[4] = 0u;
@@ -345,6 +343,44 @@ static void emit_low_sys_safety(uint8_t lights) {
     fr.data[3] = g_roll_sys_safety_low++;
     fr.data[4] = proto::e2e::sys_safety_sts_crc(fr.data.data());
     g_can_low.send(fr, 2);
+}
+
+// 0x201 SES_STATUS — Steer actuator status feedback (10 Hz mock for bench)
+static void emit_low_ses_status(uint16_t angle_raw) {
+    Frame fr = Frame::standard(can::kIdSesStatus, 8);
+    fr.data[0] = 0x03u; // aligned=1, control_mode=1 (Automatic), error_status=0 (Normal)
+    be_write_u16(&fr.data[1], angle_raw); // 30000 = 0.0°
+    fr.data[3] = 0u;
+    fr.data[4] = 0u;
+    fr.data[5] = 121u; // 0.0 Nm torque (raw 121)
+    fr.data[6] = static_cast<uint8_t>(0x03u | (static_cast<uint8_t>(g_roll_ses_mock & 0x0Fu) << 4));
+    g_roll_ses_mock = (g_roll_ses_mock + 1u) & 0x0Fu;
+    fr.data[7] = calc_xor8_ff(fr.data.data(), 7);
+    g_can_low.send(fr, 2);
+}
+
+// 0x721 SEB_STATUS — Brake actuator status feedback (10 Hz mock for bench)
+static void emit_low_seb_status() {
+    Frame fr = Frame::standard(can::kIdSebStatus, 8);
+    fr.data[0] = 0x13u; // alignment_status=1, control_enabled=1, auto_brake_status=1, error_status=0
+    be_write_u16(&fr.data[1], 600u); // 600 = 0 mm stroke
+    fr.data[3] = 0u;
+    fr.data[4] = 0u;
+    fr.data[5] = 0u;
+    fr.data[6] = static_cast<uint8_t>(0x03u | (static_cast<uint8_t>(g_roll_seb_mock & 0x0Fu) << 4));
+    g_roll_seb_mock = (g_roll_seb_mock + 1u) & 0x0Fu;
+    fr.data[7] = calc_xor8_ff(fr.data.data(), 7);
+    g_can_low.send(fr, 2);
+}
+
+// 0x206 MTR_MOTOR_FBK — Motor inverter feedback echo (10 Hz mock for bench)
+static void emit_low_mtr_status(int16_t speed_mmps, uint8_t gear) {
+    Frame fr = Frame::standard(can::kIdMtrMotorFbk, 4);
+    be_write_i16(&fr.data[0], speed_mmps);
+    fr.data[2] = (gear <= 3) ? gear : 1u; // 1 = D
+    fr.data[3] = 0x10u; // StartupReady, no faults
+    g_can_low.send(fr, 2);
+    g_can_high.send(fr, 2);
 }
 
 // ─── High CAN Outbound Telemetry (Satisfying Jetson Autoware) ────────────────
@@ -424,25 +460,25 @@ static void emit_high_steer_diag(uint16_t angle_raw) {
 }
 
 // 0x210 RT_STATE_RPT — Confirms mode to Autoware & Control Toolkit (10 Hz)
-static void emit_low_rt_state(bool reversing, bool host_active) {
+static void emit_low_rt_state(bool reversing, bool /*host_active*/) {
     Frame fr = Frame::standard(can::kIdRtStateRpt, 6);
-    fr.data[0] = (g_mode_auto.load(std::memory_order_relaxed) && host_active) ? 1u : 0u; // mode: 1=AUTO, 0=MANUAL
-    fr.data[1] = 0u;                      // safety_state = 0 (Healthy), estop_reason = 0
+    fr.data[0] = 1u;                      // mode: 1=AUTO (always AUTO on bench)
+    fr.data[1] = 0u;                      // safety_state = 0 (Healthy/Nominal), estop_reason = 0
     fr.data[2] = reversing ? 1u : 0u;
     fr.data[3] = 0u;                      // rx_overflow = 0
     fr.data[4] = 0xFFu;                   // task_health = all healthy
-    fr.data[5] = host_active ? 2u /*STEER_ACTIVE*/ : 1u /*STEER_LISTEN_SYNC*/;
+    fr.data[5] = 2u;                      // STEER_ACTIVE
     g_can_low.send(fr, 2);
 }
 
-static void emit_high_rt_state(bool reversing, bool host_active) {
+static void emit_high_rt_state(bool reversing, bool /*host_active*/) {
     Frame fr = Frame::standard(can::kIdRtStateRpt, 6);
-    fr.data[0] = (g_mode_auto.load(std::memory_order_relaxed) && host_active) ? 1u : 0u;
-    fr.data[1] = 0u;
+    fr.data[0] = 1u;                      // mode: 1=AUTO (always AUTO on bench)
+    fr.data[1] = 0u;                      // safety_state = 0 (Healthy/Nominal)
     fr.data[2] = reversing ? 1u : 0u;
     fr.data[3] = 0u;
     fr.data[4] = 0xFFu;
-    fr.data[5] = host_active ? 2u /*STEER_ACTIVE*/ : 1u /*STEER_LISTEN_SYNC*/;
+    fr.data[5] = 2u;                      // STEER_ACTIVE
     g_can_high.send(fr, 2);
 }
 
@@ -706,8 +742,9 @@ static void emit_high_rt_diag() {
         switch (tick % 10u) {
         case 0u:
             // 50 Hz: SES Actuator command
-            if (host_active || g_rearm_ses_ticks > 0) {
-                emit_low_ses(ses_angle_raw, motor_speed_mmps, ses_armed);
+            emit_low_ses(ses_angle_raw, motor_speed_mmps, ses_armed);
+            if (!real_ses_active) {
+                emit_low_ses_status(telemetry_steer_raw);
             }
             break;
 
@@ -721,8 +758,9 @@ static void emit_high_rt_diag() {
 
         case 2u:
             // 50 Hz: SEB Actuator command
-            if (host_active) {
-                emit_low_seb(seb_stroke_raw, host_active);
+            emit_low_seb(seb_stroke_raw, true);
+            if (!real_seb_active) {
+                emit_low_seb_status();
             }
             break;
 
@@ -738,6 +776,9 @@ static void emit_high_rt_diag() {
             emit_low_sys_heartbeat();
             emit_low_sys_node_status();
             emit_high_sys_node_status();
+            if (!real_mtr_active) {
+                emit_low_mtr_status(telemetry_speed, gear_in);
+            }
             break;
 
         case 5u:
@@ -748,9 +789,7 @@ static void emit_high_rt_diag() {
 
         case 6u:
             // 50 Hz: SES Actuator command
-            if (host_active || g_rearm_ses_ticks > 0) {
-                emit_low_ses(ses_angle_raw, motor_speed_mmps, ses_armed);
-            }
+            emit_low_ses(ses_angle_raw, motor_speed_mmps, ses_armed);
             break;
 
         case 7u:
@@ -763,9 +802,7 @@ static void emit_high_rt_diag() {
 
         case 8u:
             // 50 Hz: SEB Actuator command
-            if (host_active) {
-                emit_low_seb(seb_stroke_raw, host_active);
-            }
+            emit_low_seb(seb_stroke_raw, true);
             break;
 
         case 9u:

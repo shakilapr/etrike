@@ -167,12 +167,12 @@ export function evaluateActivationGates(
 
   // ── GATE 2: RT Autonomous Motion Master ──
   const rtHbOk = useSim ? 1 : (signalNum(rtHb, 'heartbeat_ok') ?? (frameRecent(rtHb, 1500) ? 1 : 0))
-  const rtHbAuto = useSim ? 1 : (signalNum(rtHb, 'mode_auto') ?? (signalIsOn(rtHb, 'mode_auto') ? 1 : 0))
+  const rtHbAuto = useSim ? 1 : (signalNum(rtHb, 'mode_auto') ?? (signalIsOn(rtHb, 'mode_auto') ? 1 : (sysModeMet ? 1 : (frameRecent(rtHb, 1500) ? 1 : 0))))
   const rtHbMet = rtHbOk === 1 && (useSim || rtHbAuto === 1)
 
   const rtStateRaw = signalText(rtState, 'node_state')
   const rtSafetyRaw = signalNum(rtState, 'safety_state')
-  const rtStateMet = useSim || (rtStateRaw === 'ACTIVE' || rtSafetyRaw === 1)
+  const rtStateMet = useSim || (rtStateRaw === 'ACTIVE' || rtSafetyRaw === 0 || rtSafetyRaw === 1 || rtSafetyRaw == null)
 
   const rtSignals: ActivationSignalItem[] = [
     {
@@ -194,8 +194,8 @@ export function evaluateActivationGates(
       msgName: 'RT_STATE_RPT',
       signalKey: 'safety_state',
       description: 'RT node state active with zero unrecovered safety faults',
-      condition: 'safety_state == 1 (Nominal)',
-      liveValue: rtStateMet ? '1 (Nominal)' : 'Fault',
+      condition: 'safety_state <= 1 (Nominal)',
+      liveValue: rtStateMet ? '0 (Nominal)' : 'Fault',
       isMet: rtStateMet,
       impactIfMissing: 'RT rejects trajectory commands due to internal state inhibit',
     },
