@@ -55,13 +55,9 @@ bool PhysicsModel::resolve(const DriveCmd& cmd, ResolvedSetpoint& out) {
         m_steer_hold_rad = steer;
         ok = !saturated;
     } else if (std::abs(w) > kYawEpsilon) {
-        // Tricycle cannot spin in place. Set steering to full lock in the
-        // requested direction but keep speed at zero to prevent unexpected
-        // forward lurch (bug 4.5). The steering angle prepares the vehicle
-        // for the turn when speed is later applied by the planner.
-        steer = (w > 0.0f) ? steer_limit_rad : -steer_limit_rad;
+        constexpr float max_w = 3.0f; // 3000 mrad/s max yaw rate
+        steer = std::clamp(w / max_w, -1.0f, 1.0f) * steer_limit_rad;
         m_steer_hold_rad = steer;
-        // v stays 0 — do not generate forward speed
         ok = true;
     } else {
         // Sub-threshold yaw noise at low speed/standstill decays toward straight

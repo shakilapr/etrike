@@ -236,10 +236,8 @@ public:
 
 private:
     static constexpr uint8_t kTxSlots = 16;
-    static int64_t recovery_backoff_us_(uint32_t streak) {
-        const uint32_t shift = streak > 4 ? 4 : (streak > 0 ? streak - 1 : 0);
-        const int64_t delay = 500'000LL << shift;
-        return delay > 5'000'000LL ? 5'000'000LL : delay;
+    static int64_t recovery_backoff_us_(uint32_t /*streak*/) {
+        return 0; // Immediate TX resumption on recovery (zero backoff lockout)
     }
     struct RxItem {
         uint32_t id;

@@ -94,7 +94,6 @@ static std::atomic<int64_t>  g_last_real_seb_us{0};
 static std::atomic<uint16_t> g_ses_actual_angle_raw{dumb::kSbwAngleOffset};
 static std::atomic<int16_t>  g_mtr_actual_speed_mmps{0};
 static std::atomic<uint8_t>  g_ses_mode_status{0};
-static std::atomic<bool>     g_rearm_ses_req{false};
 
 // ─── Rolling Counters ────────────────────────────────────────────────────────
 static uint8_t g_roll_ses{0};
@@ -110,8 +109,6 @@ static uint8_t g_roll_sys_pwr{0};
 static uint8_t g_roll_rt_diag{0};
 static uint8_t g_roll_ses_mock{0};
 static uint8_t g_roll_seb_mock{0};
-
-static uint8_t g_rearm_ses_ticks{20}; // SES rising edge pulse (200 ms)
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 static inline uint8_t calc_sum8(const uint8_t* d, int n) {
@@ -227,10 +224,18 @@ static void ingest_low(const Frame& fr) {
     const int64_t now_us = esp_timer_get_time();
 
     switch (fr.id) {
+    case can::kIdHostDriveCmd:
+    case can::kIdHostBrakeReq:
+    case can::kIdHostSteerCmd:
+    case can::kIdHostLightCmd:
+    case can::kIdHostHeartbeat:
+    case can::kIdHmiPwrReq:
+    case can::kIdHostEstopResetReq:
+        ingest_high(fr);
+        break;
+
     case can::kIdHmiModeReq:
-        if (fr.dlc >= 1) {
-            g_mode_auto.store(fr.data[0] != 0, std::memory_order_relaxed);
-        }
+        g_mode_auto.store(true, std::memory_order_relaxed);
         break;
 
     case can::kIdMtrMotorFbk:
@@ -247,12 +252,6 @@ static void ingest_low(const Frame& fr) {
             const uint16_t ang = static_cast<uint16_t>(
                 (static_cast<uint16_t>(fr.data[1]) << 8) | static_cast<uint16_t>(fr.data[2]));
             g_ses_actual_angle_raw.store(ang, std::memory_order_relaxed);
-        }
-        {
-            const int64_t last = g_last_real_ses_us.load(std::memory_order_relaxed);
-            if (last > 0 && (now_us - last > 250'000)) {
-                g_rearm_ses_req.store(true, std::memory_order_relaxed);
-            }
         }
         g_last_real_ses_us.store(now_us, std::memory_order_relaxed);
         break;
@@ -634,58 +633,34 @@ static void emit_high_rt_diag() {
         const bool real_seb_active = (now_us - g_last_real_seb_us.load(std::memory_order_relaxed)) < 250'000;
         const bool host_active     = (now_us - g_last_host_cmd_us.load(std::memory_order_relaxed)) < 500'000;
 
-        // ── Command snapshot (auto-zero on host watchdog timeout) ────
-        int32_t speed_in   = 0;
-        int32_t yaw_in     = 0;
-        uint8_t gear_in    = 0;
-        int32_t brake_kpa  = 0;
-        int16_t steer_ang  = 0;
-        bool    steer_val  = false;
-        uint8_t lights_in  = 0;
-
-        if (host_active) {
-            speed_in   = g_cmd_speed_mmps.load(std::memory_order_relaxed);
-            yaw_in     = g_cmd_yaw_mrad_s.load(std::memory_order_relaxed);
-            gear_in    = g_cmd_gear.load(std::memory_order_relaxed);
-            brake_kpa  = g_cmd_brake_kpa.load(std::memory_order_relaxed);
-            steer_ang  = g_cmd_steer_0_1deg.load(std::memory_order_relaxed);
-            steer_val  = g_cmd_steer_valid.load(std::memory_order_relaxed);
-            lights_in  = g_cmd_lights.load(std::memory_order_relaxed);
-        } else {
-            // Host stopped sending commands: purge latched values
-            g_cmd_speed_mmps.store(0, std::memory_order_relaxed);
-            g_cmd_yaw_mrad_s.store(0, std::memory_order_relaxed);
-            g_cmd_brake_kpa.store(0, std::memory_order_relaxed);
-            g_cmd_steer_0_1deg.store(0, std::memory_order_relaxed);
-            g_cmd_steer_valid.store(false, std::memory_order_relaxed);
-        }
+        // ── Command snapshot (all safety locks cleared, zero timeout purge) ────
+        const int32_t speed_in   = g_cmd_speed_mmps.load(std::memory_order_relaxed);
+        const int32_t yaw_in     = g_cmd_yaw_mrad_s.load(std::memory_order_relaxed);
+        uint8_t       gear_in    = g_cmd_gear.load(std::memory_order_relaxed);
+        const int32_t brake_kpa  = g_cmd_brake_kpa.load(std::memory_order_relaxed);
+        const int16_t steer_ang  = g_cmd_steer_0_1deg.load(std::memory_order_relaxed);
+        const bool    steer_val  = g_cmd_steer_valid.load(std::memory_order_relaxed);
+        uint8_t       lights_in  = g_cmd_lights.load(std::memory_order_relaxed);
 
         if (brake_kpa > 100) lights_in |= 0x04u; // Auto brake light
 
-        // SES Auto-Recovery State Machine
-        if (g_rearm_ses_req.exchange(false, std::memory_order_relaxed)) {
-            g_rearm_ses_ticks = 20; // 200 ms disarm pulse on physical reconnect
-        }
-        if (real_ses_active && g_ses_mode_status.load(std::memory_order_relaxed) == 0 && g_rearm_ses_ticks == 0) {
-            g_rearm_ses_ticks = 20; // 200 ms disarm pulse on mode desync
-        }
-        const bool ses_armed = host_active && (g_rearm_ses_ticks == 0);
-        if (g_rearm_ses_ticks > 0) {
-            --g_rearm_ses_ticks;
+        // Auto gear selection if not explicitly set
+        if (gear_in == 0) {
+            if (speed_in < 0) {
+                gear_in = 3; // R
+            } else if (speed_in > 0) {
+                gear_in = 1; // D
+            } else {
+                gear_in = 1; // Default D
+            }
         }
 
-        // ── Resolve Kinematics & Setpoints ───────────────────────────
+        // ── Resolve Kinematics: Host > Physics Engine > Each Module ────
         int32_t motor_speed_mmps;
         int16_t ses_angle_raw;
-        int32_t yaw_out;
+        int32_t yaw_out = yaw_in;
 
-        if (!host_active) {
-            motor_speed_mmps = 0;
-            yaw_out = 0;
-            ses_angle_raw = real_ses_active
-                ? g_ses_actual_angle_raw.load(std::memory_order_relaxed)
-                : dumb::kSbwAngleOffset;
-        } else if (steer_val) {
+        if (steer_val) {
             motor_speed_mmps = std::clamp(
                 speed_in,
                 -static_cast<int32_t>(shared::kMaxSpeedRevMmps),
@@ -695,7 +670,6 @@ static void emit_high_rt_diag() {
                 static_cast<int16_t>(ang + dumb::kSbwAngleOffset),
                 dumb::kMinSteerRaw,
                 dumb::kMaxSteerRaw);
-            yaw_out = yaw_in;
         } else {
             rt::DriveCmd cmd{speed_in, yaw_in};
             rt::ResolvedSetpoint sp{};
@@ -706,7 +680,6 @@ static void emit_high_rt_diag() {
                 static_cast<int16_t>(ang_0_1deg + dumb::kSbwAngleOffset),
                 dumb::kMinSteerRaw,
                 dumb::kMaxSteerRaw);
-            yaw_out = yaw_in;
         }
 
         // Brake stroke mapping: raw = (mm + 30.0) / 0.05
@@ -719,7 +692,7 @@ static void emit_high_rt_diag() {
                        static_cast<float>(dumb::kBrakeStrokeZeroRaw),
                        static_cast<float>(dumb::kMaxBrakeStrokeRaw)));
 
-        // Telemetry feedback values: use real sensors if present, else setpoints
+        // Telemetry feedback: reflects physical readings if active, else resolved physics setpoints
         const int16_t telemetry_speed = real_mtr_active
             ? g_mtr_actual_speed_mmps.load(std::memory_order_relaxed)
             : static_cast<int16_t>(motor_speed_mmps);
@@ -730,7 +703,7 @@ static void emit_high_rt_diag() {
         // ═════════════════════════════════════════════════════════════
         //  A. LOW & HIGH CONTINUOUS EMISSIONS (100 Hz)
         // ═════════════════════════════════════════════════════════════
-        // 100 Hz: RT_DRIVE_CMD on Low CAN
+        // 100 Hz: RT_DRIVE_CMD on Low CAN -> always goes to MTR
         emit_low_rt_drive(motor_speed_mmps, gear_in);
 
         // 100 Hz: RT_MOTION_RPT on High CAN (satisfies Autoware 100ms watchdog)
@@ -741,8 +714,8 @@ static void emit_high_rt_diag() {
         // ═════════════════════════════════════════════════════════════
         switch (tick % 10u) {
         case 0u:
-            // 50 Hz: SES Actuator command
-            emit_low_ses(ses_angle_raw, motor_speed_mmps, ses_armed);
+            // 50 Hz: SES Actuator command -> always goes to SES
+            emit_low_ses(ses_angle_raw, motor_speed_mmps, true);
             if (!real_ses_active) {
                 emit_low_ses_status(telemetry_steer_raw);
             }
@@ -752,8 +725,8 @@ static void emit_high_rt_diag() {
             // 10 Hz: SYS Mode & RT State reports
             emit_low_sys_mode();
             emit_high_sys_mode();
-            emit_low_rt_state(gear_in == 3 /*R*/, host_active);
-            emit_high_rt_state(gear_in == 3 /*R*/, host_active);
+            emit_low_rt_state(gear_in == 3 /*R*/, true);
+            emit_high_rt_state(gear_in == 3 /*R*/, true);
             break;
 
         case 2u:
@@ -788,8 +761,8 @@ static void emit_high_rt_diag() {
             break;
 
         case 6u:
-            // 50 Hz: SES Actuator command
-            emit_low_ses(ses_angle_raw, motor_speed_mmps, ses_armed);
+            // 50 Hz: SES Actuator command -> always goes to SES
+            emit_low_ses(ses_angle_raw, motor_speed_mmps, true);
             break;
 
         case 7u:
