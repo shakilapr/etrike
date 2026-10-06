@@ -13,6 +13,7 @@ import { StatusDot } from './ui'
 export function Sidebar() {
   const workspace = useAppStore((s) => s.workspace)
   const setWorkspace = useAppStore((s) => s.setWorkspace)
+  const setDashboardView = useAppStore((s) => s.setDashboardView)
   const activity = useAppStore((s) => s.activity)
   const sidebarCollapsed = useAppStore((s) => s.sidebarCollapsed)
   const setStatus = useAppStore((s) => s.setStatus)
@@ -750,7 +751,12 @@ export function Sidebar() {
                   className={workspace === item.id ? 'nav active' : 'nav'}
                   title={item.label}
                   aria-label={item.label}
-                  onClick={() => setWorkspace(item.id)}
+                  onClick={() => {
+                    if (item.id === 'dashboard') {
+                      setDashboardView('cluster')
+                    }
+                    setWorkspace(item.id)
+                  }}
                 >
                   {item.icon}
                   <span className="nav-text">{item.label}</span>

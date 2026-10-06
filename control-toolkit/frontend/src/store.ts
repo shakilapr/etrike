@@ -236,7 +236,11 @@ export const useAppStore = create<AppState>((set) => ({
   setReconnectAttempts: (reconnectAttempts) => set({ reconnectAttempts }),
   setProtocolMismatch: (protocolMismatch) => set({ protocolMismatch }),
   setWorkspace: (workspace, updateHistory = true) => {
-    set({ workspace })
+    if (workspace === 'dashboard') {
+      set({ workspace, dashboardView: 'cluster' })
+    } else {
+      set({ workspace })
+    }
     syncUrlWithWorkspace(workspace, updateHistory ? 'push' : 'none')
   },
   setDashboardView: (dashboardView) => set({ dashboardView }),

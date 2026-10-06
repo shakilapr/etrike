@@ -36,6 +36,25 @@ export function Dashboard() {
   const [demoMode, setDemoMode] = useState<boolean>(false)
   const activeView = useAppStore((s) => s.dashboardView)
   const setActiveView = useAppStore((s) => s.setDashboardView)
+
+  const handleSetView = (view: 'cluster' | 'tables') => {
+    setActiveView(view)
+    if (typeof window !== 'undefined') {
+      window.history.pushState({ dashboardView: view }, '', window.location.href)
+    }
+  }
+
+  useEffect(() => {
+    const handlePopState = (e: PopStateEvent) => {
+      if (e.state && (e.state.dashboardView === 'cluster' || e.state.dashboardView === 'tables')) {
+        setActiveView(e.state.dashboardView)
+      } else {
+        setActiveView('cluster')
+      }
+    }
+    window.addEventListener('popstate', handlePopState)
+    return () => window.removeEventListener('popstate', handlePopState)
+  }, [setActiveView])
   const [activeTab, setActiveTab] = useState<'protocol' | 'pipeline' | 'gates'>('protocol')
   const [chassisView, setChassisView] = useState<'both' | 'steer' | 'brake'>('both')
   const [dictMessages, setDictMessages] = useState<Array<Record<string, unknown>> | null>(null)
@@ -237,17 +256,17 @@ export function Dashboard() {
                   data-testid="dashboard-protocol-summary"
                   title="Click to view detailed Programmatic Protocol Audit table"
                   onClick={() => {
-                    setActiveView('tables')
+                    handleSetView('tables')
                     setActiveTab('protocol')
                   }}
                 >
                   {hasFrames
                     ? auditReport.overallStatus === 'conforming'
-                      ? '✓ Protocol Verified'
-                      : `${auditReport.conformingCount}/${auditReport.totalSignals} Verified`
+                    ? '✓ Protocol Verified'
+                    : `${auditReport.conformingCount}/${auditReport.totalSignals} Verified`
                     : demoMode
-                      ? 'Simulated Telemetry'
-                      : 'No CAN Telemetry'}
+                    ? 'Simulated Telemetry'
+                    : 'No CAN Telemetry'}
                 </button>
               </div>
             </div>
@@ -273,7 +292,7 @@ export function Dashboard() {
               type="button"
               className={`dashboard-gates-pill tone-${activationReport.allCleared ? 'ok' : 'danger'}`}
               onClick={() => {
-                setActiveView('tables')
+                handleSetView('tables')
                 setActiveTab('gates')
               }}
               title="Click to view controller activation gate matrix"
@@ -323,27 +342,41 @@ export function Dashboard() {
               </button>
             )}
 
-            {/* View Switcher: Cluster vs Audit Tables */}
+            {/* In Tables view: Dedicated Back to Dashboard HUD button */}
+            {activeView === 'tables' && (
+              <button
+                type="button"
+                className="dashboard-back-btn"
+                onClick={() => handleSetView('cluster')}
+                data-testid="hud-back-to-dashboard"
+                title="Return to vehicle instrument gauges"
+              >
+                <span className="dashboard-back-arrow">←</span>
+                <span>Back to Dashboard</span>
+              </button>
+            )}
+
+            {/* View Switcher: Dashboard Cluster vs Audit Tables */}
             <div className="flex items-center gap-0.5 bg-surface-2 p-0.5 rounded border border-border">
               <button
                 type="button"
                 className={`px-2.5 py-0.5 text-xs font-semibold rounded ${
                   activeView === 'cluster' ? 'bg-primary text-white' : 'text-text-secondary'
                 }`}
-                onClick={() => setActiveView('cluster')}
+                onClick={() => handleSetView('cluster')}
                 data-testid="toggle-view-cluster"
               >
-                Cluster
+                Dashboard
               </button>
               <button
                 type="button"
                 className={`px-2.5 py-0.5 text-xs font-semibold rounded ${
                   activeView === 'tables' ? 'bg-primary text-white' : 'text-text-secondary'
                 }`}
-                onClick={() => setActiveView('tables')}
+                onClick={() => handleSetView('tables')}
                 data-testid="toggle-view-tables"
               >
-                Tables
+                Audit Tables
               </button>
             </div>
 
@@ -612,6 +645,17 @@ export function Dashboard() {
         <section className="dashboard-details-card" data-testid="dashboard-summary-table">
           <div className="dashboard-tab-bar">
             <div className="flex items-center gap-2">
+              <button
+                type="button"
+                className="dashboard-tab-back-btn"
+                onClick={() => handleSetView('cluster')}
+                data-testid="tab-back-to-dashboard"
+                title="Return to vehicle instrument gauges"
+              >
+                <span className="dashboard-back-arrow">←</span>
+                <span>Dashboard</span>
+              </button>
+              <div className="dashboard-tab-divider" aria-hidden="true" />
               <button
                 type="button"
                 className={`dashboard-tab-btn ${activeTab === 'protocol' ? 'active' : ''}`}
