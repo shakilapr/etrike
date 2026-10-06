@@ -285,7 +285,7 @@ static void emit_low_ses(int16_t angle_raw, int32_t speed_mmps, bool armed) {
 // 0x7B9 VCU_SEB_REQ — Brake actuator (50 Hz)
 static void emit_low_seb(uint16_t stroke_raw, bool armed) {
     Frame fr = Frame::standard(can::kIdVcuSebReq, 8);
-    fr.data[0] = 0x0Au; // AlignEn=0, CtrlEn=1 (bit1), AutoBrake=1 (bit3) -> 0x0A
+    fr.data[0] = 0x0Bu; // AlignEn=1 (bit0), CtrlEn=1 (bit1), AutoBrake=1 (bit3) -> 0x0B
     be_write_u16(&fr.data[1], stroke_raw);
     fr.data[3] = 0u;
     fr.data[4] = 0u;
@@ -293,6 +293,13 @@ static void emit_low_seb(uint16_t stroke_raw, bool armed) {
     fr.data[6] = static_cast<uint8_t>(0x03u | (static_cast<uint8_t>(g_roll_seb & 0x0Fu) << 4));
     g_roll_seb = (g_roll_seb + 1u) & 0x0Fu;
     fr.data[7] = calc_xor8_ff(fr.data.data(), 7);
+    g_can_low.send(fr, 2);
+}
+
+// 0x205 RT_BRAKE_CMD — RT brake intent setpoint (50 Hz)
+static void emit_low_rt_brake(int32_t brake_kpa) {
+    Frame fr = Frame::standard(can::kIdRtBrakeCmd, 4);
+    be_write_i32(fr.data.data(), brake_kpa);
     g_can_low.send(fr, 2);
 }
 
@@ -715,12 +722,22 @@ static void emit_high_rt_diag() {
         emit_high_rt_motion(telemetry_speed, yaw_out, gear_in);
 
         // ═════════════════════════════════════════════════════════════
-        //  B. 10-PHASE INTERLEAVED SCHEDULE (10 Hz & 50 Hz Emissions)
+        //  B. 50 Hz ACTUATOR EMISSIONS (Interleaved 20 ms Cadence)
+        // ═════════════════════════════════════════════════════════════
+        if ((tick % 2u) == 0u) {
+            // Even ticks (0, 2, 4, 6, 8): SEB Actuator + RT Brake Setpoint (50 Hz)
+            emit_low_seb(seb_stroke_raw, true);
+            emit_low_rt_brake(brake_kpa);
+        } else {
+            // Odd ticks (1, 3, 5, 7, 9): SES Steer Actuator (50 Hz)
+            emit_low_ses(ses_angle_raw, motor_speed_mmps, true);
+        }
+
+        // ═════════════════════════════════════════════════════════════
+        //  C. 10-PHASE INTERLEAVED TELEMETRY SCHEDULE (10 Hz Emissions)
         // ═════════════════════════════════════════════════════════════
         switch (tick % 10u) {
         case 0u:
-            // 50 Hz: SES Actuator command -> always goes to SES
-            emit_low_ses(ses_angle_raw, motor_speed_mmps, true);
             emit_low_ses_status(telemetry_steer_raw);
             break;
 
@@ -733,8 +750,7 @@ static void emit_high_rt_diag() {
             break;
 
         case 2u:
-            // 50 Hz: SEB Actuator command -> always goes to SEB
-            emit_low_seb(seb_stroke_raw, true);
+            // 10 Hz: SEB status feedback
             emit_low_seb_status();
             break;
 
@@ -761,8 +777,6 @@ static void emit_high_rt_diag() {
             break;
 
         case 6u:
-            // 50 Hz: SES Actuator command -> always goes to SES
-            emit_low_ses(ses_angle_raw, motor_speed_mmps, true);
             break;
 
         case 7u:
@@ -774,8 +788,6 @@ static void emit_high_rt_diag() {
             break;
 
         case 8u:
-            // 50 Hz: SEB Actuator command
-            emit_low_seb(seb_stroke_raw, true);
             break;
 
         case 9u:
