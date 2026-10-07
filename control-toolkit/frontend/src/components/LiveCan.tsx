@@ -14,6 +14,7 @@ import { ageTone, formatAge, hexId } from '../lib/format'
 import { cn } from '../lib/utils'
 import { useAppStore } from '../store'
 import { useHostTxKeys } from './ActiveTxRail'
+import { BusHealthStrip } from './BusHealthStrip'
 import { FreshnessBadge } from './FreshnessBadge'
 import { Button } from './ui/button'
 import { Input } from './ui/input'
@@ -234,6 +235,7 @@ export function LiveCan() {
       }
       sectionLabel="Observe"
     >
+      <BusHealthStrip />
 
       <div className="toolbar flex min-w-0 flex-wrap items-center gap-2.5">
         <Input

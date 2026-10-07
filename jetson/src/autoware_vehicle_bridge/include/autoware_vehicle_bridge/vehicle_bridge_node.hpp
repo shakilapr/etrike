@@ -80,6 +80,7 @@ struct VehicleParams
   int state_report_timeout_ms{500};
   int motion_report_timeout_ms{100};
   std::string can_interface{"can0"};
+  bool bench_mode{false};
 
   bool load_from(const rclcpp_lifecycle::LifecycleNode * node);
   void validate_or_throw() const;

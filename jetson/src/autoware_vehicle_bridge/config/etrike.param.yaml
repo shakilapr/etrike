@@ -15,3 +15,4 @@
     state_report_timeout_ms: 500
     motion_report_timeout_ms: 100
     can_interface: "can0"
+    bench_mode: true

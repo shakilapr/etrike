@@ -8,7 +8,10 @@
 #include "system_mode.h"
 #include "bypass_modes.h"
 
-// Define runtime bypass flags
+// Define runtime ControlPath and bypass flags
+etrike::ControlPath g_control_path = etrike::ControlPath::Production;
+etrike::HighLevelLossPolicy g_host_loss_policy = etrike::HighLevelLossPolicy::ZeroOutput;
+uint32_t g_host_loss_timeout_ms = 500;
 bool g_bench_solo_mode = false;
 bool g_bypass_eps_sync = false;
 bool g_bypass_seb_sync = false;
@@ -36,6 +39,7 @@ bool g_bypass_mtr_absent = false;
 #include "stream_validity.h"
 #include "inhibit_state.h"
 #include "physical_egas.h"
+#include "relay_pipeline.h"
 
 #include "brake_control.h"
 #include "light_control.h"
@@ -735,20 +739,21 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
         g_hw_estop_pressed.store(estop_hw, std::memory_order_relaxed);
         g_hw_brake_lever.store(brake_lever, std::memory_order_relaxed);
 
-        // Driver brake takeover: pulling the lever in AUTO transitions to MANUAL immediately
-        // and zeros motor propulsion setpoints so the motor never drives against the brakes.
-        if (g_mode_mgr.handle_driver_brake_takeover(brake_lever)) {
-            ESP_LOGW(TAG, "Driver brake lever takeover: transitioning AUTO -> MANUAL");
-            g_setpoint_speed_mmps.store(0, std::memory_order_relaxed);
-            g_setpoint_gear.store(0, std::memory_order_relaxed);
-        }
+        // In BenchPassthrough, SYS does not enforce driver takeover or hardware ESTOP button tripping
+        if (g_control_path != etrike::ControlPath::BenchPassthrough) {
+            // Driver brake takeover: pulling the lever in AUTO transitions to MANUAL immediately
+            // and zeros motor propulsion setpoints so the motor never drives against the brakes.
+            if (g_mode_mgr.handle_driver_brake_takeover(brake_lever)) {
+                ESP_LOGW(TAG, "Driver brake lever takeover: transitioning AUTO -> MANUAL");
+                g_setpoint_speed_mmps.store(0, std::memory_order_relaxed);
+                g_setpoint_gear.store(0, std::memory_order_relaxed);
+            }
 
-        // Developer bypass suppresses only missing-dependency faults. The
-        // physical ESTOP remains unbypassable.
-        if (g_safety.estop_active()) {
-            enter_estop(sys::kEstopReasonHwButton, sys::kEstopSourceLocalSys, "Hardware ESTOP button");
-        } else if (!g_bench_solo_mode && !g_safety.heartbeat_ok()) {
-            enter_estop(sys::kEstopReasonRtHbLost, sys::kEstopSourceLocalSys, "RT heartbeat loss");
+            if (g_safety.estop_active()) {
+                enter_estop(sys::kEstopReasonHwButton, sys::kEstopSourceLocalSys, "Hardware ESTOP button");
+            } else if (!g_safety.heartbeat_ok()) {
+                enter_estop(sys::kEstopReasonRtHbLost, sys::kEstopSourceLocalSys, "RT heartbeat loss");
+            }
         }
 
         // Toggle external watchdog + per-task alive counter
@@ -756,11 +761,8 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
         // g_wdt.tick();  // GPIO23 toggle
 
         // 0x204 staleness watchdog (arch §8.6: >200ms without RT_DRIVE_CMD ->
-        // zero speed + neutral). g_last_setpoint_tick is stamped on every 0x204
-        // receive (main.cpp:293) but was previously written and never enforced.
-        // Now actively fail-safe: a stale/absent RT_DRIVE_CMD cannot keep a last
-        // non-zero throttle applied.
-        {
+        // zero speed + neutral). In BenchPassthrough, high-level commands are relayed directly.
+        if (g_control_path != etrike::ControlPath::BenchPassthrough) {
             static constexpr TickType_t kSetpointStaleTicks = pdMS_TO_TICKS(200);
             const TickType_t since_setpoint =
                 xTaskGetTickCount() - g_last_setpoint_tick.load(std::memory_order_relaxed);
@@ -840,9 +842,11 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
             static bool was_run_enabled = false;
             const bool run_now = g_mode_mgr.run_enabled();
             if (was_run_enabled && !run_now) {
-                g_setpoint_speed_mmps.store(0, std::memory_order_relaxed);
-                g_setpoint_gear.store(0, std::memory_order_relaxed);
-                ESP_LOGW(TAG, "START released — run disabled (motion inhibited)");
+                if (g_control_path != etrike::ControlPath::BenchPassthrough) {
+                    g_setpoint_speed_mmps.store(0, std::memory_order_relaxed);
+                    g_setpoint_gear.store(0, std::memory_order_relaxed);
+                    ESP_LOGW(TAG, "START released — run disabled (motion inhibited)");
+                }
             }
             was_run_enabled = run_now;
         }
@@ -901,27 +905,42 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
         // MTR-feedback loss or brake fault is an actuator-level safety action,
         // not merely an internal zero.
         {
-            const can::Mode resolved = g_mode_mgr.mode();
-            const bool mode_is_estop = (resolved == can::Mode::Estop);
-            const bool resolved_auto = (resolved == can::Mode::Auto);
-            const bool hmi_valid = g_power_request_valid.load(std::memory_order_relaxed);
-            const bool power_req = hmi_valid
-                ? g_hmi_pwr_on.load(std::memory_order_relaxed) : true;
-
-            const auto auth = sys::resolve_authority(mode_is_estop, resolved_auto, power_req,
-                                                      g_mode_mgr.run_enabled());
-
             can::Frame fr_m;
             can::gen::SysModeCmd message{};
-            message.mode = auth.mode_auto ? 1u : 0u;
-            message.rolling_counter = roll_mode_++;
+            can::Frame fr_p;
+            can::gen::SysPwrCmd pwr_msg{};
+
+            if (g_control_path == etrike::ControlPath::BenchPassthrough) {
+                // Rule 8b: In BenchPassthrough, SYS acts strictly as a protocol relay for HMI requests
+                const bool hmi_valid = g_power_request_valid.load(std::memory_order_relaxed);
+                const bool power_req = hmi_valid
+                    ? g_hmi_pwr_on.load(std::memory_order_relaxed) : true;
+                const bool auto_req = (g_mode_mgr.mode() == can::Mode::Auto);
+
+                message.mode = auto_req ? 1u : 0u;
+                message.rolling_counter = roll_mode_++;
+                pwr_msg.power_state = power_req ? 1u : 0u;
+                pwr_msg.rolling_counter = roll_pwr_++;
+            } else {
+                const can::Mode resolved = g_mode_mgr.mode();
+                const bool mode_is_estop = (resolved == can::Mode::Estop);
+                const bool resolved_auto = (resolved == can::Mode::Auto);
+                const bool hmi_valid = g_power_request_valid.load(std::memory_order_relaxed);
+                const bool power_req = hmi_valid
+                    ? g_hmi_pwr_on.load(std::memory_order_relaxed) : true;
+
+                const auto auth = sys::resolve_authority(mode_is_estop, resolved_auto, power_req,
+                                                          g_mode_mgr.run_enabled());
+
+                message.mode = auth.mode_auto ? 1u : 0u;
+                message.rolling_counter = roll_mode_++;
+                pwr_msg.power_state = auth.power_on ? 1u : 0u;
+                pwr_msg.rolling_counter = roll_pwr_++;
+            }
+
             if (can::gen::encode_sys_mode_cmd(message, fr_m) == can::gen::CodecStatus::Ok)
                 send_can(fr_m);
 
-            can::Frame fr_p;
-            can::gen::SysPwrCmd pwr_msg{};
-            pwr_msg.power_state = auth.power_on ? 1u : 0u;
-            pwr_msg.rolling_counter = roll_pwr_++;
             if (can::gen::encode_sys_pwr_cmd(pwr_msg, fr_p) == can::gen::CodecStatus::Ok)
                 send_can(fr_p);
         }
@@ -972,7 +991,8 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
         int32_t brake_kpa = g_brake_pressure_kpa.load(std::memory_order_relaxed);
         const TickType_t brake_age =
             xTaskGetTickCount() - g_last_brake_setpoint_tick.load(std::memory_order_relaxed);
-        if (mode == can::Mode::Auto
+        if (g_control_path != etrike::ControlPath::BenchPassthrough
+            && mode == can::Mode::Auto
             && brake_age > pdMS_TO_TICKS(sys::kBrakeSetpointStaleMs)) {
             // Never reuse an old RT brake value after its real-time deadline.
             // Request assisted stopping pressure rather than instant 5000 kPa mechanical clamp.
@@ -991,19 +1011,28 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
             seb_b0 = 0x01;   // alignment bit -> BrakeControl ACTIVE
             seb_stroke = 0;
         }
-        bool should_tx = g_brake.tick(lever, estop, brake_kpa, mode,
-                                      seb_b0, seb_stroke, seb_cmd);
-        // Store commanded stroke for the following-error monitor even when not
-        // transmitting (e.g. during boot state).
-        if (should_tx) {
-            g_cmd_stroke_raw.store(seb_cmd.stroke_request_raw, std::memory_order_relaxed);
-        }
-        // Sole normal producer: always transmit when BrakeControl says so.
-        // No RT-health suppression — RT does not command SEB in normal operation.
-        if (should_tx) {
+        if (g_control_path == etrike::ControlPath::BenchPassthrough) {
+            seb_cmd = {};
+            sys::compute_brake_relay(g_control_path, brake_kpa, seb_cmd);
             can::Frame fr;
-            if (can::custom::seb::encode_command(seb_cmd, fr) == can::gen::CodecStatus::Ok)
+            if (can::custom::seb::encode_command(seb_cmd, fr) == can::gen::CodecStatus::Ok) {
                 send_can(fr, "brake"); // 0x7B9 VCU_SEB_REQ
+            }
+        } else {
+            bool should_tx = g_brake.tick(lever, estop, brake_kpa, mode,
+                                          seb_b0, seb_stroke, seb_cmd);
+            // Store commanded stroke for the following-error monitor even when not
+            // transmitting (e.g. during boot state).
+            if (should_tx) {
+                g_cmd_stroke_raw.store(seb_cmd.stroke_request_raw, std::memory_order_relaxed);
+            }
+            // Sole normal producer: always transmit when BrakeControl says so.
+            // No RT-health suppression — RT does not command SEB in normal operation.
+            if (should_tx) {
+                can::Frame fr;
+                if (can::custom::seb::encode_command(seb_cmd, fr) == can::gen::CodecStatus::Ok)
+                    send_can(fr, "brake"); // 0x7B9 VCU_SEB_REQ
+            }
         }
 
         // 0x721 staleness check (architecture §8.10, issue #5, BUG-06): a lost SEB
@@ -1546,15 +1575,19 @@ extern "C" void app_main() {
         }
 
         const etrike::BypassState bypass = etrike::evaluate_run_mode_bypasses(SYSTEM_RUN_MODE, override_pin_low);
+        g_control_path = bypass.control_path;
+        g_host_loss_policy = bypass.loss_policy;
+        g_host_loss_timeout_ms = bypass.loss_timeout_ms;
         g_bench_solo_mode = bypass.bench_solo_mode;
         g_bypass_eps_sync = bypass.bypass_eps_sync;
         g_bypass_seb_sync = bypass.bypass_seb_sync;
         g_bypass_mtr_absent = bypass.bypass_mtr_absent;
 
-        if (g_bench_solo_mode) {
+        if (g_control_path == etrike::ControlPath::BenchPassthrough) {
             ESP_LOGE(TAG, "***********************************");
-            ESP_LOGE(TAG, "* DEVELOPER BYPASS ACTIVE         *");
-            ESP_LOGE(TAG, "* BYPASSING SAFETY SYNC CHECKS!   *");
+            ESP_LOGE(TAG, "* BENCH PASSTHROUGH ACTIVE        *");
+            ESP_LOGE(TAG, "* ALL GUARDRAILS REMOVED          *");
+            ESP_LOGE(TAG, "* SYS ACTS AS PROTOCOL RELAY ONLY *");
             ESP_LOGE(TAG, "***********************************");
         } else if (SYSTEM_RUN_MODE == 1) {
             ESP_LOGI(TAG, "Prototype mode: Override pin not jumped. Enforcing safety.");

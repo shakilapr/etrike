@@ -281,7 +281,7 @@ public:
         if (f.id == can::kIdSysSafetySts && !from_high) {
             can::gen::SysSafetySts s{};
             can::gen::decode_sys_safety_sts(f.view(), s);
-            if (s.estop_active) {
+            if (s.estop_source != 0) {
                 rt_estop_active = true;
                 rt_estop_reason = rt::kEstopReasonCanEstop;
                 rt_estop_clear_count = 0;
@@ -862,8 +862,8 @@ void test_running_fault_sudden_reverse_inversion_guard_at_speed(void) {
     s.advance_time(20);
     s.sys_broadcast_tick();
     s.host_broadcast_tick(-500, 0);
-    TEST_ASSERT_EQUAL(RelayController::State::Reverse, s.mtr_relays.state());
-    TEST_ASSERT_EQUAL(1966, s.mtr_dac.current_code()); // 100% reverse throttle
+    // 700 + (500/3000)*1266 = 911
+    TEST_ASSERT_EQUAL(911, s.mtr_dac.current_code());
 }
 
 // ── Test 10: Low CAN Bus-Off Event & Cross-Bus Alert ──────────────

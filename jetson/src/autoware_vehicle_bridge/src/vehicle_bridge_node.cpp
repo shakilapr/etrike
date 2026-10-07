@@ -104,6 +104,7 @@ bool VehicleParams::load_from(const rclcpp_lifecycle::LifecycleNode * node)
   state_report_timeout_ms = node->get_parameter("state_report_timeout_ms").as_int();
   motion_report_timeout_ms = node->get_parameter("motion_report_timeout_ms").as_int();
   can_interface           = node->get_parameter("can_interface").as_string();
+  bench_mode              = node->get_parameter("bench_mode").as_bool();
   return true;
 }
 
@@ -514,6 +515,7 @@ VehicleBridgeNode::VehicleBridgeNode(const rclcpp::NodeOptions & options)
   declare_parameter("state_report_timeout_ms", 500);
   declare_parameter("motion_report_timeout_ms", 100);
   declare_parameter("can_interface", "can0");
+  declare_parameter("bench_mode", false);
 
   // VOLATILE durability: connects to both VOLATILE and TRANSIENT_LOCAL publishers.
   // (transient_local would silently fail to connect to standard VOLATILE Autoware
@@ -587,8 +589,12 @@ CallbackReturn VehicleBridgeNode::on_configure(const State &)
     std::bind(&VehicleBridgeNode::tick_diagnostics, this));
   timer_diag_->cancel();
 
-  RCLCPP_INFO(get_logger(), "Configured: wheelbase=%.2f loop=%.0fHz can=%s",
-    params_.wheel_base, params_.loop_rate, params_.can_interface.c_str());
+  RCLCPP_INFO(get_logger(), "Configured: wheelbase=%.2f loop=%.0fHz can=%s bench_mode=%s",
+    params_.wheel_base, params_.loop_rate, params_.can_interface.c_str(),
+    params_.bench_mode ? "ENABLED (interlocks bypassed)" : "disabled");
+  if (params_.bench_mode) {
+    RCLCPP_WARN(get_logger(), "BENCH MODE ENABLED: Safety interlocks and ECU feedback gates are bypassed for bench testing.");
+  }
   return CallbackReturn::SUCCESS;
 }
 
@@ -696,9 +702,15 @@ bool VehicleBridgeNode::load_parameters()
 void VehicleBridgeNode::on_control(const autoware_control_msgs::msg::Control::SharedPtr msg)
 {
   std::lock_guard<std::mutex> lock(mutex_);
-  if (!accepting_control_.load(std::memory_order_relaxed) ||
-      software_emergency_.load(std::memory_order_relaxed)) {
-    return;
+  if (!params_.bench_mode) {
+    if (!accepting_control_.load(std::memory_order_relaxed) ||
+        software_emergency_.load(std::memory_order_relaxed)) {
+      return;
+    }
+  } else {
+    if (software_emergency_.load(std::memory_order_relaxed)) {
+      return;
+    }
   }
   latest_control_ = msg;
   last_cmd_time_ = now();
@@ -798,11 +810,13 @@ void VehicleBridgeNode::tick_control()
     motion_report_.has_sample() &&
     motion_report_.is_alive(tick_now, params_.motion_report_timeout_ms) &&
     sys_heartbeat_ok_.load(std::memory_order_relaxed) == 1;
-  const bool base_gate_ready = engaged_.load(std::memory_order_relaxed) &&
-    confirmed_auto_.load(std::memory_order_relaxed) &&
-    !software_emergency_.load(std::memory_order_relaxed) &&
-    sys_estop_active_.load(std::memory_order_relaxed) == 0 &&
-    feedback_ready;
+  const bool base_gate_ready = params_.bench_mode
+    ? (!software_emergency_.load(std::memory_order_relaxed))
+    : (engaged_.load(std::memory_order_relaxed) &&
+       confirmed_auto_.load(std::memory_order_relaxed) &&
+       !software_emergency_.load(std::memory_order_relaxed) &&
+       sys_estop_active_.load(std::memory_order_relaxed) == 0 &&
+       feedback_ready);
   if (!base_gate_ready) {
     accepting_control_.store(false, std::memory_order_relaxed);
     invalidate_control();
@@ -852,7 +866,7 @@ void VehicleBridgeNode::tick_control()
       default:            gear_val = gear::CAN_N; break;
     }
     has_gear = true;
-  } else if (engaged_.load(std::memory_order_relaxed)) {
+  } else if (engaged_.load(std::memory_order_relaxed) || params_.bench_mode) {
     gear_val = gear::CAN_D;
     has_gear = true;
   }
@@ -948,6 +962,7 @@ void VehicleBridgeNode::tick_diagnostics()
   uint8_t estop = sys_estop_active_.load(std::memory_order_relaxed);
   add("SYS Heartbeat", hb == 1, hb ? "alive" : "timeout");
   add("SYS ESTOP", estop == 0, estop ? "ACTIVE" : "clear");
+  add("Bench Mode", !params_.bench_mode, params_.bench_mode ? "ACTIVE (interlocks bypassed)" : "disabled");
 
   pub_diag_->publish(diag);
 }

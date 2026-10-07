@@ -22,6 +22,13 @@ constexpr int SYSTEM_RUN_MODE = ETRIKE_SYSTEM_RUN_MODE;
 // octal-memory GPIO33-37 range. It overlaps the external JTAG MTMS signal.
 constexpr int DEVELOPER_OVERRIDE_PIN = 42;
 
+#include "bypass_modes.h"
+
+// Runtime ControlPath & policy (evaluated strictly at boot from hardware/run mode)
+extern etrike::ControlPath g_control_path;
+extern etrike::HighLevelLossPolicy g_host_loss_policy;
+extern uint32_t g_host_loss_timeout_ms;
+
 // Runtime bypass flags (initialized based on SYSTEM_RUN_MODE)
 extern bool g_bench_solo_mode;
 extern bool g_bypass_eps_sync;

@@ -225,7 +225,7 @@ public:
         if (f.id == can::kIdSysSafetySts && !from_high) {
             can::gen::SysSafetySts s{};
             can::gen::decode_sys_safety_sts(f.view(), s);
-            if (s.estop_active) {
+            if (s.estop_source != 0) {
                 rt_estop_active = true;
                 rt_estop_clear_count = 0;
             } else if (rt_estop_active) {
@@ -609,8 +609,8 @@ void test_full_pipeline_direction_dwell_and_reverse_kinematics(void) {
 
     // Reverse relay is now active and DAC voltage curve active in reverse
     TEST_ASSERT_EQUAL(RelayController::State::Reverse, s.mtr_relays.state());
-    // 700 + (300/500)*1266 = 1459
-    TEST_ASSERT_EQUAL(1459, s.mtr_dac.current_code());
+    // 700 + (300/3000)*1266 = 826
+    TEST_ASSERT_EQUAL(826, s.mtr_dac.current_code());
 }
 
 // ── Test 7: Safety Status (0x011) Stream Loss and Recovery ─────────

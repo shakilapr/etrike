@@ -89,16 +89,21 @@ void test_estop_reset_rejected_while_button_held(void) {
     TEST_ASSERT_EQUAL(can::Mode::Estop, mm.mode());
     TEST_ASSERT_TRUE(sys::ModeManager::estop_latched(mm.mode(), sm.estop_active()));
 
-    // Operator presses START button trying to reset while physical E-Stop is STILL HELD
-    mm.tick(/*mode_btn=*/false, /*start_btn=*/true);
-    mm.tick(/*mode_btn=*/false, /*start_btn=*/false); // release edge
-
-    // ModeManager exits to Manual, BUT sm.estop_active() is STILL true
-    // Safety invariant: estop_latched MUST STILL BE TRUE!
+    // Operator attempts MODE button long-press while physical E-Stop is STILL HELD
+    for (int i = 0; i < 60; ++i) {
+        mm.tick(/*mode_btn=*/true, /*start_btn=*/false, sm.estop_active());
+    }
+    // Safety invariant: reset was REJECTED because physical button was held!
+    TEST_ASSERT_EQUAL(can::Mode::Estop, mm.mode());
     TEST_ASSERT_TRUE(sys::ModeManager::estop_latched(mm.mode(), sm.estop_active()));
 
-    // Only after physical button is released does estop_latched drop to false
+    // Now physical button is released
     sm.set_estop(false);
+    // Perform MODE button long-press to properly reset out of ESTOP
+    for (int i = 0; i < 60; ++i) {
+        mm.tick(/*mode_btn=*/true, /*start_btn=*/false, sm.estop_active());
+    }
+    TEST_ASSERT_EQUAL(can::Mode::Manual, mm.mode());
     TEST_ASSERT_FALSE(sys::ModeManager::estop_latched(mm.mode(), sm.estop_active()));
 }
 
@@ -682,7 +687,8 @@ void test_reverse_speed_sign_protection(void) {
     // Advance 60 ms past dwell
     mgr.tick(170);
     TEST_ASSERT_EQUAL(RelayController::State::Reverse, relays.state());
-    TEST_ASSERT_EQUAL(1459, dac.current_code()); // 700 + (300/500)*1266 = 1459
+    // 700 + (300/3000)*1266 = 826
+    TEST_ASSERT_EQUAL(826, dac.current_code());
 
     // Setpoint sign violation: positive speed > 500 mm/s (e.g. +1000 mm/s) in Reverse gear!
     can::gen::RtDriveCmd drv_bad{1000, static_cast<uint8_t>(can::Gear::R)};

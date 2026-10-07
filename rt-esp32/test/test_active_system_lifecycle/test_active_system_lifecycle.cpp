@@ -402,9 +402,9 @@ void test_direction_dwell_protection_under_active_control(void) {
 
     // Reverse relay is now safely energized, DAC throttle active in reverse!
     TEST_ASSERT_EQUAL(RelayController::State::Reverse, rev_done.relay_state);
-    // Reverse scaling: 700 + (400/500)*1266 = 1712.8 -> 1712
-    TEST_ASSERT_EQUAL(1712, rev_done.dac_code);
-    TEST_ASSERT_FLOAT_WITHIN(0.02f, 2.09f, rev_done.dac_volts);
+    // Reverse scaling: 700 + (400/3000)*1266 = 868
+    TEST_ASSERT_EQUAL(868, rev_done.dac_code);
+    TEST_ASSERT_FLOAT_WITHIN(0.02f, 1.06f, rev_done.dac_volts);
 }
 
 extern "C" void app_main() {

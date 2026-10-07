@@ -189,8 +189,8 @@ void test_raw_can_reverse_300_mmps_turning() {
     TEST_ASSERT_EQUAL(0x03, res.low_can_bytes[4]);
 
     // Verify MTR Hardware Execution (Reverse mode scaling and relay state)
-    TEST_ASSERT_EQUAL(1459, res.dac_code); // 700 + (300/500)*1266 = 1459
-    TEST_ASSERT_FLOAT_WITHIN(0.01f, 1.781f, res.dac_volts);
+    TEST_ASSERT_EQUAL(826, res.dac_code); // 700 + (300/3000)*1266 = 826
+    TEST_ASSERT_FLOAT_WITHIN(0.02f, 1.008f, res.dac_volts);
     TEST_ASSERT_TRUE(res.rev_relay);
 }
 

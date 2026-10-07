@@ -5,7 +5,10 @@
 #include "system_mode.h"
 #include "bypass_modes.h"
 
-// Define runtime bypass flags
+// Define runtime ControlPath and bypass flags
+etrike::ControlPath g_control_path = etrike::ControlPath::Production;
+etrike::HighLevelLossPolicy g_host_loss_policy = etrike::HighLevelLossPolicy::ZeroOutput;
+uint32_t g_host_loss_timeout_ms = 500;
 bool g_bench_solo_mode = false;
 bool g_bypass_eps_sync = false;
 bool g_bypass_seb_sync = false;
@@ -367,7 +370,6 @@ static uint8_t task_health_snapshot() {
     uint8_t    motion_counter = 0;
     uint8_t    node_status_roll_high = 0;
     uint8_t    diag_counter = 0;
-    uint32_t   rpt_fail_count = 0;
     uint32_t   diag_fail_count = 0;
     int64_t    last_high_init_retry_us = esp_timer_get_time();
 
@@ -1019,22 +1021,34 @@ static uint8_t task_health_snapshot() {
             if (g_motion_output_mailbox) xQueuePeek(g_motion_output_mailbox, &out, 0);
             can::Frame secondary_frame{};
 
-            if (out.current_mode != uint8_t(can::Mode::Manual)) {
+            const bool allow_actuators = (g_control_path == etrike::ControlPath::BenchPassthrough)
+                                         || (out.current_mode != uint8_t(can::Mode::Manual));
+            if (allow_actuators) {
                 if ((secondary_slot & 0x1) == 0) {
                     // 0x205 RT_BRAKE_CMD (brake intent -> SYS -> SEB)
                     can::gen::RtBrakeCmd bmsg{out.brake_kpa};
                     if (can::encode_frame(bmsg, secondary_frame) == can::gen::CodecStatus::Ok) {
                         send_can_low(secondary_frame);
                     }
-                } else if (out.steer_command_enable) {
-                    // 0x169 VCU_SES_REQ (steer request -> SES)
+                } else if (out.steer_command_enable || g_control_path == etrike::ControlPath::BenchPassthrough) {
                     can::custom::ses::Command smsg{};
-                    const int64_t now_ms = esp_timer_get_time() / 1000;
-                    if (g_steering.tick(g_ses_angle_0_1deg.load(), g_ses_angle_status.load(),
-                                        now_ms, smsg)
-                        && can::custom::ses::encode_command(smsg, secondary_frame)
+                    if (g_control_path == etrike::ControlPath::BenchPassthrough) {
+                        smsg.target_angle_raw = static_cast<int16_t>(out.steer_angle_0_1deg + rt::kSbwAngleOffset);
+                        smsg.control_enable = true;
+                        smsg.alignment_enable = false;
+                        smsg.target_speed_raw = 328;
+                        if (can::custom::ses::encode_command(smsg, secondary_frame)
                             == can::gen::CodecStatus::Ok) {
-                        send_can_low(secondary_frame);
+                            send_can_low(secondary_frame);
+                        }
+                    } else {
+                        const int64_t now_ms = esp_timer_get_time() / 1000;
+                        if (g_steering.tick(g_ses_angle_0_1deg.load(), g_ses_angle_status.load(),
+                                            now_ms, smsg)
+                            && can::custom::ses::encode_command(smsg, secondary_frame)
+                                == can::gen::CodecStatus::Ok) {
+                            send_can_low(secondary_frame);
+                        }
                     }
                 }
             }
@@ -1087,6 +1101,38 @@ static uint8_t task_health_snapshot() {
         }
     }
 }
+#include "passthrough_pipeline.h"
+
+static void run_passthrough_pipeline(int64_t now_us) {
+    rt::HostDriveSnapshot host{};
+    if (g_host_cmd_mailbox) xQueuePeek(g_host_cmd_mailbox, &host, 0);
+
+    rt::MotionOutputSnapshot motion_out{};
+    const int16_t direct_angle = static_cast<int16_t>(g_direct_steer_angle_0_1deg.load(std::memory_order_relaxed));
+    const bool direct_valid = g_direct_steer_valid.load(std::memory_order_relaxed);
+    const int32_t brake_req = g_brake_request_kpa.load(std::memory_order_relaxed);
+
+    rt::compute_passthrough_motion(
+        host, now_us, g_host_loss_policy, g_host_loss_timeout_ms,
+        direct_angle, direct_valid, brake_req, motion_out
+    );
+
+    if (g_motion_output_mailbox) {
+        xQueueOverwrite(g_motion_output_mailbox, &motion_out);
+    }
+
+    g_mode_current.store(uint8_t(can::Mode::Auto), std::memory_order_relaxed);
+    g_brake_kpa_to_send.store(motion_out.brake_kpa, std::memory_order_relaxed);
+    g_last_cmd_angle_0_1deg.store(motion_out.steer_angle_0_1deg, std::memory_order_relaxed);
+    g_reversing.store(motion_out.reversing, std::memory_order_relaxed);
+
+    if (auto* drv = rt::can_low_driver()) {
+        drv->service_recovery(now_us);
+    }
+    update_low_can_tx_admission(now_us);
+    monitor_can_bus_off();
+}
+
 // ── TASK 3: control_task (Core 1, Priority 5) ───────────────────────
 [[noreturn]] void control_task(void*) {
     TickType_t last_wake = xTaskGetTickCount();
@@ -1103,6 +1149,14 @@ static uint8_t task_health_snapshot() {
         vTaskDelayUntil(&last_wake, pdMS_TO_TICKS(10));
         tick_counter++;
         const int64_t now = esp_timer_get_time();
+
+        if (g_control_path == etrike::ControlPath::BenchPassthrough) {
+            // Drain safety queue to avoid leaks/overflows in bench mode
+            rt::SafetyEvent evt;
+            while (g_safety_evt_q && xQueueReceive(g_safety_evt_q, &evt, 0) == pdTRUE) {}
+            run_passthrough_pipeline(now);
+            continue;
+        }
 
         if (g_steering_estop_request.exchange(false)) {
             g_steering.start_estop(false);
@@ -1468,16 +1522,19 @@ extern "C" void app_main() {
         }
 
         const etrike::BypassState bypass = etrike::evaluate_run_mode_bypasses(SYSTEM_RUN_MODE, override_pin_low);
+        g_control_path = bypass.control_path;
+        g_host_loss_policy = bypass.loss_policy;
+        g_host_loss_timeout_ms = bypass.loss_timeout_ms;
         g_bench_solo_mode = bypass.bench_solo_mode;
         g_bypass_eps_sync = bypass.bypass_eps_sync;
         g_bypass_seb_sync = bypass.bypass_seb_sync;
         g_bypass_mtr_absent = bypass.bypass_mtr_absent;
 
-        if (g_bench_solo_mode) {
+        if (g_control_path == etrike::ControlPath::BenchPassthrough) {
             ESP_LOGE(TAG, "***********************************");
-            ESP_LOGE(TAG, "* DEVELOPER BYPASS ACTIVE         *");
-            ESP_LOGE(TAG, "* BYPASSING SAFETY SYNC CHECKS!   *");
-            ESP_LOGE(TAG, "* SYS-ABSENT: RT SELF-GRANTS AUTO *");
+            ESP_LOGE(TAG, "* BENCH PASSTHROUGH ACTIVE        *");
+            ESP_LOGE(TAG, "* ALL GUARDRAILS REMOVED          *");
+            ESP_LOGE(TAG, "* HIGH-LEVEL COMMANDS PASSED 1:1  *");
             ESP_LOGE(TAG, "***********************************");
         } else if (SYSTEM_RUN_MODE == 1) {
             ESP_LOGI(TAG, "Prototype mode: Override pin not jumped. Enforcing safety.");

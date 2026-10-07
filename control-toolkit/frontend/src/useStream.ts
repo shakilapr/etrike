@@ -26,11 +26,14 @@ export function useBackendStream() {
 
     async function refresh() {
       try {
-        const [st, topo] = await Promise.all([api.status(), api.topology()])
+        const [st, topo, stData] = await Promise.all([api.status(), api.topology(), api.state().catch(() => null)])
         if (closed) return
         statusWireHash.current = st.wire_hash
         setStatus(st)
         setTopology(topo.nodes || [])
+        if (stData?.messages && Array.isArray(stData.messages)) {
+          setMessages(stData.messages, stData.sequence ?? 0)
+        }
         // HTTP reachable counts as liveness so we don't stick Offline when WS is flaky
         lastMsg = Date.now()
         if (ws?.readyState === WebSocket.OPEN) {

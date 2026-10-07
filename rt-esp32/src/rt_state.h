@@ -16,22 +16,12 @@
 #include "watchdog.h"
 #include "can_driver_mcp2515.h"
 #include "safety_stream_loss.h"
+#include "rt_snapshots.h"
 
 namespace rt {
 
 // ── Snapshot Mailbox Definitions (update.md §3.1) ─────────────────
-
-// 1. Host Drive Command Snapshot (High -> Control)
-struct HostDriveSnapshot {
-    int32_t speed_mmps;              // Command speed [-500, 3000]
-    int32_t yaw_rate_mrad_s;         // Command yaw rate [-3000, 3000]
-    int32_t direct_steer_0_1deg;     // Command direct steer angle (0.1 deg)
-    int64_t timestamp_us;            // Monotonic arrival timestamp (esp_timer_get_time)
-    uint32_t obstacle_distance_mm;   // Closest obstacle distance
-    uint8_t gear_override;           // 0=None, 1=D, 2=S, 3=R
-    bool direct_steer_valid;         // 0x303 validity flag
-    bool drive_cmd_valid;            // 0x300 validity flag
-};
+// HostDriveSnapshot and MotionOutputSnapshot are defined in rt_snapshots.h
 
 // 2. Actuator & Bus Feedback Snapshot (Low -> Control)
 struct ActuatorFeedbackSnapshot {
@@ -54,21 +44,6 @@ struct ActuatorFeedbackSnapshot {
     int64_t last_0x7b9_rx_us;        // Observed 0x7B9 arrival timestamp
     uint8_t sys_mode;                // Mode from 0x110
     bool sys_mode_valid;             // 0x110 rolling-counter validity
-};
-
-// 3. Motion Output Snapshot (Control -> Low/High CAN)
-struct MotionOutputSnapshot {
-    int32_t motor_speed_mmps;        // Commanded motor setpoint for 0x204
-    uint8_t motor_gear;              // Gear command for 0x204
-    int16_t steer_angle_0_1deg;      // Commanded steer angle for 0x169
-    uint16_t steer_slew_rate_deg_s;  // Dynamic steer slew rate for 0x169
-    int32_t brake_kpa;               // Commanded brake pressure for 0x205
-    uint8_t current_mode;            // 0=Manual, 1=Auto, 2=Estop
-    uint8_t estop_reason;            // Active ESTOP reason code
-    uint8_t safety_state;            // 0=Normal, 1=InternalEstop, 2=Fault
-    bool seb_emergency_takeover;     // Deprecated: RT never transmits 0x7B9 (SYS is sole producer)
-    bool steer_command_enable;       // True if 0x169 should transmit
-    bool reversing;                  // Vehicle reversing state
 };
 
 // 4. Bounded Gateway Frame (update.md §3.2)

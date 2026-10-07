@@ -422,8 +422,8 @@ public:
         } else if (reverse_enabled) {
             if (target_speed_mmps_ < 0) {
                 speed_mag = -target_speed_mmps_;
-            } else if (target_speed_mmps_ > 0) {
-                speed_mag = target_speed_mmps_; // Support legacy positive reverse setpoints
+            } else if (target_speed_mmps_ > 0 && target_speed_mmps_ <= kMaxReverseSpeedMmps) {
+                speed_mag = target_speed_mmps_; // Support legacy positive reverse setpoints within reverse envelope
             }
         }
 

@@ -17,22 +17,18 @@ namespace rt {
 
 class SpeedController {
 public:
-    // Speed PID controller — Disabled: physical motor encoders not fitted yet.
-    // Preserved for future closed-loop speed control once encoder hardware is installed.
-    /*
     void update_shadow_pid(int32_t desired_mmps, int32_t measured_mmps, float dt,
                            int16_t& pid_output_mmps) {
+        if (measured_mmps <= 0) {
+            pid_output_mmps = 0;
+            return;
+        }
         float effort = m_pid.update(
             static_cast<float>(desired_mmps),
             static_cast<float>(measured_mmps), dt);
 
-        // Convert effort fraction → mm/s correction (scale to full speed range)
+        // Convert effort fraction -> mm/s correction (scale to full speed range)
         pid_output_mmps = static_cast<int16_t>(effort * shared::kMaxSpeedFwdMmps);
-    }
-    */
-    void update_shadow_pid(int32_t /*desired_mmps*/, int32_t /*measured_mmps*/, float /*dt*/,
-                           int16_t& pid_output_mmps) {
-        pid_output_mmps = 0;
     }
 
     // Future: MPC placeholder
