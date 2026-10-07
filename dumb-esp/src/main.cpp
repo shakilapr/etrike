@@ -312,7 +312,7 @@ static void emit_low_rt_drive(int32_t speed_mmps, uint8_t gear) {
     g_can_low.send(fr, 2);
 }
 
-// 0x110 SYS_MODE_CMD — Enables MTR AUTO mode for CAN control (10 Hz, always ON)
+// 0x110 SYS_MODE_CMD — Enables MTR AUTO mode for CAN control (10 Hz, always ON, Low CAN only)
 static void emit_low_sys_mode() {
     Frame fr = Frame::standard(can::kIdSysModeCmd, 2);
     fr.data[0] = 1u; // AUTO (1)
@@ -320,26 +320,12 @@ static void emit_low_sys_mode() {
     g_can_low.send(fr, 2);
 }
 
-static void emit_high_sys_mode() {
-    Frame fr = Frame::standard(can::kIdSysModeCmd, 2);
-    fr.data[0] = 1u; // AUTO (1)
-    fr.data[1] = g_roll_sys_mode++;
-    g_can_high.send(fr, 2);
-}
-
-// 0x113 SYS_PWR_CMD — Traction motor power/ignition command (10 Hz, always ON)
+// 0x113 SYS_PWR_CMD — Traction motor power/ignition command (10 Hz, always ON, Low CAN only)
 static void emit_low_sys_pwr() {
     Frame fr = Frame::standard(can::kIdSysPwrCmd, 2);
     fr.data[0] = 1u; // power ON (always ON)
     fr.data[1] = g_roll_sys_pwr++;
     g_can_low.send(fr, 2);
-}
-
-static void emit_high_sys_pwr() {
-    Frame fr = Frame::standard(can::kIdSysPwrCmd, 2);
-    fr.data[0] = 1u; // power ON (always ON)
-    fr.data[1] = g_roll_sys_pwr++;
-    g_can_high.send(fr, 2);
 }
 
 // 0x011 SYS_SAFETY_STS — Unlocks MTR ignition via AUTOSAR CRC-8 (10 Hz)
@@ -382,14 +368,13 @@ static void emit_low_seb_status() {
     g_can_low.send(fr, 2);
 }
 
-// 0x206 MTR_MOTOR_FBK — Motor inverter feedback echo (10 Hz mock for bench)
+// 0x206 MTR_MOTOR_FBK — Motor inverter feedback echo (10 Hz mock for bench, Low CAN only)
 static void emit_low_mtr_status(int16_t speed_mmps, uint8_t gear) {
     Frame fr = Frame::standard(can::kIdMtrMotorFbk, 4);
     be_write_i16(&fr.data[0], speed_mmps);
     fr.data[2] = (gear <= 3) ? gear : 1u; // 1 = D
     fr.data[3] = 0x10u; // StartupReady, no faults
     g_can_low.send(fr, 2);
-    g_can_high.send(fr, 2);
 }
 
 // ─── High CAN Outbound Telemetry (Satisfying Jetson Autoware) ────────────────
@@ -539,13 +524,6 @@ static void emit_low_sys_heartbeat() {
     const bool is_auto = g_mode_auto.load(std::memory_order_relaxed);
     fr.data[1] = is_auto ? 0xFDu : 0xF9u;
     g_can_low.send(fr, 2);
-}
-
-static void emit_high_sys_heartbeat() {
-    Frame fr = Frame::standard(0x7FEu, 2);
-    fr.data[0] = g_roll_sys_hb;
-    fr.data[1] = 0xFDu;
-    g_can_high.send(fr, 2);
 }
 
 // 0x600 SYS_DIAG_RPT — Host diagnostic keepalive (1 Hz, pure ECU/bus health)
@@ -744,31 +722,27 @@ static void emit_high_rt_diag() {
             break;
 
         case 1u:
-            // 10 Hz: SYS Mode & RT State reports
+            // 10 Hz: SYS Mode (Low only) & RT State reports
             emit_low_sys_mode();
-            emit_high_sys_mode();
             emit_low_rt_state(gear_in == 3 /*R*/, true);
             emit_high_rt_state(gear_in == 3 /*R*/, true);
             break;
 
         case 2u:
-            // 10 Hz: SEB status feedback
+            // 10 Hz: SEB status feedback (Low only)
             emit_low_seb_status();
             break;
 
         case 3u:
-            // 10 Hz: SYS Power command & Steer Diag
+            // 10 Hz: SYS Power command (Low only) & Steer Diag (High)
             emit_low_sys_pwr();
-            emit_high_sys_pwr();
             emit_high_steer_diag(telemetry_steer_raw);
             break;
 
         case 4u:
-            // 10 Hz: SYS Heartbeat (0x7FE Low & High) & SYS Node Status (0x500)
+            // 10 Hz: SYS Heartbeat (Low only), SYS Node Status (Low), MTR Status (Low only)
             emit_low_sys_heartbeat();
-            emit_high_sys_heartbeat();
             emit_low_sys_node_status();
-            emit_high_sys_node_status();
             emit_low_mtr_status(telemetry_speed, gear_in);
             break;
 
@@ -779,21 +753,24 @@ static void emit_high_rt_diag() {
             break;
 
         case 6u:
+            // 10 Hz: SYS Node Status (0x500 High - staggered from tick 4)
+            emit_high_sys_node_status();
             break;
 
         case 7u:
-            // 10 Hz: SYS Safety & Velocity reports
+            // 10 Hz: SYS Safety (Low & High) & Low Throttle
             emit_low_sys_safety(lights_in);
             emit_high_sys_safety(lights_in);
             emit_low_sys_throttle(telemetry_speed);
-            emit_high_sys_throttle(telemetry_speed);
             break;
 
         case 8u:
+            // 10 Hz: SYS Throttle (0x120 High - staggered from tick 7)
+            emit_high_sys_throttle(telemetry_speed);
             break;
 
         case 9u:
-            // 10 Hz: RT Node Status (0x501)
+            // 10 Hz: RT Node Status (0x501 Low & High)
             emit_low_rt_node_status();
             emit_high_rt_node_status();
             break;

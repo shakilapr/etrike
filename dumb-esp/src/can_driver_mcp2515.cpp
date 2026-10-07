@@ -208,10 +208,12 @@ bool Mcp2515Driver::init_spi() {
     }
 
     spi_device_interface_config_t dev_cfg = {};
-    dev_cfg.mode           = 0;
-    dev_cfg.clock_speed_hz = m_cfg.spi_freq;
-    dev_cfg.spics_io_num   = m_cfg.cs_gpio;
-    dev_cfg.queue_size     = 4;
+    dev_cfg.mode             = 0;
+    dev_cfg.clock_speed_hz   = m_cfg.spi_freq;
+    dev_cfg.spics_io_num     = m_cfg.cs_gpio;
+    dev_cfg.queue_size       = 4;
+    dev_cfg.cs_ena_pretrans  = 1;
+    dev_cfg.cs_ena_posttrans = 1;
 
     if (spi_bus_add_device(static_cast<spi_host_device_t>(m_cfg.spi_host),
                            &dev_cfg, &g_spi_handle) != ESP_OK) {
@@ -342,36 +344,48 @@ bool Mcp2515Driver::send(const can::Frame& frame, uint32_t timeout_ms) {
         return false;
     }
 
-    bool is_estop = (frame.id == 0x001);
-    bool is_telem = (frame.id == 0x210 || frame.id == 0x310 || frame.id == 0x311 || frame.id == 0x220 || frame.id == 0x620 || frame.id == 0x121);
-    uint8_t txb_data_reg = is_estop ? kRegTxb2Data : (is_telem ? kRegTxb1Data : kRegTxb0Data);
-    uint8_t rts_cmd      = is_estop ? kCmdRtsTx2 : (is_telem ? kCmdRtsTx1 : kCmdRtsTx0);
-    uint8_t txreq_bit    = is_estop ? kReadStatusTx2Req : (is_telem ? kReadStatusTx1Req : kReadStatusTx0Req);
+    const bool is_estop = (frame.id == 0x001);
+    const bool is_telem = (frame.id == 0x210 || frame.id == 0x310 || frame.id == 0x311 || frame.id == 0x220 || frame.id == 0x620 || frame.id == 0x121);
 
-    uint8_t status = read_status();
-    if (status & txreq_bit) {
-        if (!is_estop) {
-            const uint8_t alt_txreq = is_telem ? kReadStatusTx0Req : kReadStatusTx1Req;
-            if (!(status & alt_txreq)) {
+    uint8_t txb_data_reg = 0;
+    uint8_t rts_cmd      = 0;
+
+    const int64_t deadline = esp_timer_get_time() + int64_t(timeout_ms) * 1000;
+    while (true) {
+        if (is_recovering() || bus_off()) return false;
+        const uint8_t status = read_status();
+
+        if (is_estop) {
+            if (!(status & kReadStatusTx2Req)) {
+                txb_data_reg = kRegTxb2Data;
+                rts_cmd      = kCmdRtsTx2;
+                break;
+            }
+        } else {
+            const uint8_t pref_req = is_telem ? kReadStatusTx1Req : kReadStatusTx0Req;
+            const uint8_t alt_req  = is_telem ? kReadStatusTx0Req : kReadStatusTx1Req;
+
+            if (!(status & pref_req)) {
+                txb_data_reg = is_telem ? kRegTxb1Data : kRegTxb0Data;
+                rts_cmd      = is_telem ? kCmdRtsTx1 : kCmdRtsTx0;
+                break;
+            } else if (!(status & alt_req)) {
                 txb_data_reg = is_telem ? kRegTxb0Data : kRegTxb1Data;
                 rts_cmd      = is_telem ? kCmdRtsTx0 : kCmdRtsTx1;
-                txreq_bit    = alt_txreq;
+                break;
             }
         }
-    }
 
-    if (status & txreq_bit) {
-        int64_t deadline = esp_timer_get_time() + int64_t(timeout_ms) * 1000;
-        while (read_status() & txreq_bit) {
-            if (is_recovering() || bus_off() || esp_timer_get_time() > deadline) return false;
-            vTaskDelay(pdMS_TO_TICKS(1));
+        if (esp_timer_get_time() > deadline) {
+            return false;
         }
+        vTaskDelay(pdMS_TO_TICKS(1));
     }
 
-    uint8_t dlc = (frame.id == 0x001u) ? 0 : std::min<uint8_t>(frame.dlc, 8);
+    const uint8_t dlc = (frame.id == 0x001u) ? 0 : std::min<uint8_t>(frame.dlc, 8);
     uint8_t tx_buf[13] = {};
 
-    uint8_t sidh = (frame.id >> 3) & 0xFF;
+    const uint8_t sidh = (frame.id >> 3) & 0xFF;
     uint8_t sidl = (frame.id & 0x07) << 5;
     if (frame.extended) sidl |= 0x08;
     tx_buf[0] = sidh;
