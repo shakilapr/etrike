@@ -96,8 +96,6 @@ static std::atomic<int16_t>  g_mtr_actual_speed_mmps{0};
 static std::atomic<uint8_t>  g_ses_mode_status{0};
 
 // ─── Rolling Counters ────────────────────────────────────────────────────────
-static uint8_t g_roll_ses{0};
-static uint8_t g_roll_seb{0};
 static uint8_t g_roll_rt_hb_low{0};
 static uint8_t g_roll_rt_hb_high{0};
 static uint8_t g_roll_sys_hb{0};
@@ -153,7 +151,10 @@ static void ingest_high(const Frame& fr) {
 
     switch (fr.id) {
     case can::kIdHostDriveCmd:
-        if (fr.dlc < 8) break;
+        if (fr.dlc < 8) {
+            ESP_LOGW(TAG, "High CAN 0x300 dropped: DLC %u < 8", (unsigned)fr.dlc);
+            break;
+        }
         g_cmd_speed_mmps.store(be_read_i32(fr.data.data()), std::memory_order_relaxed);
         {
             int32_t yaw = static_cast<int32_t>(
@@ -165,6 +166,8 @@ static void ingest_high(const Frame& fr) {
         }
         g_cmd_gear.store(fr.data[7], std::memory_order_relaxed);
         g_last_host_cmd_us.store(now_us, std::memory_order_relaxed);
+        ESP_LOGI(TAG, "High CAN 0x300 RX: speed=%ld yaw=%ld gear=%u",
+                 (long)g_cmd_speed_mmps.load(), (long)g_cmd_yaw_mrad_s.load(), (unsigned)fr.data[7]);
         break;
 
     case can::kIdHostBrakeReq:
@@ -268,31 +271,29 @@ static void ingest_low(const Frame& fr) {
 
 // ─── Low CAN Outbound Actuator Frames (Bare Mode) ────────────────────────────
 
-// 0x169 VCU_SES_REQ — Steer actuator (50 Hz)
+// 0x169 VCU_SES_REQ — Steer actuator (50 Hz, raw wire-frame matching rm-esp32)
 static void emit_low_ses(int16_t angle_raw, int32_t speed_mmps, bool armed) {
     Frame fr = Frame::standard(can::kIdVcuSesReq, 8);
-    fr.data[0] = 0x02u; // CtrlEnable=1 (always enabled on bench)
+    fr.data[0] = armed ? 0x02u : 0x00u; // CtrlEnable=1 when armed, AlignEnable=0
     be_write_i16(&fr.data[1], angle_raw);
-    be_write_u16(&fr.data[3], 328u);    // nominal slew rate °/s
-    fr.data[5] = static_cast<uint8_t>(0x03u | (static_cast<uint8_t>(g_roll_ses & 0x0Fu) << 4));
-    g_roll_ses = (g_roll_ses + 1u) & 0x0Fu;
-    uint8_t kmh = static_cast<uint8_t>(std::abs(speed_mmps) * 36 / 10000);
-    fr.data[6] = std::max<uint8_t>(10u, kmh); // >= 10 km/h prevents motor shutdown
-    fr.data[7] = calc_xor8_ff(fr.data.data(), 7);
+    be_write_u16(&fr.data[3], 126u);    // 126 deg/s hardware minimum slew rate (matches rm-esp32)
+    fr.data[5] = 0x00u; // Zero-security bypass: rolling counter & checksum disabled
+    fr.data[6] = 0x00u; // Vehicle speed: 0 km/h
+    fr.data[7] = 0x00u; // No checksum
     g_can_low.send(fr, 2);
 }
 
-// 0x7B9 VCU_SEB_REQ — Brake actuator (50 Hz)
+// 0x7B9 VCU_SEB_REQ — Brake actuator (50 Hz, raw wire-frame matching rm-esp32)
 static void emit_low_seb(uint16_t stroke_raw, bool armed) {
     Frame fr = Frame::standard(can::kIdVcuSebReq, 8);
-    fr.data[0] = 0x0Bu; // AlignEn=1 (bit0), CtrlEn=1 (bit1), AutoBrake=1 (bit3) -> 0x0B
+    // AlignEn=0 (false for normal braking), CtrlEn=1, Stroke mode (0), AutoBrake=0 -> 0x02
+    fr.data[0] = armed ? 0x02u : 0x00u;
     be_write_u16(&fr.data[1], stroke_raw);
     fr.data[3] = 0u;
     fr.data[4] = 0u;
     fr.data[5] = 0u;
-    fr.data[6] = static_cast<uint8_t>(0x03u | (static_cast<uint8_t>(g_roll_seb & 0x0Fu) << 4));
-    g_roll_seb = (g_roll_seb + 1u) & 0x0Fu;
-    fr.data[7] = calc_xor8_ff(fr.data.data(), 7);
+    fr.data[6] = 0x00u; // Zero-security bypass: rolling counter & checksum disabled
+    fr.data[7] = 0x00u; // No checksum
     g_can_low.send(fr, 2);
 }
 
@@ -343,10 +344,11 @@ static void emit_high_sys_pwr() {
 
 // 0x011 SYS_SAFETY_STS — Unlocks MTR ignition via AUTOSAR CRC-8 (10 Hz)
 static void emit_low_sys_safety(uint8_t lights) {
+    (void)lights;
     Frame fr = Frame::standard(can::kIdSysSafetySts, 5);
-    fr.data[0] = 0u; // estop_active = 0
-    fr.data[1] = 1u; // heartbeat_ok = 1
-    fr.data[2] = lights;
+    fr.data[0] = 0u;     // estop_source = 0 (NONE)
+    fr.data[1] = 0x28u;  // node_presence: SYS (0x20) | SES (0x08)
+    fr.data[2] = 0u;     // estop_reason = 0 (NONE - lights must not write to estop_reason)
     fr.data[3] = g_roll_sys_safety_low++;
     fr.data[4] = proto::e2e::sys_safety_sts_crc(fr.data.data());
     g_can_low.send(fr, 2);
@@ -814,6 +816,15 @@ static void emit_high_rt_diag() {
                      static_cast<unsigned long>(snap.stuff_errors),
                      static_cast<unsigned long>(snap.recovery_attempts),
                      snap.recovery_in_progress ? 1 : 0);
+
+            uint8_t mcp_eflg = 0, mcp_tec = 0, mcp_rec = 0;
+            g_can_high.read_bus_diag(mcp_eflg, mcp_tec, mcp_rec);
+            ESP_LOGI(TAG, "diag 1Hz: High CAN (MCP2515) eflg=0x%02X tec=%u rec=%u mode=%d bus_off=%d spi_fail=%lu host_seen=%llds_ago",
+                     mcp_eflg, mcp_tec, mcp_rec,
+                     static_cast<int>(g_can_high.operating_mode()),
+                     g_can_high.bus_off() ? 1 : 0,
+                     static_cast<unsigned long>(g_can_high.spi_failure_count()),
+                     (now_us - g_last_host_cmd_us.load(std::memory_order_relaxed)) / 1'000'000);
         }
 
         // ═════════════════════════════════════════════════════════════
