@@ -185,6 +185,13 @@ static bool send_can_frame(can::Frame& fr) {
             return ok;
         });
 
+        // ── Power Supply / DCDC Keepalive (10 Hz / 100 ms, 29-bit Extended CAN 0x10262B27) ──
+        if (tick_10ms_count % 10 == 0) {
+            can::Frame dcdc_cmd = can::Frame::extended_frame(0x10262B27u, 8);
+            dcdc_cmd.data = {0xFD, 0x78, 0x00, 0xC8, 0x00, 0xFF, 0xFF, 0xFC};
+            send_can_frame(dcdc_cmd);
+        }
+
         // 3. Single-line structured telemetry log (change-driven)
         static struct {
             rm::OperatingMode mode{static_cast<rm::OperatingMode>(0xFF)};
