@@ -39,8 +39,12 @@ bool g_bypass_mtr_absent = false;
 #include "estop_status.h"
 #include "encoder_pcnt.h"
 #include "phase2_motion.h"
+#include "rt_status_led.h"
 
 static const char* TAG = "rt";
+
+// ── Status LED driver ────────────────────────────────────────────────
+static shared::led::Ws2812Strip g_status_led;
 
 // ???????????????????????????????????????????????????????????????????????
 // Definitions for all extern declarations in rt_state.h.
@@ -1150,6 +1154,56 @@ static void run_passthrough_pipeline(int64_t now_us) {
         tick_counter++;
         const int64_t now = esp_timer_get_time();
 
+        // Status LED Evaluation (25 Hz - every 4 ticks)
+        if (tick_counter % 4 == 0) {
+            const uint32_t now_ms = static_cast<uint32_t>(now / 1000);
+            rt::RtLedInputs led_in{};
+
+            // P1: Physical bus fault
+            const auto* drv = rt::can_low_driver();
+            const bool twai_bus_off = (drv != nullptr && drv->health_snapshot().state == rt::TwaiDriver::HealthState::BusOff);
+            const bool mcp_bus_off = (!g_can_high_healthy.load(std::memory_order_relaxed));
+            led_in.can_or_spi_hw_fault = twai_bus_off || mcp_bus_off;
+
+            // P2: Safety ESTOP
+            led_in.estop_active = (m_current_mode == uint8_t(can::Mode::Estop) || g_estop_reason.load() != 0);
+            led_in.local_estop_cause = (g_estop_reason.load() == rt::kEstopReasonInternal ||
+                                        g_estop_reason.load() == rt::kEstopReasonFollowingError ||
+                                        g_estop_reason.load() == rt::kEstopReasonObstacle ||
+                                        g_estop_reason.load() == rt::kEstopReasonStaleCmd);
+            led_in.seb_emergency_takeover = false;
+
+            // P3: Actuator Domain
+            const uint8_t ses_err = g_ses_error_status.load(std::memory_order_relaxed);
+            led_in.actuator_fault = (ses_err != 0 || g_steering.state() == rt::SteerState::STEER_FAULT);
+            led_in.actuator_missing = (g_mtr_unavailable.load(std::memory_order_relaxed) ||
+                                       g_last_ses_feedback_us.load(std::memory_order_relaxed) == 0);
+
+            // P4 & P5: Heartbeats & Authority
+            const bool sys_alive = (g_last_sys_hb_us.load() > 0 &&
+                                    (now - g_last_sys_hb_us.load()) <= int64_t(rt::kHeartbeatTimeoutMsSys) * 1000);
+            const bool host_alive = (g_last_host_hb_us.load() > 0 &&
+                                     (now - g_last_host_hb_us.load()) <= int64_t(shared::kHeartbeatTimeoutMsHost) * 1000);
+            led_in.sys_hb_ok = g_bench_solo_mode || sys_alive;
+            led_in.host_hb_ok = g_bench_solo_mode || host_alive;
+            led_in.no_sys_authority = (!g_bench_solo_mode && g_no_sys_authority.load(std::memory_order_relaxed));
+            led_in.boot_grace_active = (now < int64_t(shared::kStartupGracePeriodMs) * 1000);
+
+            // P6: Modes
+            led_in.mode_auto = (m_current_mode == uint8_t(can::Mode::Auto) ||
+                                g_mode_current.load(std::memory_order_relaxed) == uint8_t(can::Mode::Auto));
+            rt::HostDriveSnapshot host_snap{};
+            if (g_host_cmd_mailbox) xQueuePeek(g_host_cmd_mailbox, &host_snap, 0);
+            led_in.host_cmd_nonzero = (std::abs(host_snap.speed_mmps) > shared::kLowSpeedThreshMmps);
+            led_in.spin_in_place_lockout = (host_snap.speed_mmps == 0 && host_snap.yaw_rate_mrad_s != 0 &&
+                                            led_in.mode_auto);
+            led_in.safety_clamp_active = false;
+
+            const auto pat = rt::evaluate_rt_led(led_in);
+            const auto rgb = shared::led::render(pat, now_ms);
+            g_status_led.set(rgb);
+        }
+
         if (g_control_path == etrike::ControlPath::BenchPassthrough) {
             // Drain safety queue to avoid leaks/overflows in bench mode
             rt::SafetyEvent evt;
@@ -1502,7 +1556,6 @@ static void run_passthrough_pipeline(int64_t now_us) {
                 hf |= rt::kHbHealthBitCanOk;
 
             g_heartbeat_flags.store(hf, std::memory_order_relaxed);
-
         }
     }
 }
@@ -1553,6 +1606,8 @@ extern "C" void app_main() {
     g_steering.init();
     g_heartbeat.init();
     g_watchdog.init();
+    g_status_led.init(rt::kRgbLedGpio);
+    g_status_led.set(shared::led::scale_rgb(shared::led::palette_lookup(shared::led::DomainColor::White), 64));
 #if ETRIKE_RT_ENCODERS == 1
     rt::encoder_init();
 #endif

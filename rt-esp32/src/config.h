@@ -93,6 +93,7 @@ constexpr int kSpiMosiGpio      =      16;
 constexpr int kSpiMisoGpio      =      17;
 constexpr int kSpiCsGpio        =      18;
 constexpr int kMcpIntGpio       =      47; // MCP2515 INT; GPIO47 is not a strapping pin.
+constexpr int kRgbLedGpio       =      48; // onboard WS2812 RGB LED (DevKitC-1)
 
 // ── watchdog ──────────────────────────────────────────────────────
 // constexpr int kWdtToggleGpio = 21; // Temporarily disabled
