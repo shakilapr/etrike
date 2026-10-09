@@ -285,19 +285,19 @@ def render_outputs(model: dict, validated: dict) -> dict[str, str]:
         "diagnostics_hash": diag_hash,
         "languages": {},
     }
-    for language in ("cpp", "python", "typescript"):
+    for language in ("cpp", "python", "typescript", "rust"):
         capabilities["languages"][language] = [
             {
                 "message": key,
                 "strategy": message["codec"]["strategy"],
                 "implementation": message["codec"].get("implementation_id") or message["codec"].get("profile_id") or "generated-v1",
                 "payload": (
-                    "typed" if language in {"cpp", "python"} and message["codec"]["strategy"] == "generated"
+                    "typed" if language in {"cpp", "python", "rust"} and message["codec"]["strategy"] == "generated"
                     else "raw_unsupported" if message["layout"].get("semantic_support") == "raw_only"
                     else "raw_compatibility" if language in {"python", "typescript"}
                     else "metadata_only"
                 ),
-                "semantic_decode": language in {"cpp", "python"} and message["codec"]["strategy"] == "generated",
+                "semantic_decode": language in {"cpp", "python", "rust"} and message["codec"]["strategy"] == "generated",
             }
             for key, message in sorted(validated["messages"].items())
         ]
@@ -316,6 +316,7 @@ def render_outputs(model: dict, validated: dict) -> dict[str, str]:
         "python/etrike_protocol.py": _render_python(metadata, semantic_hash, network_hash),
         "typescript/etrike-protocol.ts": _render_typescript(metadata, semantic_hash, network_hash),
         "cpp/etrike_protocol.hpp": _render_cpp(validated, semantic_hash, network_hash),
+        "rust/etrike_protocol.rs": _render_rust(validated, semantic_hash, network_hash),
     }
     outputs.update(render_diagnostics(diagnostics_doc, diag_hash))
     return outputs
@@ -929,6 +930,11 @@ def _render_cpp(validated: dict, semantic_hash: str, network_hash: str) -> str:
     lines += ["}  // namespace generated", "}  // namespace etrike::protocol", "",
               "namespace can {", "namespace generated = ::etrike::protocol::generated;", "}  // namespace can", ""]
     return "\n".join(lines)
+
+
+def _render_rust(validated: dict, semantic_hash: str, network_hash: str) -> str:
+    from .rust_emit import render_rust
+    return render_rust(validated, semantic_hash, network_hash)
 
 
 def write_or_check(outputs: dict[str, str], *, check: bool) -> list[str]:
