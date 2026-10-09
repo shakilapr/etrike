@@ -102,6 +102,10 @@ jobs:
         run: cargo clippy --manifest-path update-beta/Cargo.toml --all-targets -- -D warnings
       - name: Test
         run: cargo test --manifest-path update-beta/Cargo.toml
+      - name: SYS firmware shell tests
+        run: cargo test --manifest-path update-beta/sys-esp32-rs/Cargo.toml
+      - name: RT firmware shell tests
+        run: cargo test --manifest-path update-beta/rt-esp32-rs/Cargo.toml
 
   vehicle-build:
     runs-on: ubuntu-latest
