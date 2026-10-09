@@ -12,6 +12,7 @@ __pycache__/
 
 # ── Rust (update-beta workspace) ─────────────────────────────────────
 /update-beta/target/
+/update-beta/**/target/
 
 # ── PlatformIO build output ──────────────────────────────────────────
 .pio/

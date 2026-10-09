@@ -1,0 +1,18 @@
+# Standalone workspace: targets `xtensa-esp32s3-none-elf` (requires `espup`).
+[workspace]
+
+[package]
+name = "rt-esp32-rs"
+description = "E-Trike RT firmware (ESP32-S3): dual-bus gateway, kinematics, steering."
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+etrike-protocol = { path = "../crates/etrike-protocol" }
+etrike-core = { path = "../crates/etrike-core" }
+
+[features]
+default = []
+# Enables the esp-hal / esp-rtos hardware binding (target-only).
+hal = []

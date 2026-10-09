@@ -1,0 +1,21 @@
+# Standalone workspace: the firmware crate is built separately from the
+# library workspace at `update-beta/Cargo.toml` because it targets
+# `xtensa-esp32s3-none-elf` (requires `espup`), not the host.
+[workspace]
+
+[package]
+name = "sys-esp32-rs"
+description = "E-Trike SYS firmware (ESP32-S3): safety, mode, and body control."
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+etrike-protocol = { path = "../crates/etrike-protocol" }
+etrike-core = { path = "../crates/etrike-core" }
+
+[features]
+default = []
+# Enables the esp-hal / esp-rtos hardware binding (target-only). Add the ESP
+# dependencies described in README.md before enabling this feature.
+hal = []
