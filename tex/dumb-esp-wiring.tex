@@ -1,0 +1,181 @@
+% ===========================================================================
+%  E-Trike DUMB-ESP: Classic ESP32 (esp32dev) Bench Wiring Manual
+%  Full Pin-to-Pin Reference Sheet | High-Contrast Monochrome (1 Page)
+%  Dual-Bus Architecture: MCP2515 (High CAN) + WCMCU-230 (Low CAN)
+%  Compile: pdflatex -interaction=nonstopmode dumb-esp-wiring.tex
+% ===========================================================================
+\documentclass[10pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage[top=6mm,bottom=6mm,left=7.5mm,right=7.5mm,headheight=12pt,footskip=13pt]{geometry}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{tabularx}
+\usepackage{enumitem}
+\usepackage{tikz}
+\usetikzlibrary{shapes,arrows.meta,positioning,calc}
+\usepackage[most]{tcolorbox}
+\usepackage{fancyhdr}
+\usepackage{hyperref}
+
+% ── Page Header & Footer ───────────────────────────────────────────────────
+\pagestyle{fancy}
+\fancyhf{}
+\renewcommand{\headrulewidth}{0.6pt}
+\renewcommand{\footrulewidth}{0.4pt}
+\fancyhead[L]{\textbf{E-TRIKE SYSTEM WIRING MANUAL} $\cdot$ DUMB-ESP CLASSIC ESP32 (`esp32dev`)}
+\fancyhead[R]{\textbf{BENCH SPEC REV 1.1.0}}
+\fancyfoot[L]{DUMB-ESP Wiring Reference $\cdot$ Dual CAN (MCP2515 + WCMCU-230), Switches, Power \& JSTs}
+\fancyfoot[R]{Page \thepage\ of 1}
+
+\hypersetup{
+  colorlinks=false,
+  pdfborder={0 0 0},
+  pdftitle={DUMB-ESP Classic ESP32 Bench Wiring Manual},
+  pdfauthor={E-Trike Drive-by-Wire Autonomous Systems},
+}
+
+% ── Monochrome Box Styles ──────────────────────────────────────────────────
+\tcbset{
+  bwcard/.style={
+    enhanced,
+    colback=white,
+    colframe=black,
+    boxrule=0.6pt,
+    arc=1.5pt,
+    left=3.5pt, right=3.5pt, top=1pt, bottom=1pt,
+    fonttitle=\bfseries\footnotesize\color{black},
+    coltitle=black,
+    attach boxed title to top left={yshift*=-\tcboxedtitleheight/2, xshift=6pt},
+    boxed title style={
+      colback=white,
+      colframe=black,
+      arc=1.5pt,
+      boxrule=0.5pt,
+      top=0.3pt, bottom=0.3pt, left=2.5pt, right=2.5pt
+    }
+  },
+  bwalert/.style={
+    enhanced,
+    colback=white,
+    colframe=black,
+    boxrule=0.9pt,
+    arc=1.5pt,
+    left=3.5pt, right=3.5pt, top=1.5pt, bottom=1.5pt
+  }
+}
+
+\renewcommand{\arraystretch}{0.96}
+\setlength{\tabcolsep}{2pt}
+
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+\newcolumntype{C}[1]{>{\centering\arraybackslash}p{#1}}
+\newcolumntype{Y}{>{\raggedright\arraybackslash}X}
+
+\begin{document}
+\footnotesize
+
+\begin{center}
+  {\bfseries\normalsize DUMB-ESP CONTROLLER WIRING \& DUAL-CAN INTERFACE SPECIFICATION}
+\end{center}
+\vspace{-11pt}
+
+% ── Critical Rules Box ─────────────────────────────────────────────────────
+\begin{tcolorbox}[bwalert]
+\textbf{CORE ELECTRICAL INVARIANTS \& CONNECTION RULES:}
+\begin{itemize}[leftmargin=1.2em, itemsep=0pt, topsep=0pt, parsep=0pt]
+  \item \textbf{Dual Isolated CAN Buses via JST:} High CAN (500\,kbps via MCP2515) and Low CAN (500\,kbps via WCMCU-230) terminate at \textbf{two dedicated 3-pin JST connectors} (Pin 1=CAN\_H, Pin 2=CAN\_L, Pin 3=GND).
+  \item \textbf{Strict Supply Separation:} \textbf{WCMCU-230 (SN65HVD230) requires 3.3\,V strictly} from the ESP32 3V3 pin. \textbf{NEVER apply 5\,V to WCMCU-230}. The \textbf{MCP2515 module requires 5.0\,V} on VCC to power onboard TJA1050 transceiver.
+  \item \textbf{Fail-Safe ESTOP Rule:} Emergency stop (GPIO 27) connects via \textbf{Normally Closed (NC)} contact to Common GND. Cut wire or switch press opens circuit $\rightarrow$ pulled HIGH via internal pull-up $\rightarrow$ immediately trips ESTOP.
+\end{itemize}
+\end{tcolorbox}
+
+\vspace{-8pt}
+
+% ── Section 1: Classic ESP32 to MCP2515 ────────────────────────────────────
+\begin{tcolorbox}[bwcard, title={1. Classic ESP32 (esp32dev) to MCP2515 SPI Module (High CAN)}]
+\begin{tabularx}{\textwidth}{@{} C{1.8cm} C{1.5cm} C{1.8cm} C{1.8cm} Y @{}}
+\toprule
+\textbf{ESP32 Pin} & \textbf{Board Label} & \textbf{MCP2515 Pin} & \textbf{Signal Name} & \textbf{Electrical Specification \& Function} \\
+\midrule
+\textbf{GPIO 18} & \texttt{D18} & \textbf{SCK} & \texttt{SPI\_SCK} & 8\,MHz Hardware VSPI Clock (Mode 0: CPOL=0, CPHA=0) \\
+\textbf{GPIO 23} & \texttt{D23} & \textbf{SI} (MOSI) & \texttt{SPI\_MOSI} & Hardware VSPI Master-Out-Slave-In data line \\
+\textbf{GPIO 19} & \texttt{D19} & \textbf{SO} (MISO) & \texttt{SPI\_MISO} & Hardware VSPI Master-In-Slave-Out data line \\
+\textbf{GPIO 21} & \texttt{D21} & \textbf{CS} & \texttt{SPI\_CS} & Active-LOW Hardware Chip Select (\texttt{SPI3\_HOST}) \\
+\textbf{GPIO 22} & \texttt{D22} & \textbf{INT} & \texttt{MCP\_INT} & Active-LOW Interrupt, Level-3 ISR, internal pull-up enabled \\
+\textbf{VIN / 5V} & \texttt{VIN} / \texttt{5V} & \textbf{VCC} & \texttt{VCC\_5V} & \textbf{5.0\,V DC Rail} (Required for onboard TJA1050 CAN transceiver) \\
+\textbf{GND} & \texttt{GND} & \textbf{GND} & \texttt{GND} & Common system logic ground reference \\
+— & — & \textbf{J1 Jumper} & \texttt{TERM} & $120\,\Omega$ termination jumper (measures $60\,\Omega$ across bus) \\
+\bottomrule
+\end{tabularx}
+\end{tcolorbox}
+
+\vspace{-8pt}
+
+% ── Section 2: Classic ESP32 to WCMCU-230 ──────────────────────────────────
+\begin{tcolorbox}[bwcard, title={2. Classic ESP32 (esp32dev) to WCMCU-230 Module (Low CAN)}]
+\begin{tabularx}{\textwidth}{@{} C{1.8cm} C{1.5cm} C{1.8cm} C{1.8cm} Y @{}}
+\toprule
+\textbf{ESP32 Pin} & \textbf{Board Label} & \textbf{WCMCU Pin} & \textbf{Signal Name} & \textbf{Electrical Specification \& Function} \\
+\midrule
+\textbf{GPIO 5} & \texttt{D5} & \textbf{CTX} / TX & \texttt{TWAI\_TX} & On-chip TWAI Transmit line to Actuators (500\,kbps) \\
+\textbf{GPIO 4} & \texttt{D4} & \textbf{CRX} / RX & \texttt{TWAI\_RX} & On-chip TWAI Receive line from Actuators (500\,kbps) \\
+\textbf{3V3} & \texttt{3V3} & \textbf{3V3} / VCC & \texttt{VCC\_3V3} & \textbf{Strictly 3.3\,V DC} from ESP32 LDO (\textbf{Never connect 5\,V}) \\
+\textbf{GND} & \texttt{GND} & \textbf{GND} & \texttt{GND} & Common system logic ground reference \\
+\textbf{GND} & \texttt{GND} & \textbf{RS} & \texttt{MODE} & Slope control: pull to GND for High-Speed CAN operation \\
+— & — & \textbf{R2 (120$\Omega$)} & \texttt{TERM} & Onboard $120\,\Omega$ SMD resistor across CANH \& CANL \\
+\bottomrule
+\end{tabularx}
+\end{tcolorbox}
+
+\vspace{-8pt}
+
+% ── Section 3: Classic ESP32 to 4 Pilot Switches ───────────────────────────
+\begin{tcolorbox}[bwcard, title={3. Classic ESP32 (esp32dev) to 4 Pilot Switches \& Digital Inputs}]
+\begin{tabularx}{\textwidth}{@{} C{1.5cm} C{1.2cm} L{2.4cm} L{3.3cm} C{1.6cm} C{1.3cm} Y @{}}
+\toprule
+\textbf{GPIO} & \textbf{Label} & \textbf{Switch Function} & \textbf{Physical Connection} & \textbf{Pull Mode} & \textbf{Active} & \textbf{Operational Behavior} \\
+\midrule
+\textbf{GPIO 27} & \texttt{D27} & \textbf{ESTOP} (Emergency Stop) & \textbf{NC Mushroom} $\longleftrightarrow$ \textbf{GND} & Internal PU & \textbf{HIGH} & \textbf{Fail-Safe}: Contact open / cut trips immediate ESTOP. \\
+\textbf{GPIO 26} & \texttt{D26} & \textbf{START / RUN} (Enable) & \textbf{NO Button} $\longleftrightarrow$ \textbf{GND} & Internal PU & \textbf{LOW} & Press to enable autonomous drive control loop. \\
+\textbf{GPIO 25} & \texttt{D25} & \textbf{MODE} (Manual $\leftrightarrow$ Auto) & \textbf{Momentary NO} $\longleftrightarrow$ \textbf{GND} & Internal PU & \textbf{LOW} & Momentary toggle between Manual and Auto states. \\
+\textbf{GPIO 14} & \texttt{D14} & \textbf{RESET / AUX} (Fault Reset)& \textbf{Momentary NO} $\longleftrightarrow$ \textbf{GND} & Internal PU & \textbf{LOW} & Clears latched blockers or brake pedal interlock. \\
+\bottomrule
+\end{tabularx}
+\end{tcolorbox}
+
+\vspace{-8pt}
+
+% ── Section 4: Power Distribution ──────────────────────────────────────────
+\begin{tcolorbox}[bwcard, title={4. Power Distribution \& Ground Rails}]
+\begin{tabularx}{\textwidth}{@{} L{2.0cm} C{1.4cm} L{3.2cm} L{3.6cm} C{1.5cm} Y @{}}
+\toprule
+\textbf{Power Rail} & \textbf{Voltage} & \textbf{Source} & \textbf{Connected Devices} & \textbf{Current} & \textbf{Wiring \& Electrical Rules} \\
+\midrule
+\textbf{\texttt{5V\_SYS}} & 5.0\,V DC & Regulated 5\,V Buck / USB & ESP32 \texttt{VIN}, MCP2515 \texttt{VCC} & $\approx$250\,mA & Powers ESP32 LDO and MCP2515 5\,V transceiver. \\
+\textbf{\texttt{3V3\_SYS}} & 3.3\,V DC & ESP32 Onboard LDO & WCMCU-230 \texttt{3V3} pin & $\approx$25\,mA & Dedicated clean 3.3\,V. Do NOT load with external sensors. \\
+\textbf{\texttt{GND\_LOGIC}} & 0.0\,V Ref & Main Logic Ground & ESP32, MCP2515, WCMCU, Switches & Return & Common star-point for digital signals and transceivers. \\
+\bottomrule
+\end{tabularx}
+\end{tcolorbox}
+
+\vspace{-8pt}
+
+% ── Section 5: CAN Bus JST Connector Pinouts ───────────────────────────────
+\begin{tcolorbox}[bwcard, title={5. CAN Bus JST Connector Pinouts (Two 2-Pin JST Ports)}]
+\begin{tabularx}{\textwidth}{@{} L{3.6cm} C{1.8cm} L{2.6cm} L{3.5cm} C{1.6cm} Y @{}}
+\toprule
+\textbf{JST Connector} & \textbf{Pin No.} & \textbf{Net Name} & \textbf{Origin Board Pin} & \textbf{Color} & \textbf{Function \& Specification} \\
+\midrule
+\textbf{JST 1 (High CAN)} & Pin 1 & \texttt{HIGH\_CAN\_H} & MCP2515 \textbf{CAN\_H} & Yellow & Differential High line (500\,kbps) \\
+\textbf{JST 1 (High CAN)} & Pin 2 & \texttt{HIGH\_CAN\_L} & MCP2515 \textbf{CAN\_L} & Green & Differential Low line (500\,kbps) \\
+\midrule
+\textbf{JST 2 (Low CAN)} & Pin 1 & \texttt{LOW\_CAN\_H} & WCMCU-230 \textbf{CANH} & Yellow & Differential High line (500\,kbps) \\
+\textbf{JST 2 (Low CAN)} & Pin 2 & \texttt{LOW\_CAN\_L} & WCMCU-230 \textbf{CANL} & Green & Differential Low line (500\,kbps) \\
+\bottomrule
+\end{tabularx}
+\end{tcolorbox}
+
+\end{document}
