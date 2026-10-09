@@ -60,6 +60,15 @@ class BusLoadTracker {
   private lowPeak = 0
   private peakResetTime = 0
 
+  // Smoothed internal values to stop jitter
+  private smoothHighLoad = 0
+  private smoothLowLoad = 0
+  private smoothHighFps = 0
+  private smoothLowFps = 0
+  private smoothHighKbps = 0
+  private smoothLowKbps = 0
+  private initialized = false
+
   compute(
     messages: MessageState[],
     status: Status | null,
@@ -104,8 +113,32 @@ class BusLoadTracker {
 
     // Bus capacity: 500,000 bps
     const BUS_CAPACITY_BPS = 500000
-    const highLoadPct = Math.min(Math.round((highBitsSum / BUS_CAPACITY_BPS) * 100), 100)
-    const lowLoadPct = Math.min(Math.round((lowBitsSum / BUS_CAPACITY_BPS) * 100), 100)
+    const rawHighLoad = (highBitsSum / BUS_CAPACITY_BPS) * 100
+    const rawLowLoad = (lowBitsSum / BUS_CAPACITY_BPS) * 100
+    const rawHighKbps = highBytesSum / 1024
+    const rawLowKbps = lowBytesSum / 1024
+
+    if (!this.initialized) {
+      this.smoothHighLoad = rawHighLoad
+      this.smoothLowLoad = rawLowLoad
+      this.smoothHighFps = highFpsSum
+      this.smoothLowFps = lowFpsSum
+      this.smoothHighKbps = rawHighKbps
+      this.smoothLowKbps = rawLowKbps
+      this.initialized = true
+    } else {
+      // Exponential moving average (alpha = 0.35) for smooth, stable metrics
+      const alpha = 0.35
+      this.smoothHighLoad = this.smoothHighLoad * (1 - alpha) + rawHighLoad * alpha
+      this.smoothLowLoad = this.smoothLowLoad * (1 - alpha) + rawLowLoad * alpha
+      this.smoothHighFps = this.smoothHighFps * (1 - alpha) + highFpsSum * alpha
+      this.smoothLowFps = this.smoothLowFps * (1 - alpha) + lowFpsSum * alpha
+      this.smoothHighKbps = this.smoothHighKbps * (1 - alpha) + rawHighKbps * alpha
+      this.smoothLowKbps = this.smoothLowKbps * (1 - alpha) + rawLowKbps * alpha
+    }
+
+    const highLoadPct = Math.min(Math.round(this.smoothHighLoad), 100)
+    const lowLoadPct = Math.min(Math.round(this.smoothLowLoad), 100)
 
     if (highLoadPct > this.highPeak) this.highPeak = highLoadPct
     if (lowLoadPct > this.lowPeak) this.lowPeak = lowLoadPct
@@ -198,8 +231,8 @@ class BusLoadTracker {
         tone: evalTone(highActivity, highLoadPct, mcpTec, mcpBusOff, highMissing.length, highDrops),
         loadPct: highLoadPct,
         peakPct: Math.max(highLoadPct, this.highPeak),
-        fps: Math.round(highFpsSum),
-        kbps: Number((highBytesSum / 1024).toFixed(1)),
+        fps: Math.round(this.smoothHighFps),
+        kbps: Number(this.smoothHighKbps.toFixed(1)),
         tec: mcpTec,
         rec: mcpRec,
         busOff: mcpBusOff,
@@ -217,8 +250,8 @@ class BusLoadTracker {
         tone: evalTone(lowActivity, lowLoadPct, twaiTec, twaiBusOff, lowMissing.length, lowDrops),
         loadPct: lowLoadPct,
         peakPct: Math.max(lowLoadPct, this.lowPeak),
-        fps: Math.round(lowFpsSum),
-        kbps: Number((lowBytesSum / 1024).toFixed(1)),
+        fps: Math.round(this.smoothLowFps),
+        kbps: Number(this.smoothLowKbps.toFixed(1)),
         tec: twaiTec,
         rec: twaiRec,
         busOff: twaiBusOff,

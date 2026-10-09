@@ -133,7 +133,7 @@ button.seg-btn:focus-visible {
 
 .table-wrap {
   overflow: auto;
-  max-height: calc(100vh - 220px);
+  max-height: calc(100vh - 264px);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--surface);
@@ -212,5 +212,286 @@ button.seg-btn:focus-visible {
   background: var(--surface-sunken, #f1f5f9);
   border: 1px solid var(--border, #cbd5e1);
   color: var(--text-bright, #0f172a);
+}
+
+/* ── Live CAN Bus Health Strip ────────────────────────────────────── */
+
+.bus-strip-container {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  margin-bottom: 10px;
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+
+@media (max-width: 1100px) {
+  .bus-strip-container {
+    grid-template-columns: 1fr;
+  }
+}
+
+.bus-strip-card {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 16px;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  min-width: 0;
+}
+
+.bus-strip-card:last-child {
+  border-right: none;
+}
+
+@media (max-width: 1100px) {
+  .bus-strip-card:first-child {
+    border-bottom: 1px solid var(--border);
+    border-right: none;
+  }
+}
+
+.bus-strip-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+
+.bus-strip-identity {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-shrink: 0;
+}
+
+.bus-strip-name {
+  font-size: 11.5px;
+  font-weight: 750;
+  letter-spacing: -0.01em;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.bus-strip-rate-badge {
+  font-size: 10px;
+  font-family: var(--font-mono);
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--surface-2);
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+  line-height: 1.3;
+}
+
+.bus-strip-load {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-shrink: 0;
+}
+
+.bus-strip-load-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--text-secondary);
+}
+
+.bus-strip-load-track {
+  position: relative;
+  width: 76px;
+  height: 8px;
+  border-radius: 4px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.bus-strip-load-fill {
+  height: 100%;
+  border-radius: 3px;
+}
+
+.bus-strip-load-fill.tone-ok {
+  background: var(--success);
+}
+
+.bus-strip-load-fill.tone-warn {
+  background: var(--warning);
+}
+
+.bus-strip-load-fill.tone-danger {
+  background: var(--danger);
+}
+
+.bus-strip-load-peak {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--danger);
+  opacity: 0.85;
+}
+
+.bus-strip-load-nums {
+  display: flex;
+  align-items: baseline;
+  gap: 3px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  min-width: 62px;
+}
+
+.bus-strip-load-cur {
+  display: inline-block;
+  min-width: 28px;
+  text-align: right;
+}
+
+.bus-strip-load-peak-txt {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+  display: inline-block;
+  min-width: 28px;
+}
+
+.bus-strip-throughput {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  flex-shrink: 0;
+  min-width: 140px;
+  justify-content: flex-end;
+}
+
+.bus-strip-throughput svg {
+  color: var(--text-tertiary);
+  flex-shrink: 0;
+}
+
+.bus-strip-fps {
+  font-weight: 700;
+  color: var(--text);
+  display: inline-block;
+  min-width: 26px;
+  text-align: right;
+}
+
+.bus-strip-unit {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.bus-strip-sep {
+  color: var(--border-strong);
+  margin: 0 2px;
+}
+
+.bus-strip-kbps {
+  font-weight: 700;
+  color: var(--text);
+  display: inline-block;
+  min-width: 28px;
+  text-align: right;
+}
+
+.bus-strip-errors {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+.bus-strip-tec-rec {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text);
+}
+
+.bus-strip-tec-rec svg {
+  color: var(--text-tertiary);
+  flex-shrink: 0;
+}
+
+.bus-strip-tec-rec.active-error {
+  color: var(--warning);
+  font-weight: 700;
+}
+
+.bus-strip-tec-rec.active-error svg {
+  color: var(--warning);
+}
+
+.bus-strip-invalids {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text);
+}
+
+.bus-strip-invalids svg {
+  color: var(--text-tertiary);
+  flex-shrink: 0;
+}
+
+.bus-strip-invalids.active-error {
+  color: var(--danger);
+  font-weight: 700;
+}
+
+.bus-strip-invalids.active-error svg {
+  color: var(--danger);
+}
+
+.bus-strip-drops {
+  color: var(--danger);
+  font-weight: 700;
+}
+
+.bus-strip-nodes {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 700;
+  line-height: 1.3;
+  border: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.bus-strip-nodes.tone-ok {
+  background: var(--success-soft);
+  color: var(--success);
+  border-color: #c5e4d2;
+}
+
+.bus-strip-nodes.tone-warn {
+  background: var(--warning-soft);
+  color: var(--warning);
+  border-color: #f0d48a;
 }
 

@@ -6,45 +6,39 @@
 
 import { memo, useEffect, useState } from 'react'
 import { useAppStore } from '../store'
-import { busLoadTracker, type BusChannelMetrics, type BusMetricsSnapshot } from '../lib/busMetrics'
+import { busLoadTracker, type BusChannelMetrics } from '../lib/busMetrics'
 
-function StatusDot({ tone }: { tone: BusChannelMetrics['tone'] }) {
-  const colorMap = {
-    ok: 'bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.6)]',
-    warn: 'bg-amber-500 shadow-[0_0_6px_rgba(245,158,11,0.6)]',
-    danger: 'bg-rose-500 shadow-[0_0_6px_rgba(244,63,94,0.6)] animate-pulse',
-    muted: 'bg-slate-400 dark:bg-slate-600',
+function StatusDotEl({ tone }: { tone: BusChannelMetrics['tone'] }) {
+  const toneMap: Record<BusChannelMetrics['tone'], string> = {
+    ok: 'live',
+    warn: 'warning',
+    danger: 'danger',
+    muted: 'muted',
   }
-  return <span className={`inline-block w-2 h-2 rounded-full flex-shrink-0 ${colorMap[tone]}`} />
+  return <span className={`status-dot ${toneMap[tone] || 'muted'}`} />
 }
 
 function LoadMiniBar({ loadPct, peakPct }: { loadPct: number; peakPct: number }) {
-  const getBarColor = (pct: number) => {
-    if (pct >= 80) return 'bg-rose-500'
-    if (pct >= 50) return 'bg-amber-500'
-    return 'bg-emerald-500'
-  }
+  const toneClass = loadPct >= 80 ? 'tone-danger' : loadPct >= 50 ? 'tone-warn' : 'tone-ok'
 
   return (
-    <div className="flex items-center gap-1.5 flex-shrink-0" title={`Live Bus Load: ${loadPct}% (Peak: ${peakPct}%)`}>
-      <span className="text-[10px] uppercase font-bold tracking-wider text-slate-500 dark:text-slate-400">LOAD</span>
-      <div className="relative w-16 h-2 bg-slate-200 dark:bg-slate-700/70 rounded-sm overflow-hidden">
-        {/* Fill */}
+    <div className="bus-strip-load" title={`Live Bus Load: ${loadPct}% (Peak: ${peakPct}%)`}>
+      <span className="bus-strip-load-label">LOAD</span>
+      <div className="bus-strip-load-track">
         <div
-          className={`h-full transition-all duration-300 ${getBarColor(loadPct)}`}
+          className={`bus-strip-load-fill ${toneClass}`}
           style={{ width: `${Math.max(loadPct, 2)}%` }}
         />
-        {/* Peak indicator */}
         {peakPct > loadPct && (
           <div
-            className="absolute top-0 bottom-0 w-0.5 bg-rose-400 opacity-80"
+            className="bus-strip-load-peak"
             style={{ left: `${Math.min(peakPct, 98)}%` }}
           />
         )}
       </div>
-      <div className="flex items-baseline gap-1 font-mono text-[11px] font-semibold text-slate-800 dark:text-slate-200">
-        <span>{loadPct}%</span>
-        <span className="text-[9.5px] font-normal text-slate-400 dark:text-slate-500" title="Rolling peak utilization">
+      <div className="bus-strip-load-nums">
+        <span className="bus-strip-load-cur">{loadPct}%</span>
+        <span className="bus-strip-load-peak-txt" title="Rolling peak utilization">
           ↑{peakPct}%
         </span>
       </div>
@@ -54,63 +48,66 @@ function LoadMiniBar({ loadPct, peakPct }: { loadPct: number; peakPct: number })
 
 function ChannelCard({ m }: { m: BusChannelMetrics }) {
   return (
-    <div className="flex flex-col justify-between py-1.5 px-3 border-r border-slate-200 dark:border-slate-800 last:border-r-0 min-w-0">
+    <div className="bus-strip-card">
       {/* Row 1: Bus Identity, Bitrate, Load bar, Throughput */}
-      <div className="flex items-center justify-between gap-2.5 text-xs">
-        <div className="flex items-center gap-1.5 flex-shrink-0">
-          <StatusDot tone={m.tone} />
-          <span className="font-bold text-[11px] tracking-wide text-slate-900 dark:text-slate-100">
+      <div className="bus-strip-row">
+        <div className="bus-strip-identity">
+          <StatusDotEl tone={m.tone} />
+          <span className="bus-strip-name">
             {m.bus === 'high' ? 'HIGH BUS (CH0)' : 'LOW BUS (CH1)'}
           </span>
-          <span className="text-[10px] font-mono px-1 py-0.5 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 rounded border border-slate-200 dark:border-slate-700/60 leading-none">
+          <span className="bus-strip-rate-badge">
             {m.bitrateKbps}k
           </span>
         </div>
 
         <LoadMiniBar loadPct={m.loadPct} peakPct={m.peakPct} />
 
-        <div className="flex items-center gap-1 text-[11px] font-mono text-slate-700 dark:text-slate-200 flex-shrink-0">
-          <svg className="w-3 h-3 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <div className="bus-strip-throughput">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
           </svg>
-          <span className="font-bold">{m.fps}</span>
-          <span className="text-[10px] text-slate-400">fps</span>
-          <span className="text-slate-300 dark:text-slate-700 font-normal">·</span>
-          <span className="font-medium">{m.kbps}</span>
-          <span className="text-[10px] text-slate-400">kB/s</span>
+          <span className="bus-strip-fps">{m.fps}</span>
+          <span className="bus-strip-unit">fps</span>
+          <span className="bus-strip-sep">·</span>
+          <span className="bus-strip-kbps">{m.kbps}</span>
+          <span className="bus-strip-unit">kB/s</span>
         </div>
       </div>
 
       {/* Row 2: Error Tracking, Drops, and Node Roster */}
-      <div className="flex items-center justify-between gap-2 text-[10.5px] text-slate-500 dark:text-slate-400 mt-1 pt-0.5 border-t border-slate-100 dark:border-slate-800/40">
+      <div className="bus-strip-row">
         {/* TEC / REC & Errors */}
-        <div className="flex items-center gap-2 font-mono">
-          <div className="flex items-center gap-1" title="Transmit & Receive Error Counters (from ECU Diagnostics)">
-            <svg className="w-2.5 h-2.5 text-amber-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+        <div className="bus-strip-errors">
+          <div
+            className={`bus-strip-tec-rec ${m.tec && m.tec > 0 ? 'active-error' : ''}`}
+            title="Transmit & Receive Error Counters (from ECU Diagnostics)"
+          >
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
               <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
             </svg>
-            <span className={m.tec && m.tec > 0 ? 'text-amber-600 dark:text-amber-400 font-bold' : 'text-slate-600 dark:text-slate-300'}>
-              T:{m.tec ?? 0}
-            </span>
-            <span className={m.rec && m.rec > 0 ? 'text-amber-600 dark:text-amber-400 font-bold' : 'text-slate-600 dark:text-slate-300'}>
-              R:{m.rec ?? 0}
-            </span>
+            <span>TEC {m.tec ?? 0}</span>
+            <span>REC {m.rec ?? 0}</span>
           </div>
 
-          <span className="text-slate-200 dark:text-slate-700">|</span>
+          <span className="bus-strip-sep">|</span>
 
           {/* Corrupt / Invalid Frames */}
-          <div className="flex items-center gap-1" title="Corrupt or Framing Discrepancies">
-            <span className={m.rxInvalidPerSec > 0 ? 'text-rose-600 dark:text-rose-400 font-bold' : 'text-slate-500 dark:text-slate-400'}>
-              ⚠ {m.rxInvalidPerSec}/s
-            </span>
+          <div
+            className={`bus-strip-invalids ${m.rxInvalidPerSec > 0 ? 'active-error' : ''}`}
+            title="Corrupt or Framing Discrepancies"
+          >
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3" />
+            </svg>
+            <span>{m.rxInvalidPerSec}/s errors</span>
           </div>
 
           {/* Queue Drops */}
           {m.rxOverflowDrops > 0 && (
             <>
-              <span className="text-slate-200 dark:text-slate-700">|</span>
-              <span className="text-rose-600 dark:text-rose-400 font-bold" title="Driver / hardware buffer overflow drops">
+              <span className="bus-strip-sep">|</span>
+              <span className="bus-strip-drops" title="Driver / hardware buffer overflow drops">
                 □ {m.rxOverflowDrops} drops
               </span>
             </>
@@ -118,13 +115,9 @@ function ChannelCard({ m }: { m: BusChannelMetrics }) {
         </div>
 
         {/* Node Roster */}
-        <div className="flex items-center gap-1">
+        <div>
           <span
-            className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold leading-tight ${
-              m.missingNodes.length === 0
-                ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/40'
-                : 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800/40'
-            }`}
+            className={`bus-strip-nodes ${m.missingNodes.length === 0 ? 'tone-ok' : 'tone-warn'}`}
             title={
               m.missingNodes.length === 0
                 ? `All ${m.expectedNodes} expected ECUs online`
@@ -142,27 +135,26 @@ function ChannelCard({ m }: { m: BusChannelMetrics }) {
 }
 
 export const BusHealthStrip = memo(function BusHealthStrip() {
-  const messages = useAppStore((s) => s.messages)
-  const status = useAppStore((s) => s.status)
-
-  // Compute live metrics directly from current store state
-  const [tick, setTick] = useState(0)
+  const [metrics, setMetrics] = useState(() =>
+    busLoadTracker.compute(
+      useAppStore.getState().messages,
+      useAppStore.getState().status,
+    ),
+  )
 
   useEffect(() => {
-    // 1-second cadence to keep rolling peak / window metrics advancing
+    // Exact 1-second cadence to refresh bus load without visual jitter or layout twitching
     const timer = setInterval(() => {
-      setTick((t) => t + 1)
+      const state = useAppStore.getState()
+      setMetrics(busLoadTracker.compute(state.messages, state.status))
     }, 1000)
     return () => clearInterval(timer)
   }, [])
 
-  const metrics = busLoadTracker.compute(messages, status)
-
   return (
     <div
       data-testid="live-can-bus-health-strip"
-      className="grid grid-cols-1 md:grid-cols-2 bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 rounded-md mb-2.5 shadow-sm overflow-hidden"
-      style={{ minHeight: '44px' }}
+      className="bus-strip-container"
     >
       <ChannelCard m={metrics.high} />
       <ChannelCard m={metrics.low} />
