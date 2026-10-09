@@ -10,6 +10,9 @@ stsw-link009/
 __pycache__/
 *.pyc
 
+# ── Rust (update-beta workspace) ─────────────────────────────────────
+/update-beta/target/
+
 # ── PlatformIO build output ──────────────────────────────────────────
 .pio/
 .pioenvs/

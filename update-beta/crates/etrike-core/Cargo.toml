@@ -1,0 +1,17 @@
+[package]
+name = "etrike-core"
+description = "E-Trike pure domain logic: deterministic, hardware-free safety and control state machines."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+etrike-protocol = { workspace = true }
+defmt = { version = "0.3", optional = true }
+
+[features]
+default = []
+defmt = ["dep:defmt", "etrike-protocol/defmt"]
+
+[dev-dependencies]

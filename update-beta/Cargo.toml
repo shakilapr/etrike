@@ -1,0 +1,19 @@
+[workspace]
+resolver = "2"
+members = ["crates/etrike-protocol", "crates/etrike-core"]
+
+[workspace.package]
+edition = "2021"
+rust-version = "1.75"
+version = "0.1.0"
+license = "MIT OR Apache-2.0"
+
+[workspace.dependencies]
+etrike-protocol = { path = "crates/etrike-protocol" }
+etrike-core = { path = "crates/etrike-core" }
+
+[profile.release]
+lto = true
+codegen-units = 1
+opt-level = "s"
+debug = true
