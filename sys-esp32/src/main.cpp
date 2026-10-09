@@ -739,7 +739,12 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
         g_hw_estop_pressed.store(estop_hw, std::memory_order_relaxed);
         g_hw_brake_lever.store(brake_lever, std::memory_order_relaxed);
 
-        // In BenchPassthrough, SYS does not enforce driver takeover or hardware ESTOP button tripping
+        // Physical mushroom button MUST ALWAYS trip ESTOP, regardless of ControlPath / bench mode!
+        if (g_safety.estop_active()) {
+            enter_estop(sys::kEstopReasonHwButton, sys::kEstopSourceLocalSys, "Hardware ESTOP button");
+        }
+
+        // In BenchPassthrough, SYS does not enforce driver takeover or RT heartbeat loss
         if (g_control_path != etrike::ControlPath::BenchPassthrough) {
             // Driver brake takeover: pulling the lever in AUTO transitions to MANUAL immediately
             // and zeros motor propulsion setpoints so the motor never drives against the brakes.
@@ -749,9 +754,7 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
                 g_setpoint_gear.store(0, std::memory_order_relaxed);
             }
 
-            if (g_safety.estop_active()) {
-                enter_estop(sys::kEstopReasonHwButton, sys::kEstopSourceLocalSys, "Hardware ESTOP button");
-            } else if (!g_safety.heartbeat_ok()) {
+            if (!g_safety.heartbeat_ok()) {
                 enter_estop(sys::kEstopReasonRtHbLost, sys::kEstopSourceLocalSys, "RT heartbeat loss");
             }
         }
@@ -911,15 +914,17 @@ static QueueHandle_t g_can_rx_queue   = nullptr;  // 16 deep, can::Frame
             can::gen::SysPwrCmd pwr_msg{};
 
             if (g_control_path == etrike::ControlPath::BenchPassthrough) {
-                // Rule 8b: In BenchPassthrough, SYS acts strictly as a protocol relay for HMI requests
+                // Rule 8b: In BenchPassthrough, SYS acts strictly as a protocol relay for HMI requests,
+                // BUT ESTOP must always override mode and cut power authority!
+                const bool mode_is_estop = (g_mode_mgr.mode() == can::Mode::Estop);
                 const bool hmi_valid = g_power_request_valid.load(std::memory_order_relaxed);
                 const bool power_req = hmi_valid
                     ? g_hmi_pwr_on.load(std::memory_order_relaxed) : true;
                 const bool auto_req = (g_mode_mgr.mode() == can::Mode::Auto);
 
-                message.mode = auto_req ? 1u : 0u;
+                message.mode = (!mode_is_estop && auto_req) ? 1u : 0u;
                 message.rolling_counter = roll_mode_++;
-                pwr_msg.power_state = power_req ? 1u : 0u;
+                pwr_msg.power_state = (!mode_is_estop && power_req) ? 1u : 0u;
                 pwr_msg.rolling_counter = roll_pwr_++;
             } else {
                 const can::Mode resolved = g_mode_mgr.mode();
