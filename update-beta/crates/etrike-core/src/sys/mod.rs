@@ -10,6 +10,7 @@ pub mod brake;
 pub mod lights;
 pub mod mode;
 pub mod mtr_ack;
+pub mod wire;
 
 use crate::shared::{
     Authority, EstopLatch, EstopReason, InhibitModel, InhibitReason, LatchedFault, Mode, Power,
