@@ -163,18 +163,20 @@ impl SysCore {
             self.inhibit.latch(LatchedFault::MtrEstopAck);
         }
 
-        // 4. Resolve authority (mode/power/clamp).
+        // 4. Validated reset transaction (may clear ESTOP and latched faults).
+        //    Run before resolving authority so a successful reset restores mode
+        //    on the same tick instead of one tick late.
+        let reset_outcome = self.process_reset(&inputs);
+
+        // 5. Resolve authority (mode/power/clamp) from the post-reset state.
         let authority = self.resolve(&inputs);
 
-        // 5. Brake arbitration.
+        // 6. Brake arbitration.
         let brake = brake::arbitrate(
             self.estop.is_active(),
             inputs.hw_brake_lever,
             inputs.rt_brake_intent_kpa,
         );
-
-        // 6. Validated reset transaction.
-        let reset_outcome = self.process_reset(&inputs);
 
         // 7. Body lights.
         let lights = lights::evaluate(
@@ -247,7 +249,10 @@ impl SysCore {
     /// reset transaction clears the latch (mirrors the C++
     /// `latched_causes_currently_clearable`).
     fn latched_cause_active(&self, inputs: &SysInputs) -> bool {
+        // SEB L3: the fault is present while the SEB reports it.
+        // MTR ack exhaustion: present while the MTR is still not acknowledging.
         inputs.seb_l3_fault
+            || (self.inhibit.latched_contains(LatchedFault::MtrEstopAck) && !inputs.mtr_estop_ack)
     }
 
     /// Compute the reset blockers from the current state and inputs.
@@ -259,7 +264,9 @@ impl SysCore {
         if self.latched_cause_active(inputs) {
             blockers.add(ResetBlocker::LatchedFault);
         }
-        if inputs.measured_speed_mmps.abs() > self.config.moving_speed_threshold_mmps {
+        if inputs.measured_speed_mmps.unsigned_abs()
+            > self.config.moving_speed_threshold_mmps.unsigned_abs()
+        {
             blockers.add(ResetBlocker::Moving);
         }
         if !inputs.rt_heartbeat_ok {
@@ -347,6 +354,29 @@ mod tests {
     }
 
     #[test]
+    fn reset_restores_mode_on_the_same_tick() {
+        let mut core = core();
+        let mut i = input(0);
+        i.rt_heartbeat_ok = false; // ESTOP via heartbeat loss
+        i.hw_start_run = true; // run latch engaged
+        core.step(i);
+
+        let mut i = input(10);
+        i.rt_heartbeat_ok = true;
+        i.hw_start_run = true;
+        i.host_reset = Some(ResetSource::ModeLongPress);
+        let out = core.step(i);
+        assert!(matches!(
+            out.reset_outcome,
+            Some(ResetOutcome::Cleared { .. })
+        ));
+        assert!(!out.estop_active);
+        // Authority is restored on the same tick, not one tick later.
+        assert_eq!(out.mode, Mode::Manual);
+        assert_eq!(out.power, Power::On);
+    }
+
+    #[test]
     fn reset_rejected_while_moving() {
         let mut core = core();
         let mut i = input(0);
@@ -361,6 +391,58 @@ mod tests {
             out.reset_outcome,
             Some(ResetOutcome::Rejected(ResetBlocker::Moving))
         );
+    }
+
+    #[test]
+    fn reset_rejected_at_extreme_speed() {
+        // i32::MIN must not overflow (regression for the former .abs() call).
+        let mut core = core();
+        let mut i = input(0);
+        i.hw_estop_pressed = true;
+        core.step(i);
+        let mut i = input(10);
+        i.measured_speed_mmps = i32::MIN;
+        i.host_reset = Some(ResetSource::ModeLongPress);
+        let out = core.step(i);
+        assert_eq!(
+            out.reset_outcome,
+            Some(ResetOutcome::Rejected(ResetBlocker::Moving))
+        );
+    }
+
+    #[test]
+    fn mtr_ack_exhaustion_blocks_reset_until_healthy() {
+        // A latched MTR-ack fault must block reset while the MTR stays unhealthy,
+        // and clear once the MTR is healthy again.
+        let mut core = core();
+        let mut i = input(0);
+        i.hw_estop_pressed = true;
+        i.mtr_estop_ack = false;
+        core.step(i);
+        // Drive the ack watchdog to exhaustion (300 ms default, 3 retries).
+        for step in 1..=6u64 {
+            let mut i = input(step * 100);
+            i.mtr_estop_ack = false;
+            core.step(i);
+        }
+        let mut i = input(1000);
+        i.mtr_estop_ack = false;
+        i.host_reset = Some(ResetSource::ModeLongPress);
+        let out = core.step(i);
+        assert_eq!(
+            out.reset_outcome,
+            Some(ResetOutcome::Rejected(ResetBlocker::LatchedFault))
+        );
+
+        // MTR healthy now: the fault is clearable.
+        let mut i = input(1100);
+        i.mtr_estop_ack = true;
+        i.host_reset = Some(ResetSource::ModeLongPress);
+        let out = core.step(i);
+        assert!(matches!(
+            out.reset_outcome,
+            Some(ResetOutcome::Cleared { .. })
+        ));
     }
 
     #[test]

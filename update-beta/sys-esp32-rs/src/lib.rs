@@ -11,7 +11,7 @@
 
 use etrike_core::shared::Power;
 use etrike_core::sys::{wire, SysCore, SysInputs, SysOutputs};
-use etrike_protocol::RawFrame;
+use etrike_protocol::{generated, verify, CodecStatus, RawFrame};
 
 /// Debounced hardware input state.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -40,13 +40,32 @@ pub trait SysHal {
     fn wait_next_tick(&mut self);
 }
 
+/// Freshness windows (ms) for supervised peer streams.
+const RT_HB_FRESH_MS: u64 = 600;
+const MTR_FBK_FRESH_MS: u64 = 300;
+
+/// True when `last` is present and within `window_ms` of `now`.
+fn is_fresh(last: Option<u64>, now: u64, window_ms: u64) -> bool {
+    last.map(|seen| now.wrapping_sub(seen) <= window_ms)
+        .unwrap_or(false)
+}
+
+/// Persistent shell state for stream supervision (not decision state).
+#[derive(Debug, Clone, Copy, Default)]
+pub struct SysShellState {
+    rt_hb_last: Option<u64>,
+    mtr_fbk_last: Option<u64>,
+}
+
 /// Assemble inputs for this tick from GPIO and any pending frames.
 ///
-/// Frames here are already `verify()`-ed by the HAL layer; request frames are
-/// gated by `StreamValidity` before reaching this point on target.
-pub fn assemble_inputs<H: SysHal>(hal: &mut H) -> SysInputs {
+/// Only frames that pass [`verify`] reach the core. Peer liveness (RT heartbeat,
+/// MTR feedback) is tracked with freshness windows so a silent stream is treated
+/// as lost rather than as present.
+pub fn assemble_inputs<H: SysHal>(hal: &mut H, state: &mut SysShellState) -> SysInputs {
+    let now = hal.now_ms();
     let mut inputs = SysInputs {
-        now: hal.now_ms(),
+        now,
         ..SysInputs::default()
     };
     let gpio = hal.gpio();
@@ -61,7 +80,15 @@ pub fn assemble_inputs<H: SysHal>(hal: &mut H) -> SysInputs {
     };
 
     while let Some(frame) = hal.poll_frame() {
-        if wire::is_estop(&frame) {
+        // Only frames that match the wire contract may influence the core.
+        if verify(&frame) != CodecStatus::Ok {
+            continue;
+        }
+        if frame.id == generated::RtHeartbeat::ID {
+            state.rt_hb_last = Some(now);
+        } else if frame.id == generated::MtrMotorFbk::ID {
+            state.mtr_fbk_last = Some(now);
+        } else if wire::is_estop(&frame) {
             inputs.can_estop = true;
         } else if let Some(auto) = wire::decode_mode_request(&frame) {
             inputs.host_auto_request = auto;
@@ -69,6 +96,9 @@ pub fn assemble_inputs<H: SysHal>(hal: &mut H) -> SysInputs {
             inputs.host_reset = Some(source);
         }
     }
+
+    inputs.rt_heartbeat_ok = is_fresh(state.rt_hb_last, now, RT_HB_FRESH_MS);
+    inputs.mtr_fbk_ok = is_fresh(state.mtr_fbk_last, now, MTR_FBK_FRESH_MS);
     inputs
 }
 
@@ -87,8 +117,13 @@ pub fn emit_outputs<H: SysHal>(hal: &mut H, outputs: &SysOutputs, counter: &mut 
 }
 
 /// Run one control iteration. Used by [`run`] and by tests.
-pub fn step_once<H: SysHal>(hal: &mut H, core: &mut SysCore, counter: &mut u8) -> SysOutputs {
-    let inputs = assemble_inputs(hal);
+pub fn step_once<H: SysHal>(
+    hal: &mut H,
+    core: &mut SysCore,
+    counter: &mut u8,
+    state: &mut SysShellState,
+) -> SysOutputs {
+    let inputs = assemble_inputs(hal, state);
     let outputs = core.step(inputs);
     emit_outputs(hal, &outputs, counter);
     outputs
@@ -97,8 +132,9 @@ pub fn step_once<H: SysHal>(hal: &mut H, core: &mut SysCore, counter: &mut u8) -
 /// The control loop. Never returns.
 pub fn run<H: SysHal>(hal: &mut H, core: &mut SysCore) -> ! {
     let mut counter = 0u8;
+    let mut state = SysShellState::default();
     loop {
-        let _ = step_once(hal, core, &mut counter);
+        let _ = step_once(hal, core, &mut counter, &mut state);
         hal.wait_next_tick();
     }
 }
@@ -111,6 +147,7 @@ mod tests {
     use super::*;
     use etrike_core::shared::{Mode, ResetSource};
     use etrike_core::sys::SysConfig;
+    use etrike_protocol::Bus;
 
     struct MockHal {
         now: u64,
@@ -152,13 +189,22 @@ mod tests {
         }
     }
 
+    fn heartbeat() -> RawFrame {
+        RawFrame::from_slice(Bus::Low, 0x7FD, &[0, 0]).unwrap()
+    }
+
+    fn mtr_fbk() -> RawFrame {
+        RawFrame::from_slice(Bus::Low, 0x206, &[0, 0, 0, 0]).unwrap()
+    }
+
     #[test]
     fn estop_frame_latches_and_manual_mode() {
         let mut hal = MockHal::new();
         hal.gpio.estop_pressed = true;
         let mut core = SysCore::new(SysConfig::default());
         let mut counter = 0u8;
-        let outputs = step_once(&mut hal, &mut core, &mut counter);
+        let mut state = SysShellState::default();
+        let outputs = step_once(&mut hal, &mut core, &mut counter, &mut state);
         assert!(outputs.estop_active);
         assert_eq!(outputs.mode, Mode::Manual);
         // Mode/power commands and the 0x001 estop frame are emitted.
@@ -167,26 +213,51 @@ mod tests {
     }
 
     #[test]
+    fn unverified_frames_are_ignored() {
+        let mut hal = MockHal::new();
+        // 0x111 with the wrong DLC (1, not 2) must not reach the core.
+        hal.frames
+            .push(RawFrame::from_slice(Bus::Low, 0x111, &[0x01]).unwrap());
+        let mut state = SysShellState::default();
+        let inputs = assemble_inputs(&mut hal, &mut state);
+        assert!(!inputs.host_auto_request);
+    }
+
+    #[test]
+    fn missing_heartbeat_latches_estop() {
+        let mut hal = MockHal::new();
+        let mut core = SysCore::new(SysConfig::default());
+        let mut counter = 0u8;
+        let mut state = SysShellState::default();
+        // No fresh 0x7FD heartbeat -> RT is treated as lost -> ESTOP.
+        let outputs = step_once(&mut hal, &mut core, &mut counter, &mut state);
+        assert!(outputs.estop_active);
+    }
+
+    #[test]
     fn remote_reset_flows_through_wire() {
         let mut hal = MockHal::new();
         let mut core = SysCore::new(SysConfig::default());
         let mut counter = 0u8;
-        // Enter ESTOP via a physical press.
+        let mut state = SysShellState::default();
+        // Fresh RT heartbeat + MTR feedback so neither is a reset blocker.
+        hal.frames.push(heartbeat());
+        hal.frames.push(mtr_fbk());
         hal.gpio.estop_pressed = true;
-        step_once(&mut hal, &mut core, &mut counter);
-        // Release and present a valid remote reset.
+        step_once(&mut hal, &mut core, &mut counter, &mut state);
+
+        // Release and present a valid remote reset with fresh streams.
         hal.gpio.estop_pressed = false;
+        hal.frames.push(heartbeat());
+        hal.frames.push(mtr_fbk());
         let reset = wire::decode_reset_request(
-            &RawFrame::from_slice(etrike_protocol::Bus::Low, 0x114, &[0x01, 0x52, 0x53, 0x07])
-                .unwrap(),
+            &RawFrame::from_slice(Bus::Low, 0x114, &[0x01, 0x52, 0x53, 0x07]).unwrap(),
         )
         .unwrap();
         assert!(matches!(reset, ResetSource::Remote { .. }));
-        hal.frames.push(
-            RawFrame::from_slice(etrike_protocol::Bus::Low, 0x114, &[0x01, 0x52, 0x53, 0x07])
-                .unwrap(),
-        );
-        let outputs = step_once(&mut hal, &mut core, &mut counter);
+        hal.frames
+            .push(RawFrame::from_slice(Bus::Low, 0x114, &[0x01, 0x52, 0x53, 0x07]).unwrap());
+        let outputs = step_once(&mut hal, &mut core, &mut counter, &mut state);
         assert!(!outputs.estop_active);
     }
 }

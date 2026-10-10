@@ -8,6 +8,7 @@
 //! See `architecture.md` in this crate for the design.
 #![cfg_attr(not(test), no_std)]
 
+pub mod e2e;
 pub mod frame;
 pub mod validity;
 
@@ -37,17 +38,52 @@ pub fn bus_from_name(name: &str) -> Option<Bus> {
     }
 }
 
-/// Verify that `(bus, id)` has an owner and return the declared sender.
-pub fn tx_owner(bus: Bus, id: u32) -> Option<&'static str> {
-    let name = match bus {
+/// The generated name of a [`Bus`].
+pub const fn bus_name(bus: Bus) -> &'static str {
+    match bus {
         Bus::High => "high",
         Bus::Low => "low",
         Bus::Powertrain => "powertrain",
-    };
+    }
+}
+
+/// Verify that `(bus, id)` has an owner and return the declared sender.
+pub fn tx_owner(bus: Bus, id: u32) -> Option<&'static str> {
     generated::TX_OWNERS
         .iter()
-        .find(|owner| owner.bus == name && owner.id == id)
+        .find(|owner| owner.bus == bus_name(bus) && owner.id == id)
         .map(|owner| owner.sender)
+}
+
+/// Verify a raw frame against the wire contract before it may be used.
+///
+/// Checks that the `(bus, id)` is a known message, that the DLC matches the
+/// contract, and (for E2E-protected messages) that the CRC is correct. A frame
+/// that fails `verify` must be discarded; only frames that pass may be decoded
+/// and passed to the core.
+pub fn verify(frame: &RawFrame) -> CodecStatus {
+    let Some(meta) = generated::lookup(bus_name(frame.bus), frame.id) else {
+        return CodecStatus::WrongMessageId;
+    };
+    if frame.dlc != meta.dlc {
+        return CodecStatus::UnexpectedLength;
+    }
+    match frame.id {
+        generated::SysSafetySts::ID => {
+            if e2e::sys_safety_sts_crc(frame.payload()) != frame.data[4] {
+                return CodecStatus::ChecksumMismatch;
+            }
+        }
+        generated::SysNodeStatus::ID
+        | generated::RtNodeStatus::ID
+        | generated::MtrNodeStatus::ID => {
+            if e2e::node_status_crc(frame.payload()) != frame.data[7] {
+                return CodecStatus::ChecksumMismatch;
+            }
+        }
+        _ => {}
+    }
+    CodecStatus::Ok
 }
 
 #[cfg(test)]
@@ -108,5 +144,20 @@ mod tests {
             generated::HostDriveCmd::unpack(&[0x00, 0x00, 0x03, 0xe8]),
             Err(CodecStatus::UnexpectedLength)
         );
+    }
+
+    #[test]
+    fn verify_accepts_known_and_rejects_unknown() {
+        let ok = RawFrame::from_slice(Bus::Low, 0x110, &[0x01, 0x07]).unwrap();
+        assert_eq!(verify(&ok), CodecStatus::Ok);
+        let short = RawFrame::from_slice(Bus::Low, 0x110, &[0x01]).unwrap();
+        assert_eq!(verify(&short), CodecStatus::UnexpectedLength);
+        let unknown = RawFrame::from_slice(Bus::Low, 0x7FF, &[]).unwrap();
+        assert_eq!(verify(&unknown), CodecStatus::WrongMessageId);
+        // 0x011 with a correct E2E CRC passes; a wrong CRC is rejected.
+        let good = RawFrame::from_slice(Bus::Low, 0x011, &[0, 0, 0, 0, 0x30]).unwrap();
+        assert_eq!(verify(&good), CodecStatus::Ok);
+        let bad = RawFrame::from_slice(Bus::Low, 0x011, &[0, 0, 0, 0, 0x00]).unwrap();
+        assert_eq!(verify(&bad), CodecStatus::ChecksumMismatch);
     }
 }

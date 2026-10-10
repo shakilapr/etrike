@@ -291,7 +291,7 @@ def render_message(message: dict) -> list[str]:
 def sample(field: dict, which: str) -> str:
     rtype = rust_type(field)
     if "constant" in field:
-        return rust_number(field["constant"])
+        return rust_literal(field, field["constant"])
     if rtype == "bool":
         return "false" if which == "lo" else "true"
     if field.get("enum"):
