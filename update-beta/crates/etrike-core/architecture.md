@@ -212,9 +212,12 @@ source and value, so two sources cannot each write the command.
 ### 6.4 Bench safety bypass
 
 `SysConfig::bypass` (and `RtState::bypass`) is a bench pass-through: when set,
-`step` ignores ESTOP, clamps, and reset blockers entirely and emits mode/power
-straight from the inputs; the shells also skip `verify()`. The firmware sets it
-from a `SAFETY_BYPASS` constant. Intended for the hardware bench only.
+`step` ignores ESTOP, clamps, and reset blockers entirely and emits outputs
+straight from the inputs; the shells also skip `verify()`. On SYS, bypass power
+defaults **ON** (so the bench comes up without the physical run latch) and the
+host can switch it off via `0x112`; mode follows the host `0x111` request
+(`AUTO`/`MANUAL`). The firmware sets it from a `SAFETY_BYPASS` constant.
+Intended for the hardware bench only.
 
 ---
 

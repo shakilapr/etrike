@@ -110,6 +110,8 @@ pub fn assemble_inputs<H: SysHal>(hal: &mut H, state: &mut SysShellState) -> Sys
             inputs.can_estop = true;
         } else if let Some(auto) = wire::decode_mode_request(&frame) {
             inputs.host_auto_request = auto;
+        } else if let Some(on) = wire::decode_power_request(&frame) {
+            inputs.host_power = Some(on);
         } else if let Some(source) = wire::decode_reset_request(&frame) {
             inputs.host_reset = Some(source);
         }
@@ -256,6 +258,22 @@ mod tests {
         let mut state = SysShellState::new(true);
         let outputs = step_once(&mut hal, &mut core, &mut counter, &mut state);
         assert!(!outputs.estop_active);
+    }
+
+    #[test]
+    fn bypass_host_can_power_off_over_can() {
+        let mut hal = MockHal::new();
+        // 0x112 with req_start = 0 (power off).
+        hal.frames
+            .push(RawFrame::from_slice(Bus::Low, 0x112, &[0x00, 0x00]).unwrap());
+        let mut core = SysCore::new(SysConfig {
+            bypass: true,
+            ..SysConfig::default()
+        });
+        let mut counter = 0u8;
+        let mut state = SysShellState::new(true);
+        let outputs = step_once(&mut hal, &mut core, &mut counter, &mut state);
+        assert_eq!(outputs.power, Power::Off);
     }
 
     #[test]

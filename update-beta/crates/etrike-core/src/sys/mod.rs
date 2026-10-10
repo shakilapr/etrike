@@ -58,6 +58,8 @@ pub struct SysInputs {
     pub rt_brake_intent_kpa: Option<u16>,
     // requests / faults
     pub host_auto_request: bool,
+    /// Host power request (`0x112`); `None` when none has been received.
+    pub host_power: Option<bool>,
     pub host_reset: Option<ResetSource>,
     pub host_lights: Option<LightBits>,
     pub can_estop: bool,
@@ -80,6 +82,7 @@ impl Default for SysInputs {
             seb_l3_fault: false,
             rt_brake_intent_kpa: None,
             host_auto_request: false,
+            host_power: None,
             host_reset: None,
             host_lights: None,
             can_estop: false,
@@ -190,14 +193,17 @@ impl SysCore {
     }
 
     /// Bypass path: pass everything straight through, ignoring safety entirely.
+    /// Power defaults ON (bench), and the host can switch it off via `0x112`.
     fn step_bypass(&mut self, inputs: &SysInputs) -> SysOutputs {
-        let auto = inputs.host_auto_request;
         let authority = Authority {
-            mode: if auto { Mode::Auto } else { Mode::Manual },
-            power: if inputs.hw_start_run {
-                Power::On
+            mode: if inputs.host_auto_request {
+                Mode::Auto
             } else {
-                Power::Off
+                Mode::Manual
+            },
+            power: match inputs.host_power {
+                Some(false) => Power::Off,
+                _ => Power::On,
             },
             clamp: Clamp::None,
         };
@@ -455,6 +461,22 @@ mod tests {
         assert!(!out.estop_active);
         assert_eq!(out.mode, Mode::Auto);
         assert_eq!(out.power, Power::On);
+    }
+
+    #[test]
+    fn bypass_powers_on_by_default_and_host_can_switch_off() {
+        let mut core = SysCore::new(SysConfig {
+            bypass: true,
+            ..SysConfig::default()
+        });
+        // No run latch and no host request still powers on (bench pass-through).
+        let out = core.step(input(0));
+        assert_eq!(out.power, Power::On);
+
+        let mut i = input(10);
+        i.host_power = Some(false);
+        let out = core.step(i);
+        assert_eq!(out.power, Power::Off);
     }
 
     #[test]
