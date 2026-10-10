@@ -52,6 +52,14 @@ def test_zero_setpoint_is_neutral(auto_ready):
     assert ok, f"RT 0x204 did not settle to 0 mm/s / gear N: {state.get((LOW, CAN_RT_DRIVE_CMD))}"
 
 
+def test_neutral_gear_with_negative_speed_stays_neutral_and_zeroes(auto_ready):
+    """Commanding Neutral with negative speed setpoint must stay N and zero out speed on 0x204."""
+    bench = auto_ready
+    bench.start_drive(-200, gear=GEAR_N)
+    ok, state = bench.wait_for(lambda s: _drive_cmd_is(s, speed=0, gear=GEAR_N, tol=5), timeout_s=3.0)
+    assert ok, f"RT 0x204 did not enforce 0 mm/s in Neutral: {state.get((LOW, CAN_RT_DRIVE_CMD))}"
+
+
 def test_host_stream_loss_zeroes_setpoint_in_bench_mode(auto_ready):
     """Bench solo: losing the host 0x300 stream zeroes 0x204 without latching ESTOP.
 

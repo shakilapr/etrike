@@ -85,6 +85,7 @@ static std::atomic<int16_t> g_cmd_steer_0_1deg{0};
 static std::atomic<bool>    g_cmd_steer_valid{false};
 static std::atomic<uint8_t> g_cmd_lights{0};
 static std::atomic<int64_t> g_last_host_cmd_us{0};
+static std::atomic<int64_t> g_last_host_drive_cmd_us{0};
 static std::atomic<bool>    g_mode_auto{true};
 
 // ─── Real Actuator State (Low CAN RX -> Control Task) ────────────────────────
@@ -166,6 +167,7 @@ static void ingest_high(const Frame& fr) {
         }
         g_cmd_gear.store(fr.data[7], std::memory_order_relaxed);
         g_last_host_cmd_us.store(now_us, std::memory_order_relaxed);
+        g_last_host_drive_cmd_us.store(now_us, std::memory_order_relaxed);
         ESP_LOGI(TAG, "High CAN 0x300 RX: speed=%ld yaw=%ld gear=%u",
                  (long)g_cmd_speed_mmps.load(), (long)g_cmd_yaw_mrad_s.load(), (unsigned)fr.data[7]);
         break;
@@ -623,10 +625,11 @@ static void emit_high_rt_diag() {
         // ── Real Actuator & Host Liveness ────────────────────────────
         const bool real_mtr_active = (now_us - g_last_real_mtr_us.load(std::memory_order_relaxed)) < 250'000;
         const bool real_ses_active = (now_us - g_last_real_ses_us.load(std::memory_order_relaxed)) < 250'000;
-        const bool host_active     = (now_us - g_last_host_cmd_us.load(std::memory_order_relaxed)) < 500'000;
+        const bool host_active       = (now_us - g_last_host_cmd_us.load(std::memory_order_relaxed)) < 500'000;
+        const bool host_drive_active = (now_us - g_last_host_drive_cmd_us.load(std::memory_order_relaxed)) < 500'000;
 
         // ── Command snapshot (all safety locks cleared, zero timeout purge) ────
-        const int32_t speed_in   = g_cmd_speed_mmps.load(std::memory_order_relaxed);
+        int32_t       speed_in   = g_cmd_speed_mmps.load(std::memory_order_relaxed);
         const int32_t yaw_in     = g_cmd_yaw_mrad_s.load(std::memory_order_relaxed);
         uint8_t       gear_in    = g_cmd_gear.load(std::memory_order_relaxed);
         const int32_t brake_kpa  = g_cmd_brake_kpa.load(std::memory_order_relaxed);
@@ -636,14 +639,21 @@ static void emit_high_rt_diag() {
 
         if (brake_kpa > 100) lights_in |= 0x04u; // Auto brake light
 
-        // Auto gear selection if not explicitly set
-        if (gear_in == 0) {
+        // Authoritative gear resolution (aligns with rt-esp32 commit e73fe4f9)
+        if (host_drive_active) {
+            // Gear from 0x300 (N=0, D=1, S=2, R=3) is authoritative.
+            // When Host commands Neutral (0), strictly enforce zero motor speed setpoint.
+            if (gear_in == static_cast<uint8_t>(can::Gear::N)) {
+                speed_in = 0;
+            }
+        } else {
+            // Fallback auto gear selection only if no valid host drive command exists
             if (speed_in < 0) {
-                gear_in = 3; // R
+                gear_in = static_cast<uint8_t>(can::Gear::R);
             } else if (speed_in > 0) {
-                gear_in = 1; // D
+                gear_in = static_cast<uint8_t>(can::Gear::D);
             } else {
-                gear_in = 1; // Default D
+                gear_in = static_cast<uint8_t>(can::Gear::N);
             }
         }
 
@@ -652,7 +662,25 @@ static void emit_high_rt_diag() {
         int16_t ses_angle_raw;
         int32_t yaw_out = yaw_in;
 
-        if (steer_val) {
+        if (gear_in == static_cast<uint8_t>(can::Gear::N)) {
+            motor_speed_mmps = 0;
+            if (steer_val) {
+                int16_t ang = std::clamp(steer_ang, int16_t{-450}, int16_t{450});
+                ses_angle_raw = std::clamp(
+                    static_cast<int16_t>(ang + dumb::kSbwAngleOffset),
+                    dumb::kMinSteerRaw,
+                    dumb::kMaxSteerRaw);
+            } else {
+                rt::DriveCmd cmd{0, yaw_in};
+                rt::ResolvedSetpoint sp{};
+                g_physics.resolve(cmd, sp);
+                int32_t ang_0_1deg = sp.steer_angle_mdeg / 100;
+                ses_angle_raw = std::clamp(
+                    static_cast<int16_t>(ang_0_1deg + dumb::kSbwAngleOffset),
+                    dumb::kMinSteerRaw,
+                    dumb::kMaxSteerRaw);
+            }
+        } else if (steer_val) {
             motor_speed_mmps = std::clamp(
                 speed_in,
                 -static_cast<int32_t>(shared::kMaxSpeedRevMmps),

@@ -165,3 +165,26 @@ def test_explicit_reverse_with_positive_pedal_never_commands_forward(client):
     control = r.json()["control"]
     assert control["shaped_speed_mmps"] == -500
     assert control["gear_label"] == "R"
+
+
+def test_neutral_gear_stays_neutral_and_zeroes_on_throttle(client):
+    _tx(client)
+    # Negative throttle with Neutral commanded should NOT flip to Reverse, speed must stay 0
+    r = client.post(
+        "/api/v1/control/intent",
+        json={"sequence": 1, "throttle": -0.8, "steer": 0, "gear": 0},
+    )
+    assert r.status_code == 200
+    control = r.json()["control"]
+    assert control["shaped_speed_mmps"] == 0
+    assert control["gear_label"] == "N"
+
+    # Positive throttle with Neutral commanded should also stay in Neutral with speed 0
+    r2 = client.post(
+        "/api/v1/control/intent",
+        json={"sequence": 2, "throttle": 0.8, "steer": 0, "gear": 0},
+    )
+    assert r2.status_code == 200
+    control2 = r2.json()["control"]
+    assert control2["shaped_speed_mmps"] == 0
+    assert control2["gear_label"] == "N"

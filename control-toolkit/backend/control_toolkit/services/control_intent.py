@@ -350,13 +350,13 @@ class ControlIntentService:
             gear = GEAR_N
         else:
             gear = st.gear
-            if thr > 0 and gear == GEAR_N:
-                gear = GEAR_D
-            if thr < 0 and gear not in (GEAR_R,):
-                # Reverse intent maps to R; magnitude uses reverse limit
+            if thr < 0 and gear not in (GEAR_R, GEAR_N):
+                # Reverse intent maps to R only if not explicitly in Neutral
                 gear = GEAR_R
 
-        if thr >= 0:
+        if gear == GEAR_N:
+            speed = 0
+        elif thr >= 0:
             speed = int(round(thr * MAX_SPEED_FWD_MMPS))
         else:
             speed = int(round(thr * MAX_SPEED_REV_MMPS))  # negative
