@@ -467,7 +467,7 @@ export function getBrakePipeline(messages: MessageState[]) {
     : null
   const sysStrokeMm = isSysRecent
     ? (signalNum(sysSebReq, 'stroke_mm') ??
-       (sebReqStrokeRaw != null ? sebReqStrokeRaw * 0.05 : null))
+       (sebReqStrokeRaw != null ? sebReqStrokeRaw * 0.05 - 30.0 : null))
     : null
   const sysControlMode = isSysRecent ? signalNum(sysSebReq, 'control_mode') : null // 0=Stroke, 1=Pressure
 
@@ -479,7 +479,7 @@ export function getBrakePipeline(messages: MessageState[]) {
     : (isDiagRecent ? signalNum(brakeDiag, 'pressure_raw') : null)
   const actualStrokeMm = isSebRecent
     ? (signalNum(sebStatus, 'stroke_mm') ??
-       (sebFbkStrokeRaw != null ? sebFbkStrokeRaw * 0.05 : null))
+       (sebFbkStrokeRaw != null ? sebFbkStrokeRaw * 0.05 - 30.0 : null))
     : null
 
   const compositeBrakeKpa =

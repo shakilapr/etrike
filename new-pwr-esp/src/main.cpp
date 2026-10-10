@@ -16,14 +16,20 @@
     TickType_t last_wake_time = xTaskGetTickCount();
     const TickType_t period_10ms = pdMS_TO_TICKS(10);
 
+    // Zero-allocation, Flash/ROM-resident static extended CAN frame
+    static constexpr can::Frame kDcdcKeepaliveFrame{
+        0x10262B27u,
+        true,
+        8u,
+        {0xFD, 0x78, 0x00, 0xC8, 0x00, 0xFF, 0xFF, 0xFC}
+    };
+
     while (true) {
         vTaskDelayUntil(&last_wake_time, period_10ms);
 
         // ── Power Supply / DCDC Keepalive (10 Hz / 100 ms, 29-bit Extended CAN 0x10262B27) ──
         if (tick_10ms_count % 10 == 0) {
-            can::Frame dcdc_cmd = can::Frame::extended_frame(0x10262B27u, 8);
-            dcdc_cmd.data = {0xFD, 0x78, 0x00, 0xC8, 0x00, 0xFF, 0xFF, 0xFC};
-            send_can_frame(dcdc_cmd);
+            send_can_frame(kDcdcKeepaliveFrame);
 
             // Toggle onboard LED pulse every transmit (100 ms) for visual liveness
             static bool s_led_state = false;

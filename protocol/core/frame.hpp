@@ -18,6 +18,10 @@ struct Frame {
                     std::uint8_t length = 0) noexcept
         : id(can_id), extended(is_extended), dlc(length), data() {}
 
+    constexpr Frame(std::uint32_t can_id, bool is_extended, std::uint8_t length,
+                    std::array<std::uint8_t, kClassicCanPayloadSize> payload) noexcept
+        : id(can_id), extended(is_extended), dlc(length), data(payload) {}
+
     std::uint32_t id;
     bool extended;
     std::uint8_t dlc;

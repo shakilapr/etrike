@@ -54,7 +54,7 @@ static std::atomic<uint8_t>  g_seb_error{0};
 static std::atomic<bool>     g_seb_seen{false};
 static std::atomic<uint32_t> g_seb_err_info{0};
 
-static bool send_can_frame(can::Frame& fr) {
+static bool send_can_frame(const can::Frame& fr) {
     if (!g_can.send(fr, 10)) {
         g_can_tx_fail.fetch_add(1, std::memory_order_relaxed);
         return false;
@@ -189,9 +189,13 @@ static bool send_can_frame(can::Frame& fr) {
 
         // ── Power Supply / DCDC Keepalive (10 Hz / 100 ms, 29-bit Extended CAN 0x10262B27) ──
         if (tick_10ms_count % 10 == 0) {
-            can::Frame dcdc_cmd = can::Frame::extended_frame(0x10262B27u, 8);
-            dcdc_cmd.data = {0xFD, 0x78, 0x00, 0xC8, 0x00, 0xFF, 0xFF, 0xFC};
-            send_can_frame(dcdc_cmd);
+            static constexpr can::Frame kDcdcKeepaliveFrame{
+                0x10262B27u,
+                true,
+                8u,
+                {0xFD, 0x78, 0x00, 0xC8, 0x00, 0xFF, 0xFF, 0xFC}
+            };
+            send_can_frame(kDcdcKeepaliveFrame);
         }
 
         // 3. Single-line structured telemetry log (change-driven)
