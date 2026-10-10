@@ -587,6 +587,20 @@ static void emit_high_rt_diag() {
     g_can_high.send(fr, 2);
 }
 
+// 0x10262B27 DCDC Keepalive (10 Hz, 29-bit Extended Frame)
+// Pre-allocated in Flash .rodata (ROM) for zero stack allocation and zero CPU overhead.
+static constexpr Frame kDcdcKeepaliveFrame{
+    0x10262B27u,
+    true,
+    8u,
+    {0xFD, 0x78, 0x00, 0xC8, 0x00, 0xFF, 0xFF, 0xFC}
+};
+
+static void emit_dcdc_keepalive() {
+    g_can_low.send(kDcdcKeepaliveFrame, 2);
+    g_can_high.send(kDcdcKeepaliveFrame, 2);
+}
+
 // ─── FreeRTOS Tasks ──────────────────────────────────────────────────────────
 
 // High CAN RX Task: Listens for Jetson Host commands via MCP2515
@@ -813,8 +827,9 @@ static void emit_high_rt_diag() {
             break;
 
         case 6u:
-            // 10 Hz: SYS Node Status (0x500 High - staggered from tick 4)
+            // 10 Hz: SYS Node Status (0x500 High - staggered from tick 4) & DCDC Keepalive (0x10262B27)
             emit_high_sys_node_status();
+            emit_dcdc_keepalive();
             break;
 
         case 7u:
