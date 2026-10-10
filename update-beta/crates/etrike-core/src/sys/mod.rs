@@ -132,38 +132,65 @@ impl SysCore {
 
     /// Advance the core by one tick.
     pub fn step(&mut self, inputs: SysInputs) -> SysOutputs {
-        if self.config.bypass {
-            return self.step_bypass(&inputs);
+        let bypass = self.config.bypass;
+
+        // 1. Latched faults and transient inhibits (skipped under bypass).
+        if !bypass {
+            if inputs.seb_l3_fault {
+                self.inhibit.latch(LatchedFault::SebL3);
+            }
+            self.update_mtr_fbk_inhibit(inputs.mtr_fbk_ok);
         }
 
-        // 1. Latched faults and transient inhibits.
-        if inputs.seb_l3_fault {
-            self.inhibit.latch(LatchedFault::SebL3);
-        }
-        self.update_mtr_fbk_inhibit(inputs.mtr_fbk_ok);
-
-        // 2. ESTOP entry (first reason wins while active).
+        // 2. ESTOP entry. The physical button ALWAYS trips (even in bypass);
+        //    peer/task/bus faults only apply when not bypassed.
         if !self.estop.is_active() {
-            if let Some(reason) = self.first_estop_reason(&inputs) {
+            if let Some(reason) = self.first_estop_reason(&inputs, bypass) {
                 self.estop.enter(reason);
             }
         }
 
-        // 3. Reset transaction (before authority so a reset restores mode now).
+        // 3. Reset transaction (always available, even in bypass).
         let reset_outcome = self.process_reset(&inputs);
 
-        // 4. Resolve authority.
-        let authority = resolve_authority(ModeInputs {
-            estop_active: self.estop.is_active(),
-            latched_fault: self.inhibit.latched_any(),
-            host_auto_request: inputs.host_auto_request,
-            physical_run: inputs.hw_start_run,
-            allow_auto: self.config.allow_auto,
-        });
+        let estop_active = self.estop.is_active();
+
+        // 4. Resolve authority. Under bypass it relays the host, but ESTOP
+        //    overrides mode and cuts power.
+        let authority = if bypass {
+            Authority {
+                mode: if !estop_active && inputs.host_auto_request {
+                    Mode::Auto
+                } else {
+                    Mode::Manual
+                },
+                power: if estop_active {
+                    Power::Off
+                } else {
+                    match inputs.host_power {
+                        Some(false) => Power::Off,
+                        _ => Power::On,
+                    }
+                },
+                clamp: if estop_active {
+                    Clamp::Estop
+                } else {
+                    Clamp::None
+                },
+            }
+        } else {
+            resolve_authority(ModeInputs {
+                estop_active,
+                latched_fault: self.inhibit.latched_any(),
+                host_auto_request: inputs.host_auto_request,
+                physical_run: inputs.hw_start_run,
+                allow_auto: self.config.allow_auto,
+            })
+        };
 
         // 5. Brake arbitration.
         let brake = brake::arbitrate(
-            self.estop.is_active(),
+            estop_active,
             inputs.hw_brake_lever,
             inputs.rt_brake_intent_kpa,
         );
@@ -174,7 +201,7 @@ impl SysCore {
             LightInputs {
                 switches: inputs.light_switches,
                 lever: inputs.hw_brake_lever,
-                estop: self.estop.is_active(),
+                estop: estop_active,
                 host: inputs.host_lights,
             },
         );
@@ -183,7 +210,7 @@ impl SysCore {
         SysOutputs {
             mode: authority.mode,
             power: authority.power,
-            estop_active: self.estop.is_active(),
+            estop_active,
             estop_reason: self.estop.reason(),
             brake,
             lights,
@@ -192,48 +219,14 @@ impl SysCore {
         }
     }
 
-    /// Bypass path: pass everything straight through, ignoring safety entirely.
-    /// Power defaults ON (bench), and the host can switch it off via `0x112`.
-    fn step_bypass(&mut self, inputs: &SysInputs) -> SysOutputs {
-        let authority = Authority {
-            mode: if inputs.host_auto_request {
-                Mode::Auto
-            } else {
-                Mode::Manual
-            },
-            power: match inputs.host_power {
-                Some(false) => Power::Off,
-                _ => Power::On,
-            },
-            clamp: Clamp::None,
-        };
-        let brake = brake::arbitrate(false, inputs.hw_brake_lever, inputs.rt_brake_intent_kpa);
-        let lights = lights::evaluate(
-            authority.mode,
-            LightInputs {
-                switches: inputs.light_switches,
-                lever: inputs.hw_brake_lever,
-                estop: false,
-                host: inputs.host_lights,
-            },
-        );
-        self.heartbeat = self.heartbeat.wrapping_add(1);
-        SysOutputs {
-            mode: authority.mode,
-            power: authority.power,
-            estop_active: false,
-            estop_reason: None,
-            brake,
-            lights,
-            heartbeat: self.heartbeat,
-            reset_outcome: None,
-        }
-    }
-
-    fn first_estop_reason(&self, inputs: &SysInputs) -> Option<EstopReason> {
+    fn first_estop_reason(&self, inputs: &SysInputs, bypass: bool) -> Option<EstopReason> {
         if inputs.hw_estop_pressed {
-            Some(EstopReason::HwButton)
-        } else if inputs.can_estop {
+            return Some(EstopReason::HwButton);
+        }
+        if bypass {
+            return None;
+        }
+        if inputs.can_estop {
             Some(EstopReason::Can001)
         } else if inputs.task_deadline_missed {
             Some(EstopReason::TaskDeadline)
@@ -447,20 +440,28 @@ mod tests {
     }
 
     #[test]
-    fn bypass_passes_everything_through() {
+    fn bypass_relays_host_but_still_honors_button() {
         let mut core = SysCore::new(SysConfig {
             bypass: true,
             ..SysConfig::default()
         });
+        // Peer faults are ignored in bypass, so the host command just relays.
         let mut i = input(0);
-        i.hw_estop_pressed = true; // ignored in bypass
-        i.rt_heartbeat_ok = false; // ignored in bypass
+        i.rt_heartbeat_ok = false;
         i.host_auto_request = true;
-        i.hw_start_run = true;
         let out = core.step(i);
         assert!(!out.estop_active);
         assert_eq!(out.mode, Mode::Auto);
         assert_eq!(out.power, Power::On);
+
+        // The physical ESTOP button must still trip and cut power, even in bypass.
+        let mut i = input(10);
+        i.hw_estop_pressed = true;
+        i.host_auto_request = true;
+        let out = core.step(i);
+        assert!(out.estop_active);
+        assert_eq!(out.mode, Mode::Manual);
+        assert_eq!(out.power, Power::Off);
     }
 
     #[test]

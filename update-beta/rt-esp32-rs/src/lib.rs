@@ -24,6 +24,8 @@ pub trait RtHal {
 /// stream 100 ms; a generous multiple tolerates jitter and a single miss.
 const SAFETY_FRESH_MS: u64 = 600;
 const MODE_FRESH_MS: u64 = 300;
+/// Host drive command timeout: on loss, outputs are zeroed (ZeroOutput policy).
+const DRIVE_LOSS_MS: u64 = 500;
 
 /// If no frame arrives within the window, the stream is treated as lost.
 fn is_fresh(last: Option<u64>, now: u64, window_ms: u64) -> bool {
@@ -37,6 +39,7 @@ pub struct RtState {
     gate: AuthorityGate,
     desired_speed_mmps: i32,
     desired_gear: u8,
+    drive_last: Option<u64>,
     safety_last: Option<u64>,
     safety_estop: bool,
     mode_last: Option<u64>,
@@ -50,6 +53,7 @@ impl RtState {
             gate: AuthorityGate::new(),
             desired_speed_mmps: 0,
             desired_gear: 0,
+            drive_last: None,
             safety_last: None,
             safety_estop: false,
             mode_last: None,
@@ -78,6 +82,7 @@ pub fn step_once<H: RtHal>(hal: &mut H, state: &mut RtState) {
             if let Ok(msg) = generated::HostDriveCmd::unpack(frame.payload()) {
                 state.desired_speed_mmps = msg.speed_mmps;
                 state.desired_gear = msg.gear;
+                state.drive_last = Some(now);
             }
         }
     }
@@ -91,11 +96,18 @@ pub fn step_once<H: RtHal>(hal: &mut H, state: &mut RtState) {
         || state
             .gate
             .observe(safety_valid, mode_valid, state.safety_estop);
-    let (speed, gear) = if allowed {
+    // Motion only when authorised AND the host command is fresh; otherwise
+    // outputs are zeroed (mirrors the bench ZeroOutput loss policy).
+    let drive_fresh = is_fresh(state.drive_last, now, DRIVE_LOSS_MS);
+    let (mut speed, gear) = if allowed && drive_fresh {
         (state.desired_speed_mmps, state.desired_gear)
     } else {
         (0, 0)
     };
+    // Authoritative Neutral interlock: commanded gear N (0) forces zero speed.
+    if gear == 0 {
+        speed = 0;
+    }
     if let Ok(frame) = wire::encode_drive_cmd(speed, gear) {
         hal.send_frame(&frame);
     }
@@ -222,6 +234,30 @@ mod tests {
 
         // ESTOP frame.
         hal.frames.push(safety(2));
+        step_once(&mut hal, &mut state);
+        assert_eq!(drive(&hal), [0, 0, 0, 0, 0]);
+    }
+
+    #[test]
+    fn neutral_interlock_forces_zero_speed() {
+        let mut hal = MockHal::new();
+        let mut state = RtState::new(true);
+        // Host commands Neutral (gear 0) with a nonzero speed.
+        host_drive(&mut hal, 1000, 0);
+        step_once(&mut hal, &mut state);
+        assert_eq!(drive(&hal), [0, 0, 0, 0, 0]);
+    }
+
+    #[test]
+    fn drive_loss_zeroes_output() {
+        let mut hal = MockHal::new();
+        let mut state = RtState::new(true);
+        host_drive(&mut hal, 1000, 1);
+        step_once(&mut hal, &mut state);
+        assert_eq!(drive(&hal), [0x00, 0x00, 0x03, 0xe8, 0x01]);
+
+        // Host goes silent past the loss timeout -> outputs zeroed.
+        hal.now = 10_000;
         step_once(&mut hal, &mut state);
         assert_eq!(drive(&hal), [0, 0, 0, 0, 0]);
     }

@@ -26,11 +26,11 @@ cargo test          # shell logic + core invariants with a mock HAL
 
 ## Bench bypass
 
-`main.rs` sets `const SAFETY_BYPASS: bool = true;` — every command passes
-straight through (no ESTOP, no clamps, no reset blockers, and inbound frames are
-not verified). Power defaults **ON** without the physical run latch; the host can
-switch it off via `0x112`, and mode follows the host `0x111` request. Set it to
-`false` for a safety-enforcing build.
+`main.rs` sets `const SAFETY_BYPASS: bool = true;` — peer/task/heartbeat faults,
+clamps, reset blockers, and inbound-frame verification are all skipped. Power
+defaults **ON**; the host can switch it off via `0x112`, and mode follows the
+`0x111` request. The **physical ESTOP button still trips** and cuts power (reset
+still clears it). Set it to `false` for a safety-enforcing build.
 
 ## Building for the ESP32‑S3
 

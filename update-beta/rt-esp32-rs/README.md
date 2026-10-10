@@ -32,7 +32,9 @@ cargo test
 
 `main.rs` sets `const SAFETY_BYPASS: bool = true;` — motion authority is always
 granted (host drive passes straight through) and inbound frames are not
-verified. Set it to `false` for a safety-enforcing build.
+verified. A commanded **Neutral gear (0) forces zero speed**, and a stale or
+absent host drive command (past `DRIVE_LOSS_MS`) zeroes the output. Set it to
+`false` for a safety-enforcing build.
 
 ## Building for the ESP32‑S3
 

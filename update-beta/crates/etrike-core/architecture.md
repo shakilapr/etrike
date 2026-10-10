@@ -211,13 +211,19 @@ source and value, so two sources cannot each write the command.
 
 ### 6.4 Bench safety bypass
 
-`SysConfig::bypass` (and `RtState::bypass`) is a bench pass-through: when set,
-`step` ignores ESTOP, clamps, and reset blockers entirely and emits outputs
-straight from the inputs; the shells also skip `verify()`. On SYS, bypass power
-defaults **ON** (so the bench comes up without the physical run latch) and the
-host can switch it off via `0x112`; mode follows the host `0x111` request
-(`AUTO`/`MANUAL`). The firmware sets it from a `SAFETY_BYPASS` constant.
-Intended for the hardware bench only.
+`SysConfig::bypass` (and `RtState::bypass`) is a bench pass-through. When set:
+
+- SYS skips peer/task/heartbeat faults, latched-fault clamps, and reset
+  blockers, and relays the host: power defaults **ON** (bench) with `0x112` able
+  to switch it off, and mode follows the `0x111` request (`AUTO`/`MANUAL`).
+- The **physical ESTOP button still trips** and cuts power, even in bypass
+  (the reset transaction remains available to clear it).
+- The shells skip `verify()` (unvalidated frames are accepted).
+- RT always grants motion, and withholds it (zeroes) when the host drive command
+  is stale beyond `DRIVE_LOSS_MS`; a commanded Neutral gear forces zero speed.
+
+The firmware sets it from a `SAFETY_BYPASS` constant. Intended for the hardware
+bench only.
 
 ---
 

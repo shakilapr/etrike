@@ -244,10 +244,9 @@ mod tests {
     }
 
     #[test]
-    fn bypass_ignores_estop_and_verification() {
+    fn bypass_accepts_unverified_frames() {
         let mut hal = MockHal::new();
-        hal.gpio.estop_pressed = true;
-        // A malformed frame must also be accepted under bypass.
+        // A malformed frame (wrong DLC) must still be accepted under bypass.
         hal.frames
             .push(RawFrame::from_slice(Bus::Low, 0x111, &[0x01]).unwrap());
         let mut core = SysCore::new(SysConfig {
@@ -258,6 +257,21 @@ mod tests {
         let mut state = SysShellState::new(true);
         let outputs = step_once(&mut hal, &mut core, &mut counter, &mut state);
         assert!(!outputs.estop_active);
+    }
+
+    #[test]
+    fn bypass_still_trips_on_physical_button() {
+        let mut hal = MockHal::new();
+        hal.gpio.estop_pressed = true;
+        let mut core = SysCore::new(SysConfig {
+            bypass: true,
+            ..SysConfig::default()
+        });
+        let mut counter = 0u8;
+        let mut state = SysShellState::new(true);
+        let outputs = step_once(&mut hal, &mut core, &mut counter, &mut state);
+        assert!(outputs.estop_active);
+        assert_eq!(outputs.power, Power::Off);
     }
 
     #[test]
