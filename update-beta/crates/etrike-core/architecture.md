@@ -57,22 +57,16 @@ src/
     inhibit.rs      # InhibitModel (transient + latched two-mask model)
     presence.rs     # NodePresence bits and freshness
     authority.rs    # shared Authority/Mode/Power value types
-    validity.rs     # wrappers over etrike-protocol StreamValidity
   sys/              # SYS-only policy
-    mod.rs          # SysCore, SysInputs, SysOutputs
-    mode.rs         # resolve_authority, ModeAuthority
-    brake.rs        # BrakeArbiter (priority chain) + BrakeControl SM
-    mtr_ack.rs      # MtrAckWatchdog
-    lights.rs       # LightsLogic
-    ready.rs        # SystemReady (observational)
-    reset.rs        # authenticated reset transaction / token + blockers
-  rt/               # RT-only policy (P4; reserved now)
-    mod.rs          # RtCore, RtInputs, RtOutputs
-    steering.rs     # SteeringController state machine
-    kinematics.rs   # resolver selection, angle clamp
-    obstacle.rs     # obstacle speed/brake limiter
-    brake_intent.rs # BrakeArbiter for 0x205
-    supervisor.rs   # 0x011 authority, asymmetric clear
+    mod.rs          # SysCore, SysInputs, SysOutputs, bench bypass
+    mode.rs         # resolve_authority
+    brake.rs        # brake arbitration (priority chain)
+    lights.rs       # body lights
+    wire.rs         # frame <-> core mapping
+  rt/               # RT-only policy
+    mod.rs
+    gate.rs         # AuthorityGate (asymmetric ESTOP clear)
+    wire.rs         # frame <-> core mapping
 ```
 
 `sys/` and `rt/` never import each other. Shared semantics live in `shared/`.
@@ -139,14 +133,12 @@ inside `step`.
 | State | Type | Owner (written by) | Read by |
 |-------|------|--------------------|---------|
 | ESTOP latch | `EstopLatch` | `step` via `enter` / `try_reset` | mode, brake, outputs |
-| Latched faults | `InhibitModel` (latched mask) | `step` | mode, brake, reset |
-| Transient inhibits | `InhibitModel` (transient mask) | `step` | mode, reset |
+| Latched faults | `InhibitModel` (latched mask) | `step` | mode |
+| Transient inhibits | `InhibitModel` (transient mask) | `step` | mode |
 | Mode / power | `Authority` | `resolve_authority` inside `step` | outputs |
-| Brake command | `BrakeArbiter` + `BrakeControl` | `step` | `0x7B9` output |
-| MTR ack watchdog | `MtrAckWatchdog` | `step` | latch, reset blockers |
-| Lights | `LightsLogic` | `step` | GPIO output |
-| Reset transaction | `reset` module | `step` | `0x115`, latch |
-| Heartbeat counters | locals in `step` | `step` | heartbeat output |
+| Brake command | `brake::arbitrate` | `step` | brake output |
+| Lights | `lights::evaluate` | `step` | GPIO output |
+| Heartbeat counter | `heartbeat` field | `step` | heartbeat output |
 
 Contrast with the C++: there is no `g_estop_reason` written by four contexts,
 no mailbox zeroed by three writers, and no write-never globals. A state with no
@@ -160,7 +152,7 @@ writer simply does not exist.
 
 ```rust
 pub struct EstopLatch { active: bool, reason: Option<EstopReason>, epoch: u32 }
-pub struct ResetEvidence { source: ResetSource, blockers: ResetBlockers, now: Instant }
+pub struct ResetEvidence { source: ResetSource, blockers: ResetBlockers }
 
 pub enum ResetOutcome {
     Cleared { epoch: u32 },
@@ -182,38 +174,28 @@ impl EstopLatch {
 ```
 
 `active` and `reason` are private; the only ways to change them are `enter` and
-`try_reset`. `ResetBlockers` carries, in priority order:
+`try_reset`. `ResetBlockers` is deliberately tiny, in priority order:
 
 1. `PhysicalEstop` — the button is still pressed.
-2. `LatchedFault` — a latched fault is active.
-3. `Moving` — the vehicle is not stationary.
-4. `HeartbeatLoss` — a peer heartbeat is missing.
-5. `MtrEstopActive` — MTR has not acknowledged ESTOP release.
-6. `TransientInhibit` — a transient inhibit is still asserted.
-7. `InvalidToken` — the remote reset token/sequence is wrong.
+2. `Moving` — the vehicle is not stationary.
+3. `InvalidToken` — the remote reset token is wrong.
 
-There is no code path that clears the latch without passing every blocker.
+Latched faults do **not** block reset: a successful reset clears them. There is
+no code path that clears the latch without passing every blocker.
 
 ### 6.2 Mode authority
 
 ```rust
-pub struct AuthorityInputs<'a> {
-    pub estop: &'a EstopLatch,
-    pub latched: &'a LatchedFaults,
-    pub host_req: &'a RequestState<ModeReq>,   // verified + fresh + wants
-    pub physical_run: bool,                    // START latched and not ESTOP
-    pub policy: &'a ModePolicy,
-}
+pub enum Mode { Manual, Auto }        // two modes only
 
-pub fn resolve_authority(i: &AuthorityInputs) -> Authority {
-    if i.estop.is_active() || i.latched.any() {
-        return Authority { mode: Mode::Manual, power: Power::off(), clamp: Clamp::Estop };
+pub fn resolve_authority(i: ModeInputs) -> Authority {
+    if i.estop_active || i.latched_fault {
+        return Authority { mode: Mode::Manual, power: Power::Off, clamp: Clamp::Estop };
     }
-    let host_auto_ok = i.host_req.verified && i.host_req.fresh && i.host_req.wants == Mode::Auto;
-    if i.physical_run && host_auto_ok && i.policy.allows_auto() {
-        Authority { mode: Mode::Auto, power: Power::on(), clamp: Clamp::None }
+    if i.physical_run && i.host_auto_request && i.allow_auto {
+        Authority { mode: Mode::Auto, power: Power::On, clamp: Clamp::None }
     } else {
-        Authority { mode: Mode::Manual, power: Power::from_physical(i), clamp: Clamp::None }
+        Authority { mode: Mode::Manual, power: if i.physical_run { Power::On } else { Power::Off }, clamp: Clamp::None }
     }
 }
 ```
@@ -224,16 +206,15 @@ physical inputs and the ESTOP latch. RT mirrors `0x110` and never resolves mode.
 ### 6.3 Brake arbitration (SYS)
 
 Priority chain, highest first: ESTOP maximum stroke → physical brake lever →
-RT `0x205` pressure intent → released. Implemented as a single `BrakeArbiter`
-returning the winning source and value, so two sources cannot each write the
-command.
+RT `0x205` pressure intent → released. A single function returns the winning
+source and value, so two sources cannot each write the command.
 
-### 6.4 MTR ESTOP acknowledgement watchdog
+### 6.4 Bench safety bypass
 
-`MtrAckWatchdog` returns `Armed | Confirmed | Retry | ExhaustedFault` and is
-ticked inside `step`. When exhausted it sets a latched fault, which becomes an
-ESTOP reset blocker. This path is exercised by a dedicated test — the C++ code
-declared the watchdog but never advanced it.
+`SysConfig::bypass` (and `RtState::bypass`) is a bench pass-through: when set,
+`step` ignores ESTOP, clamps, and reset blockers entirely and emits mode/power
+straight from the inputs; the shells also skip `verify()`. The firmware sets it
+from a `SAFETY_BYPASS` constant. Intended for the hardware bench only.
 
 ---
 
@@ -242,13 +223,12 @@ declared the watchdog but never advanced it.
 `step` does not read a clock or the environment except through `now`. Within a
 tick, inputs are processed in a fixed order:
 
-1. Update liveness/heartbeat state from `now`.
-2. Evaluate safety inputs → update `EstopLatch` and `InhibitModel`
-   (faults first, so they dominate the same tick).
-3. Resolve `Authority` (mode/power).
-4. Arbitrate brake.
-5. Evaluate the reset transaction (only if a valid reset request is present).
-6. Drive body outputs (lights, relays).
+1. Update transient inhibits and latch SEB L3.
+2. Evaluate ESTOP entry (button, CAN `0x001`, bus-off, task deadline, heartbeat).
+3. Reset transaction (before authority so a reset restores mode the same tick).
+4. Resolve `Authority` (mode/power).
+5. Arbitrate brake.
+6. Drive body outputs (lights).
 7. Build CAN outputs and heartbeat.
 
 Because the order is fixed and inputs are values (not events raced across
@@ -264,13 +244,13 @@ Host `cargo test` and `proptest`. The success criterion for P2 is this set:
 | Test | Property |
 |------|----------|
 | `estop_never_resets_with_blocker` | For every non-empty `ResetBlockers`, `try_reset` returns `Rejected` and the latch stays active |
-| `estop_resets_only_with_valid_evidence` | Cleared iff all blockers clear **and** the source is valid |
-| `host_auto_never_overrides_physical_manual` | Host AUTO with physical MANUAL/START-off resolves MANUAL; stale/invalid host reqs ignored |
+| `resets_only_with_valid_evidence` | Cleared iff all blockers clear **and** the source is valid |
+| `host_auto_never_overrides_physical_manual` | Host AUTO with physical MANUAL/START-off resolves MANUAL |
 | `no_id_sent_by_two_owners` | Generated `TX_OWNERS` has no duplicate `(bus, id)` |
-| `mode_is_deterministic` | Same input set ⇒ same output regardless of order |
-| `mtr_ack_watchdog_exhausts_and_latches` | Exhaustion produces a latched fault and blocks reset |
+| `deterministic_across_two_cores` | Same input set ⇒ same output regardless of order |
+| `reset_rejected_at_extreme_speed` | `i32::MIN` speed must not overflow |
+| `bypass_passes_everything_through` | Bypass ignores ESTOP and clamps |
 | `brake_arbiter_priority` | ESTOP > lever > RT intent > released, exhaustively |
-| `no_alloc_in_step` | `step` compiles without `alloc`; enforced by `no_std` build |
 
 Fault-injection replay reuses `rt-esp32/test/test_fault_injection_matrix` and
 the simulation vectors (P5).

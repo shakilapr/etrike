@@ -24,6 +24,12 @@ See `architecture.md` for the full design.
 cargo test          # shell logic + core invariants with a mock HAL
 ```
 
+## Bench bypass
+
+`main.rs` sets `const SAFETY_BYPASS: bool = true;` — every command passes
+straight through (no ESTOP, no clamps, no reset blockers, and inbound frames are
+not verified). Set it to `false` for a safety-enforcing build.
+
 ## Building for the ESP32‑S3
 
 Requires the Xtensa Rust toolchain (`espup`):

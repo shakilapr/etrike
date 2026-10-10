@@ -28,6 +28,12 @@ See `architecture.md` for the full design.
 cargo test
 ```
 
+## Bench bypass
+
+`main.rs` sets `const SAFETY_BYPASS: bool = true;` — motion authority is always
+granted (host drive passes straight through) and inbound frames are not
+verified. Set it to `false` for a safety-enforcing build.
+
 ## Building for the ESP32‑S3
 
 Requires `espup` and the `xtensa-esp32s3-none-elf` target:
