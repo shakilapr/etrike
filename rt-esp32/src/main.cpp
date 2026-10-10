@@ -1492,14 +1492,23 @@ static void run_passthrough_pipeline(int64_t now_us) {
         motion_out.motor_speed_mmps = drive_allowed ? sp.motor_speed_mmps : 0;
         if (!drive_allowed) {
             motion_out.motor_gear = uint8_t(can::Gear::N);
-        } else if (sp.cmd_gear != 0) {
-            motion_out.motor_gear = sp.cmd_gear;
-        } else if (sp.motor_speed_mmps > 0) {
-            motion_out.motor_gear = uint8_t(can::Gear::D);
-        } else if (sp.motor_speed_mmps < 0) {
-            motion_out.motor_gear = uint8_t(can::Gear::R);
+            motion_out.motor_speed_mmps = 0;
+        } else if (host.drive_cmd_valid) {
+            // Authoritative gear from 0x300 (N=0, D=1, S=2, R=3).
+            // Do not ignore Gear::N (0) — Neutral is a commanded state.
+            motion_out.motor_gear = host.gear_override;
+            if (motion_out.motor_gear == uint8_t(can::Gear::N)) {
+                motion_out.motor_speed_mmps = 0;
+            }
         } else {
-            motion_out.motor_gear = uint8_t(can::Gear::N);
+            // Fallback auto-deduction only if no valid host drive command exists
+            if (sp.motor_speed_mmps > 0) {
+                motion_out.motor_gear = uint8_t(can::Gear::D);
+            } else if (sp.motor_speed_mmps < 0) {
+                motion_out.motor_gear = uint8_t(can::Gear::R);
+            } else {
+                motion_out.motor_gear = uint8_t(can::Gear::N);
+            }
         }
 
         motion_out.steer_angle_0_1deg = static_cast<int16_t>(sp.steer_angle_mdeg / 100);

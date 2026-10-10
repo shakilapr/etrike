@@ -32,8 +32,11 @@ inline void compute_passthrough_motion(
     } else {
         // Passthrough: speed is completely unclamped (vehicle limits ignored)
         out.motor_speed_mmps = host.speed_mmps;
-        if (host.gear_override != 0) {
+        if (host.drive_cmd_valid) {
             out.motor_gear = host.gear_override;
+            if (out.motor_gear == uint8_t(can::Gear::N)) {
+                out.motor_speed_mmps = 0;
+            }
         } else if (host.speed_mmps > 0) {
             out.motor_gear = uint8_t(can::Gear::D);
         } else if (host.speed_mmps < 0) {
