@@ -93,6 +93,7 @@ static std::atomic<int64_t>  g_last_real_mtr_us{0};
 static std::atomic<int64_t>  g_last_real_ses_us{0};
 static std::atomic<int64_t>  g_last_real_seb_us{0};
 static std::atomic<uint16_t> g_ses_actual_angle_raw{dumb::kSbwAngleOffset};
+static std::atomic<uint16_t> g_seb_actual_stroke_raw{dumb::kBrakeStrokeZeroRaw};
 static std::atomic<int16_t>  g_mtr_actual_speed_mmps{0};
 static std::atomic<uint8_t>  g_ses_mode_status{0};
 
@@ -263,6 +264,11 @@ static void ingest_low(const Frame& fr) {
         break;
 
     case can::kIdSebStatus:
+        if (fr.dlc >= 3) {
+            const uint16_t stroke = static_cast<uint16_t>(
+                (static_cast<uint16_t>(fr.data[1]) << 8) | static_cast<uint16_t>(fr.data[2]));
+            g_seb_actual_stroke_raw.store(stroke, std::memory_order_relaxed);
+        }
         g_last_real_seb_us.store(now_us, std::memory_order_relaxed);
         break;
 
@@ -712,6 +718,32 @@ static void emit_high_rt_diag() {
                        static_cast<float>(dumb::kBrakeStrokeZeroRaw),
                        static_cast<float>(dumb::kMaxBrakeStrokeRaw)));
 
+        // On-demand braking state machine (matches rm-esp32 BARE mode):
+        // Actuator is kept in Standby (control_enable = 0) with motor unpowered when idle at 0 mm.
+        // When brake is demanded (stroke >= 0.5 mm), control_enable asserts to 1 (0x02), providing
+        // a clean rising edge. When released, control_enable stays 1 while actively driving stroke
+        // back to 0 mm, then disengages back to 0 (Standby) once pushrod is back at rest.
+        static bool seb_active = false;
+        static uint32_t seb_retract_ticks = 0;
+        const bool brake_demanded = (stroke_mm >= 0.5f);
+        const bool brake_released = (stroke_mm < 0.1f);
+        const uint16_t actual_stroke_raw = g_seb_actual_stroke_raw.load(std::memory_order_relaxed);
+        // actual resting stroke <= 0.5 mm corresponds to raw <= 610
+        const bool actual_at_rest = (actual_stroke_raw <= 610);
+
+        if (brake_demanded || (seb_active && !brake_released)) {
+            seb_active = true;
+            seb_retract_ticks = 0;
+        } else if (seb_active) {
+            // Driver released brake: actively command 0 mm and wait for retraction or timeout (25 ticks = 500 ms)
+            if (actual_at_rest || (++seb_retract_ticks >= 25)) {
+                seb_active = false;
+                seb_retract_ticks = 0;
+            }
+        }
+
+        const bool seb_control_enable = seb_active;
+
         // Telemetry feedback: reflects physical readings if active, else resolved physics setpoints
         const int16_t telemetry_speed = real_mtr_active
             ? g_mtr_actual_speed_mmps.load(std::memory_order_relaxed)
@@ -734,7 +766,7 @@ static void emit_high_rt_diag() {
         // ═════════════════════════════════════════════════════════════
         if ((tick % 2u) == 0u) {
             // Even ticks (0, 2, 4, 6, 8): SEB Actuator + RT Brake Setpoint (50 Hz)
-            emit_low_seb(seb_stroke_raw, true);
+            emit_low_seb(seb_stroke_raw, seb_control_enable);
             emit_low_rt_brake(brake_kpa);
         } else {
             // Odd ticks (1, 3, 5, 7, 9): SES Steer Actuator (50 Hz)

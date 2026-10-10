@@ -63,10 +63,10 @@ constexpr int16_t kMaxSteerRaw     = 30450; // +45.0°
 // Brake stroke conversion (scale=0.05 mm/count, offset=-30 mm)
 // raw = (mm + 30.0) / 0.05 = (mm + 30.0) * 20
 // Released (0.0 mm) = raw 600 (0x0258); Full (27.0 mm) = raw 1140 (0x0474)
-constexpr float    kMaxBrakeStrokeMm   = 27.0f;   // full actuator stroke
+constexpr float    kMaxBrakeStrokeMm   = 23.0f;   // SEB max service stroke (matches rm-esp32)
 constexpr float    kBrakeStrokeScaleF  =  0.05f;  // mm per raw count
 constexpr float    kBrakeStrokeBias    = 30.0f;   // offset in mm (raw 0 = -30.0 mm)
-constexpr uint16_t kMaxBrakeStrokeRaw  = 1140;    // 27.0 mm full stroke
+constexpr uint16_t kMaxBrakeStrokeRaw  = 1060;    // 23.0 mm full stroke ((23+30)*20 = 1060 raw)
 constexpr uint16_t kBrakeStrokeZeroRaw = 600;     // 0.0 mm released position
 constexpr int32_t  kMaxBrakePressureKpa = 3000;   // 30.0 bar max hydraulic pressure
 
