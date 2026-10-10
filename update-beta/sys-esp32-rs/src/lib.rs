@@ -45,9 +45,15 @@ const RT_HB_FRESH_MS: u64 = 600;
 const MTR_FBK_FRESH_MS: u64 = 300;
 
 /// True when `last` is present and within `window_ms` of `now`.
+///
+/// A stream that has never been seen is not treated as lost until the startup
+/// window elapses, so a peer that boots slightly later does not immediately
+/// latch ESTOP (mirrors the C++ startup-acquire behaviour).
 fn is_fresh(last: Option<u64>, now: u64, window_ms: u64) -> bool {
-    last.map(|seen| now.wrapping_sub(seen) <= window_ms)
-        .unwrap_or(false)
+    match last {
+        Some(seen) => now.wrapping_sub(seen) <= window_ms,
+        None => now <= window_ms,
+    }
 }
 
 /// Persistent shell state for stream supervision (not decision state).
@@ -224,12 +230,24 @@ mod tests {
     }
 
     #[test]
+    fn startup_grace_avoids_premature_estop() {
+        let mut hal = MockHal::new();
+        let mut core = SysCore::new(SysConfig::default());
+        let mut counter = 0u8;
+        let mut state = SysShellState::default();
+        // At boot with no heartbeat yet, SYS holds instead of latching ESTOP.
+        let outputs = step_once(&mut hal, &mut core, &mut counter, &mut state);
+        assert!(!outputs.estop_active);
+    }
+
+    #[test]
     fn missing_heartbeat_latches_estop() {
         let mut hal = MockHal::new();
         let mut core = SysCore::new(SysConfig::default());
         let mut counter = 0u8;
         let mut state = SysShellState::default();
-        // No fresh 0x7FD heartbeat -> RT is treated as lost -> ESTOP.
+        // Past the startup window with no 0x7FD -> RT is treated as lost.
+        hal.now = 10_000;
         let outputs = step_once(&mut hal, &mut core, &mut counter, &mut state);
         assert!(outputs.estop_active);
     }
