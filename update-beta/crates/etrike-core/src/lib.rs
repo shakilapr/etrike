@@ -4,6 +4,6 @@
 //! no globals. See `architecture.md` in this crate.
 #![cfg_attr(not(test), no_std)]
 
+pub mod rt;
 pub mod shared;
 pub mod sys;
-pub mod rt;

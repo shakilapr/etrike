@@ -61,6 +61,14 @@ pub fn step_once<H: RtHal>(hal: &mut H, state: &mut RtState) {
     }
 }
 
+/// The control loop. Never returns.
+pub fn run<H: RtHal>(hal: &mut H, state: &mut RtState) -> ! {
+    loop {
+        step_once(hal, state);
+        hal.wait_next_tick();
+    }
+}
+
 #[cfg(target_arch = "xtensa")]
 pub mod hal;
 

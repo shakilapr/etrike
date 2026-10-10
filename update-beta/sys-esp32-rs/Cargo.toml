@@ -9,13 +9,38 @@ description = "E-Trike SYS firmware (ESP32-S3): safety, mode, and body control."
 version = "0.1.0"
 edition = "2021"
 license = "MIT OR Apache-2.0"
+build = "build.rs"
 
 [dependencies]
 etrike-protocol = { path = "../crates/etrike-protocol" }
 etrike-core = { path = "../crates/etrike-core" }
 
+# ESP dependencies are compiled only for the Xtensa target, so host `cargo test`
+# (which exercises the platform-independent shell) never pulls them in.
+[target.'cfg(target_arch = "xtensa")'.dependencies]
+esp-hal = { version = "~1.2.2", features = ["esp32s3", "unstable"] }
+esp-rtos = { version = "0.4.0", features = ["embassy", "esp32s3"] }
+esp-bootloader-esp-idf = { version = "0.6.0", features = ["esp32s3"] }
+embassy-executor = { version = "0.10.0", features = [] }
+embassy-time = "0.5.0"
+embedded-can = "0.4"
+critical-section = "1.2.0"
+
 [features]
 default = []
-# Enables the esp-hal / esp-rtos hardware binding (target-only). Add the ESP
-# dependencies described in README.md before enabling this feature.
+# Enables the ESP32-S3 hardware binding (target-only). Also gates the binary.
 hal = []
+
+[[bin]]
+name = "sys-esp32-rs"
+path = "src/main.rs"
+required-features = ["hal"]
+
+[profile.dev]
+opt-level = "s"
+
+[profile.release]
+codegen-units = 1
+debug = 2
+lto = "fat"
+opt-level = "s"

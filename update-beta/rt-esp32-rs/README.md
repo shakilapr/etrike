@@ -7,15 +7,20 @@ See `architecture.md` for the full design.
 
 ## Status
 
-Phase P4 scaffold. The shell honours SYS authority (asymmetric ESTOP clear via
-`etrike_core::rt::AuthorityGate`) and withholds motion otherwise. Steering
-(`0x169`), the MCP2515 High bus, and the gateway are the next work items; their
-decision logic will live in `etrike_core::rt`.
+- Shell logic (authority gating with the asymmetric 2-frame ESTOP clear) is
+  host-tested with a mock HAL.
+- `src/hal.rs` implements the ESP‑S3 binding: on-chip TWAI (Low bus) and an
+  MCP2515 driver over SPI (High bus), plus the 5 ms control tick. Compiled only
+  for `target_arch = "xtensa"`.
+- Steering (`0x169`), the gateway task split, and kinematics land in
+  `etrike_core::rt` next; the frame encode/decode and authority gate are
+  already ported and tested.
 
 ## Layout
 
 - `src/lib.rs` — platform-independent shell and authority gating (host testable).
-- `src/hal.rs` — ESP‑S3 hardware binding behind the `hal` feature (**to do**).
+- `src/hal.rs` — ESP‑S3 hardware binding (`RtHalImpl`, MCP2515 driver).
+- `src/main.rs` — `#[esp_rtos::main]` entry point (built with `--features hal`).
 
 ## Host tests (no hardware)
 
@@ -25,10 +30,23 @@ cargo test
 
 ## Building for the ESP32‑S3
 
-Requires `espup` and the `xtensa-esp32s3-none-elf` target (see
-`../sys-esp32-rs/README.md`). The High bus uses an external MCP2515 over SPI
-(driver to be written over `embedded-hal-async`); the Low bus uses the on-chip
-TWAI peripheral.
+Requires `espup` and the `xtensa-esp32s3-none-elf` target:
+
+```
+cargo +esp build --release --target xtensa-esp32s3-none-elf -Zbuild-std=core --features hal
+```
+
+**Toolchain note:** the crate compiles against `esp-hal ~1.2.2` / `esp-rtos 0.4`,
+but the final link currently fails with `memory.x appears multiple times` on the
+`xtensa-esp-elf-gcc` 16.2.0 installed by the current `espup` — the same failure
+occurs with the upstream `esp-generate` template, so it is a toolchain/binutils
+mismatch, not a code issue (see `../sys-esp32-rs/README.md`).
+
+## Buses
+
+- Low bus: on-chip TWAI, RX = GPIO4, TX = GPIO5, 500 kbit/s.
+- High bus: external MCP2515 over SPI — SCK 15, MOSI 16, MISO 17, CS 18,
+  INT 47, 500 kbit/s @ 8 MHz oscillator.
 
 ## `0x7B9` policy
 

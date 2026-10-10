@@ -14,6 +14,9 @@ __pycache__/
 /update-beta/target/
 /update-beta/**/target/
 
+# ── Scratch / local experiment area (never committed) ────────────────
+/_scratch/
+
 # ── PlatformIO build output ──────────────────────────────────────────
 .pio/
 .pioenvs/
