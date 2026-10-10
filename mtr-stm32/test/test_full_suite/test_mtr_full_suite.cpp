@@ -598,7 +598,7 @@ void test_motor_manager_dac_curves() {
     mgr.tick(100);
     ASSERT_EQ(dac.current_code(), mtr::kDacMaxCode);
 
-    // Reverse curve: unified speed scaling (max speed = 3000 mm/s)
+    // Reverse curve: scaled against kMaxReverseSpeedMmps (max speed = 500 mm/s)
     // Shift to Reverse (dwell 50ms first)
     drv.gear = static_cast<uint8_t>(can::Gear::R);
     drv.motor_speed_mmps = -250; // negative reverse speed
@@ -607,22 +607,22 @@ void test_motor_manager_dac_curves() {
     mgr.tick(100); // starts dwell
     mgr.tick(160); // dwell complete
 
-    // -250 mm/s in reverse -> 700 + (250/3000)*1266 = 805
-    ASSERT_NEAR(dac.current_code(), 805, 5);
+    // -250 mm/s in reverse -> 700 + (250/500)*1266 = 1333
+    ASSERT_NEAR(dac.current_code(), 1333, 5);
 
-    // -500 mm/s in reverse -> 700 + (500/3000)*1266 = 911
+    // -500 mm/s in reverse -> 700 + (500/500)*1266 = 1966
     drv.motor_speed_mmps = -500;
     can::gen::encode_rt_drive_cmd(drv, fr);
     mgr.handle_frame(fr, 160);
     mgr.tick(160);
-    ASSERT_NEAR(dac.current_code(), 911, 5);
+    ASSERT_NEAR(dac.current_code(), 1966, 5);
 
-    // Positive magnitude in Reverse (+500 mm/s) -> 911 (legacy path)
+    // Positive magnitude in Reverse (+500 mm/s) -> 1966 (legacy path)
     drv.motor_speed_mmps = 500;
     can::gen::encode_rt_drive_cmd(drv, fr);
     mgr.handle_frame(fr, 160);
     mgr.tick(160);
-    ASSERT_NEAR(dac.current_code(), 911, 5);
+    ASSERT_NEAR(dac.current_code(), 1966, 5);
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -671,14 +671,17 @@ void test_motor_manager_dac_golden_vectors() {
 
     // --- Reverse golden vectors (gear R) ---
     // Enter Reverse first (50 ms arc-protection dwell), then sweep speeds.
-    // Unified scaling against 3000 mm/s.
+    // --- Reverse golden vectors (gear R) ---
+    // Enter Reverse first (50 ms arc-protection dwell), then sweep speeds.
+    // Scaled against kMaxReverseSpeedMmps (500 mm/s) so reverse setpoints produce
+    // full-envelope torque to overcome motor/drivetrain static friction.
     struct RevVec { int32_t speed; uint16_t expect; };
     RevVec rev[] = {
         {-49,  0},     // |speed| < 50 -> 0 V
-        {-50,  721},   // magnitude 50 -> 700 + (50/3000)*1266 = 721
-        {-250, 805},   // 700 + (250/3000)*1266 = 805.5 -> 805
-        {-500, 911},   // 700 + (500/3000)*1266 = 911
-        {500,  911},   // positive magnitude in R -> 911 (legacy path)
+        {-50,  826},   // magnitude 50 -> 700 + (50/500)*1266 = 826.6 -> 826
+        {-250, 1333},  // 700 + (250/500)*1266 = 1333
+        {-500, 1966},  // 700 + (500/500)*1266 = 1966
+        {500,  1966},  // positive magnitude in R -> 1966 (legacy path)
     };
     hal_mock::reset();
     mtr::RelayController relays;
@@ -691,7 +694,7 @@ void test_motor_manager_dac_golden_vectors() {
     drive_to_dac(mgr, dac, 0, can::Gear::D, 100);   // start in Drive
     drive_to_dac(mgr, dac, -250, can::Gear::R, 100); // shifting D->R starts dwell
     mgr.tick(160);                                 // dwell complete -> Reverse active
-    ASSERT_EQ(dac.current_code(), 805);            // first reverse vector asserted (-250 -> 805)
+    ASSERT_EQ(dac.current_code(), 1333);           // first reverse vector asserted (-250 -> 1333)
     uint32_t t = 170;
     for (size_t i = 1; i < sizeof(rev) / sizeof(rev[0]); ++i) {
         drive_to_dac(mgr, dac, rev[i].speed, can::Gear::R, t);
@@ -1353,6 +1356,7 @@ static void test_motor_manager_multi_stream_readiness_latch() {
 // ═══════════════════════════════════════════════════════════════════════
 
 int main() {
+    std::setvbuf(stdout, nullptr, _IONBF, 0);
     UNITY_BEGIN();
 
     RUN_TEST(test_relay_controller_mutual_exclusion);

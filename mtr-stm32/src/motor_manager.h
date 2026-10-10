@@ -413,24 +413,24 @@ public:
         // Directional setpoint sign verification:
         // In Drive (D), speed must be positive.
         // In Reverse (R), canonical 0x204 transmits negative speed or legacy positive magnitude.
-        // Speed-to-voltage scaling is unified across both directions.
+        // Speed-to-voltage scaling uses the gear-specific maximum speed envelope.
         int32_t speed_mag = 0;
         if (drive_enabled) {
             if (target_speed_mmps_ > 0) {
-                speed_mag = target_speed_mmps_;
+                speed_mag = std::min(target_speed_mmps_, kMaxForwardSpeedMmps);
             }
         } else if (reverse_enabled) {
             if (target_speed_mmps_ < 0) {
-                speed_mag = -target_speed_mmps_;
-            } else if (target_speed_mmps_ > 0 && target_speed_mmps_ <= kMaxReverseSpeedMmps) {
-                speed_mag = target_speed_mmps_; // Support legacy positive reverse setpoints within reverse envelope
+                speed_mag = std::min(-target_speed_mmps_, kMaxReverseSpeedMmps);
+            } else if (target_speed_mmps_ > 0) {
+                speed_mag = std::min(target_speed_mmps_, kMaxReverseSpeedMmps); // Support legacy positive reverse setpoints
             }
         }
 
         if (neutral_active || speed_mag == 0 || (!drive_enabled && !reverse_enabled)) {
             dac_.force_zero();
         } else {
-            uint16_t code = calculate_dac_code_(speed_mag);
+            uint16_t code = calculate_dac_code_(speed_mag, active_gear_);
             dac_.set_throttle(code, true);
         }
     }
@@ -539,7 +539,7 @@ public:
     }
 
 private:
-    uint16_t calculate_dac_code_(int32_t speed_mmps) const {
+    uint16_t calculate_dac_code_(int32_t speed_mmps, can::Gear gear = can::Gear::D) const {
         if (speed_mmps <= 0) return 0;
 
         // Treat speeds below the shared low-speed threshold as zero to avoid
@@ -547,7 +547,8 @@ private:
         // which would produce deadband jitter or no motion at all.
         if (speed_mmps < static_cast<int32_t>(shared::kLowSpeedThreshMmps)) return 0;
 
-        float norm = static_cast<float>(speed_mmps) / static_cast<float>(kMaxForwardSpeedMmps);
+        int32_t max_speed = (gear == can::Gear::R) ? kMaxReverseSpeedMmps : kMaxForwardSpeedMmps;
+        float norm = static_cast<float>(speed_mmps) / static_cast<float>(max_speed);
         norm = std::clamp(norm, 0.0f, 1.0f);
 
         // Use a motion-floor slightly above kDacMinCode to clear the actuator deadband.

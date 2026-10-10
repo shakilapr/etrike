@@ -80,9 +80,16 @@ typedef struct {
     uint8_t twai_rec;
     bool bus_off;
 
-    // System Health (0x600)
+    // System Health & Node Connectivity (0x011, 0x500, 0x501, 0x502, 0x7FD, 0x7FE, 0x7FC)
     uint16_t sys_free_heap_kb;
     bool heartbeat_ok;
+    uint8_t node_presence_mask;  // Raw bitmask (bit0: RT, bit1: MTR, bit2: SEB, bit3: SES, bit4: HOST, bit5: SYS)
+    bool rt_connected;
+    bool sys_connected;
+    bool host_connected;
+    bool mtr_connected;
+    bool seb_connected;
+    bool ses_connected;
 } vehicle_telemetry_t;
 
 /**

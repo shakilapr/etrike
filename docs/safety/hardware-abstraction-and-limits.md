@@ -56,8 +56,13 @@ At low speeds, the actuator is allowed to swing rapidly (up to 525°/s). At high
 ## 4. Motor Drive System (MTR)
 
 ### The Discrepancy
-- **Internal CAN Bus:** Both `0x300 HOST_DRIVE_CMD` and `0x204 RT_DRIVE_CMD` support a 32-bit speed request ranging from **-500 to +3000 mm/s**.
+- **Internal CAN Bus:** Both `0x300 HOST_DRIVE_CMD` and `0x204 RT_DRIVE_CMD` support a 32-bit speed request ranging from **-500 to +3000 mm/s** in the initial test contract.
 - **Operational Safety Limits:** The physical motor and motor controller may be capable of driving the trike much faster, but the system must be constrained to safe pedestrian/low-speed autonomous vehicle speeds.
+
+> [!NOTE] Design Intent & Wire Protocol Headroom
+> - **Full Vehicle Capability:** The production target speed for the vehicle is up to **60 km/h** (~16,667 mm/s), with the underlying CAN architecture designed to accommodate up to **~120 km/h** (~32,767 mm/s).
+> - **Testing Stage Cap (10 km/h / 3000 mm/s):** The current cap of **3000 mm/s (~10.8 km/h)** was intentionally implemented as a prototype bench and bringing-up test-stage governor across the CAN contract validation checks (`host.yaml`, `rt.yaml`, `mtr.yaml`), `shared_config.h` (`kMaxSpeedFwdMmps`), and MTR DAC scaling (`kMaxForwardSpeedMmps`) to protect developers and bench equipment.
+> - **CAN Protocol Compatibility:** Because status frames (`0x120`, `0x121`, `0x122`, `0x206`) carry speed as a 16-bit signed integer in mm/s (`int16_t`, max +32,767 mm/s = 117.96 km/h) and command frames (`0x300`, `0x204`) carry 32-bit signed integers, expanding the operational envelope up to 60 km/h (or the full 117.96 km/h limit) requires **no changes to CAN frame layouts, DLCs, or byte alignment**. Transitioning to higher operational speeds only requires updating the YAML contract `max` boundaries, firmware configuration constants, and motor controller DAC scaling curves.
 
 ### The Safety Clamp
 Before the target speed is forwarded to the motor MCU, the RT kinematics resolver intercepts the target speed and clamps it to the hardcoded vehicle parameters (`kMaxSpeedFwdMmps` = 3000 mm/s, `kMaxSpeedRevMmps` = 500 mm/s) defined in `shared_config.h`.

@@ -14,9 +14,9 @@ static const char *TAG = "BOARD_43B";
 
 #define CH422G_I2C_ADDR        0x24
 
-/* Static TWAI Driver Configuration */
+/* Static TWAI Driver Configuration: Listen-Only mode (passive sniffer, no ACKs, no TX) */
 static const twai_general_config_t g_config =
-    TWAI_GENERAL_CONFIG_DEFAULT(BOARD_CAN_TX_PIN, BOARD_CAN_RX_PIN, TWAI_MODE_NORMAL);
+    TWAI_GENERAL_CONFIG_DEFAULT(BOARD_CAN_TX_PIN, BOARD_CAN_RX_PIN, TWAI_MODE_LISTEN_ONLY);
 static const twai_timing_config_t t_config =
     TWAI_TIMING_CONFIG_500KBITS();
 static const twai_filter_config_t f_config =

@@ -825,7 +825,7 @@ constexpr float kAngleClampBaseDeg    = 40.0f;   // max at 2 km/h
 constexpr float kAngleClampMinDeg     =  5.0f;   // min at ≥25 km/h
 constexpr float kAngleClampRangeDeg   = 35.0f;   // base − min
 constexpr float kAngleClampSpeedRange = 23.0f;   // 25 − 2 km/h
-// Speed limits
+// Speed limits (Testing Stage Cap: 3000 mm/s ≈ 10.8 km/h bench limit; target vehicle speed is 60 km/h with CAN headroom up to 117.96 km/h / 32,767 mm/s)
 constexpr int kMaxSpeedFwdMmps = 3000, kMaxSpeedRevMmps = 500;
 constexpr int kLowSpeedThreshMmps = 50;
 // PID (deferred — see gap #5; gains TBD once encoders fitted)

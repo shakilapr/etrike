@@ -57,6 +57,14 @@ static lv_obj_t *s_tt_can = NULL;
 static lv_obj_t *s_tt_highbeam = NULL;
 static lv_obj_t *s_tt_hazard = NULL;
 
+/* Subsystem Link Objects (SYS, RT, HOST, MTR, SES, SEB) */
+static lv_obj_t *s_link_sys = NULL;
+static lv_obj_t *s_link_rt = NULL;
+static lv_obj_t *s_link_host = NULL;
+static lv_obj_t *s_link_mtr = NULL;
+static lv_obj_t *s_link_ses = NULL;
+static lv_obj_t *s_link_seb = NULL;
+
 /* Gear Buttons */
 static lv_obj_t *s_gear_btns[5] = {NULL};
 
@@ -131,16 +139,16 @@ void ui_bridge_update_telemetry(const vehicle_telemetry_t *t) {
         lv_label_set_text(s_lbl_target_speed, buf);
     }
 
-    // 2. Drive Mode
+    // 2. Drive Mode (Concise ergonomic badge: AUTO / STOP / MANU)
     if (s_lbl_mode_title) {
         if (t->mode == VEHICLE_MODE_AUTO) {
-            lv_label_set_text(s_lbl_mode_title, "AUTONOMOUS DRIVE");
+            lv_label_set_text(s_lbl_mode_title, "AUTO");
             lv_obj_set_style_text_color(s_lbl_mode_title, lv_color_hex(0x22D3EE), 0);
         } else if (t->mode == VEHICLE_MODE_ESTOP || t->estop_active) {
-            lv_label_set_text(s_lbl_mode_title, "EMERGENCY STOP");
+            lv_label_set_text(s_lbl_mode_title, "STOP");
             lv_obj_set_style_text_color(s_lbl_mode_title, lv_color_hex(0xF43F5E), 0);
         } else {
-            lv_label_set_text(s_lbl_mode_title, "MANUAL OVERRIDE");
+            lv_label_set_text(s_lbl_mode_title, "MANU");
             lv_obj_set_style_text_color(s_lbl_mode_title, lv_color_hex(0xF59E0B), 0);
         }
     }
@@ -174,16 +182,16 @@ void ui_bridge_update_telemetry(const vehicle_telemetry_t *t) {
         lv_label_set_text(s_lbl_yaw_rate, buf);
     }
 
-    // 6. Hydraulic Brake
+    // 6. Hydraulic Brake (SEB: ACT & CMD)
     if (s_lbl_brake_kpa) {
-        snprintf(buf, sizeof(buf), "%.0f kPa", t->brake_act_kpa);
+        snprintf(buf, sizeof(buf), "%.0f", t->brake_act_kpa);
         lv_label_set_text(s_lbl_brake_kpa, buf);
     }
     if (s_bar_brake) {
         lv_bar_set_value(s_bar_brake, (int32_t)t->brake_act_kpa, LV_ANIM_OFF);
     }
     if (s_lbl_brake_temp) {
-        snprintf(buf, sizeof(buf), "ECU: %d°C", t->brake_temp_c);
+        snprintf(buf, sizeof(buf), "CMD: %.0f", t->brake_cmd_kpa);
         lv_label_set_text(s_lbl_brake_temp, buf);
     }
     if (s_lbl_brake_status) {
@@ -200,11 +208,43 @@ void ui_bridge_update_telemetry(const vehicle_telemetry_t *t) {
         lv_bar_set_value(s_bar_throttle, t->throttle_percent, LV_ANIM_OFF);
     }
     if (s_lbl_throttle_pct) {
-        snprintf(buf, sizeof(buf), "%d%% DEMAND", t->throttle_percent);
+        snprintf(buf, sizeof(buf), "%d%%", t->throttle_percent);
         lv_label_set_text(s_lbl_throttle_pct, buf);
     }
 
-    // 8. CAN Telemetry Counters
+    // 8. Turn Signals & Lighting Telltales
+    if (s_turn_left_obj) {
+        if (t->lights_act.left || t->lights_act.hazard) {
+            lv_obj_set_style_bg_color(s_turn_left_obj, lv_color_hex(0x10B981), 0);
+            lv_obj_set_style_border_color(s_turn_left_obj, lv_color_hex(0x34D399), 0);
+        } else {
+            lv_obj_set_style_bg_color(s_turn_left_obj, lv_color_hex(0x141414), 0);
+            lv_obj_set_style_border_color(s_turn_left_obj, lv_color_hex(0x262626), 0);
+        }
+    }
+    if (s_turn_right_obj) {
+        if (t->lights_act.right || t->lights_act.hazard) {
+            lv_obj_set_style_bg_color(s_turn_right_obj, lv_color_hex(0x10B981), 0);
+            lv_obj_set_style_border_color(s_turn_right_obj, lv_color_hex(0x34D399), 0);
+        } else {
+            lv_obj_set_style_bg_color(s_turn_right_obj, lv_color_hex(0x141414), 0);
+            lv_obj_set_style_border_color(s_turn_right_obj, lv_color_hex(0x262626), 0);
+        }
+    }
+    if (s_tt_hazard) {
+        lv_obj_set_style_bg_color(s_tt_hazard, t->lights_act.hazard ? lv_color_hex(0xEF4444) : lv_color_hex(0x141414), 0);
+    }
+    if (s_tt_brake) {
+        lv_obj_set_style_bg_color(s_tt_brake, t->lights_act.brake ? lv_color_hex(0xEF4444) : lv_color_hex(0x141414), 0);
+    }
+    if (s_tt_highbeam) {
+        lv_obj_set_style_bg_color(s_tt_highbeam, t->lights_act.headlight ? lv_color_hex(0x3B82F6) : lv_color_hex(0x141414), 0);
+    }
+    if (s_tt_estop) {
+        lv_obj_set_style_bg_color(s_tt_estop, (t->estop_active || t->mode == VEHICLE_MODE_ESTOP) ? lv_color_hex(0xEF4444) : lv_color_hex(0x141414), 0);
+    }
+
+    // 9. CAN Telemetry Counters
     if (s_lbl_bus_hz) {
         snprintf(buf, sizeof(buf), "%.1f Hz", t->bus_rate_hz);
         lv_label_set_text(s_lbl_bus_hz, buf);
@@ -222,12 +262,34 @@ void ui_bridge_update_telemetry(const vehicle_telemetry_t *t) {
         lv_label_set_text(s_lbl_total_frames, buf);
     }
 
-    // 9. Full-Screen Emergency Strobe Overlay
+    // 10. Subsystem Connectivity Links (SYS, RT, HOST, MTR, SES, SEB)
+    if (s_link_sys) {
+        lv_obj_set_style_bg_color(s_link_sys, t->sys_connected ? lv_color_hex(0x064E3B) : lv_color_hex(0x1F2937), 0);
+        lv_obj_set_style_border_color(s_link_sys, t->sys_connected ? lv_color_hex(0x059669) : lv_color_hex(0x374151), 0);
+    }
+    if (s_link_rt) {
+        lv_obj_set_style_bg_color(s_link_rt, t->rt_connected ? lv_color_hex(0x064E3B) : lv_color_hex(0x1F2937), 0);
+        lv_obj_set_style_border_color(s_link_rt, t->rt_connected ? lv_color_hex(0x059669) : lv_color_hex(0x374151), 0);
+    }
+    if (s_link_host) {
+        lv_obj_set_style_bg_color(s_link_host, t->host_connected ? lv_color_hex(0x064E3B) : lv_color_hex(0x1F2937), 0);
+        lv_obj_set_style_border_color(s_link_host, t->host_connected ? lv_color_hex(0x059669) : lv_color_hex(0x374151), 0);
+    }
+    if (s_link_mtr) {
+        lv_obj_set_style_bg_color(s_link_mtr, t->mtr_connected ? lv_color_hex(0x064E3B) : lv_color_hex(0x1F2937), 0);
+        lv_obj_set_style_border_color(s_link_mtr, t->mtr_connected ? lv_color_hex(0x059669) : lv_color_hex(0x374151), 0);
+    }
+    if (s_link_ses) {
+        lv_obj_set_style_bg_color(s_link_ses, t->ses_connected ? lv_color_hex(0x064E3B) : lv_color_hex(0x1F2937), 0);
+        lv_obj_set_style_border_color(s_link_ses, t->ses_connected ? lv_color_hex(0x059669) : lv_color_hex(0x374151), 0);
+    }
+    if (s_link_seb) {
+        lv_obj_set_style_bg_color(s_link_seb, t->seb_connected ? lv_color_hex(0x064E3B) : lv_color_hex(0x1F2937), 0);
+        lv_obj_set_style_border_color(s_link_seb, t->seb_connected ? lv_color_hex(0x059669) : lv_color_hex(0x374151), 0);
+    }
+
+    // 11. Full-Screen Emergency Strobe Overlay
     if (s_estop_overlay) {
-        if (t->estop_active || t->mode == VEHICLE_MODE_ESTOP) {
-            lv_obj_clear_flag(s_estop_overlay, LV_OBJ_FLAG_HIDDEN);
-        } else {
-            lv_obj_add_flag(s_estop_overlay, LV_OBJ_FLAG_HIDDEN);
-        }
+        lv_obj_set_hidden(s_estop_overlay, !(t->estop_active || t->mode == VEHICLE_MODE_ESTOP));
     }
 }

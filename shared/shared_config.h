@@ -16,6 +16,9 @@ constexpr unsigned kObstacleClearMM = 3000;
 constexpr int kObstacleStaleTimeoutMs = 500;
 
 // Speed limits
+// NOTE: kMaxSpeedFwdMmps = 3000 mm/s (~10.8 km/h) is a prototype/bench testing cap.
+// Target vehicle production speed is 60 km/h (~16,667 mm/s).
+// CAN protocol wire format supports up to 117.96 km/h (+32,767 mm/s) on 16-bit status frames without altering wire layouts.
 constexpr int kMaxSpeedFwdMmps = 3000;
 constexpr int kMaxSpeedRevMmps = 500;
 constexpr int kLowSpeedThreshMmps = 50;
