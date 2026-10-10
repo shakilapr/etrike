@@ -59,8 +59,19 @@ fn is_fresh(last: Option<u64>, now: u64, window_ms: u64) -> bool {
 /// Persistent shell state for stream supervision (not decision state).
 #[derive(Debug, Clone, Copy, Default)]
 pub struct SysShellState {
+    pub bypass: bool,
     rt_hb_last: Option<u64>,
     mtr_fbk_last: Option<u64>,
+}
+
+impl SysShellState {
+    pub const fn new(bypass: bool) -> Self {
+        Self {
+            bypass,
+            rt_hb_last: None,
+            mtr_fbk_last: None,
+        }
+    }
 }
 
 /// Assemble inputs for this tick from GPIO and any pending frames.
@@ -86,8 +97,9 @@ pub fn assemble_inputs<H: SysHal>(hal: &mut H, state: &mut SysShellState) -> Sys
     };
 
     while let Some(frame) = hal.poll_frame() {
-        // Only frames that match the wire contract may influence the core.
-        if verify(&frame) != CodecStatus::Ok {
+        // Only frames that match the wire contract may influence the core
+        // (unless the bench safety bypass is active).
+        if !state.bypass && verify(&frame) != CodecStatus::Ok {
             continue;
         }
         if frame.id == generated::RtHeartbeat::ID {
@@ -103,8 +115,8 @@ pub fn assemble_inputs<H: SysHal>(hal: &mut H, state: &mut SysShellState) -> Sys
         }
     }
 
-    inputs.rt_heartbeat_ok = is_fresh(state.rt_hb_last, now, RT_HB_FRESH_MS);
-    inputs.mtr_fbk_ok = is_fresh(state.mtr_fbk_last, now, MTR_FBK_FRESH_MS);
+    inputs.rt_heartbeat_ok = state.bypass || is_fresh(state.rt_hb_last, now, RT_HB_FRESH_MS);
+    inputs.mtr_fbk_ok = state.bypass || is_fresh(state.mtr_fbk_last, now, MTR_FBK_FRESH_MS);
     inputs
 }
 
@@ -135,10 +147,10 @@ pub fn step_once<H: SysHal>(
     outputs
 }
 
-/// The control loop. Never returns.
-pub fn run<H: SysHal>(hal: &mut H, core: &mut SysCore) -> ! {
+/// The control loop. Never returns. `bypass` enables bench pass-through.
+pub fn run<H: SysHal>(hal: &mut H, core: &mut SysCore, bypass: bool) -> ! {
     let mut counter = 0u8;
-    let mut state = SysShellState::default();
+    let mut state = SysShellState::new(bypass);
     loop {
         let _ = step_once(hal, core, &mut counter, &mut state);
         hal.wait_next_tick();
@@ -227,6 +239,23 @@ mod tests {
         let mut state = SysShellState::default();
         let inputs = assemble_inputs(&mut hal, &mut state);
         assert!(!inputs.host_auto_request);
+    }
+
+    #[test]
+    fn bypass_ignores_estop_and_verification() {
+        let mut hal = MockHal::new();
+        hal.gpio.estop_pressed = true;
+        // A malformed frame must also be accepted under bypass.
+        hal.frames
+            .push(RawFrame::from_slice(Bus::Low, 0x111, &[0x01]).unwrap());
+        let mut core = SysCore::new(SysConfig {
+            bypass: true,
+            ..SysConfig::default()
+        });
+        let mut counter = 0u8;
+        let mut state = SysShellState::new(true);
+        let outputs = step_once(&mut hal, &mut core, &mut counter, &mut state);
+        assert!(!outputs.estop_active);
     }
 
     #[test]

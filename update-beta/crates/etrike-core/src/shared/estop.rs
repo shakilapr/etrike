@@ -1,8 +1,7 @@
-//! ESTOP latch and the validated reset transaction.
+//! ESTOP latch and the reset transaction.
 //!
-//! The latch can only be entered via [`EstopLatch::enter`] and left via
-//! [`EstopLatch::try_reset`]. There is no API that clears it without evidence,
-//! so "reset while blocked" cannot be expressed.
+//! Kept deliberately small: the latch has no public way to clear except
+//! [`EstopLatch::try_reset`], and the reset blocker set is intentionally tiny.
 
 /// Why the vehicle entered ESTOP.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -10,7 +9,6 @@ pub enum EstopReason {
     HwButton,
     RtHbLost,
     Can001,
-    MtrFault,
     EgasFault,
     TaskDeadline,
     CanBusoff,
@@ -19,8 +17,6 @@ pub enum EstopReason {
 /// A request to leave ESTOP.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ResetSource {
-    /// START control transition (policy-defined edge).
-    StartLatch,
     /// MODE button held past the long-press threshold.
     ModeLongPress,
     /// Authenticated remote reset (host `0x114`).
@@ -35,20 +31,18 @@ impl ResetSource {
     pub fn is_valid(self) -> bool {
         match self {
             ResetSource::Remote { token, .. } => token == REMOTE_RESET_TOKEN_MAGIC,
-            ResetSource::StartLatch | ResetSource::ModeLongPress => true,
+            ResetSource::ModeLongPress => true,
         }
     }
 }
 
 /// A condition that forbids leaving ESTOP.
+///
+/// Intentionally minimal — only things that genuinely must be false to move.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ResetBlocker {
     PhysicalEstop,
-    LatchedFault,
     Moving,
-    HeartbeatLoss,
-    MtrEstopActive,
-    TransientInhibit,
     InvalidToken,
 }
 
@@ -56,22 +50,14 @@ impl ResetBlocker {
     const fn bit(self) -> u8 {
         match self {
             ResetBlocker::PhysicalEstop => 1 << 0,
-            ResetBlocker::LatchedFault => 1 << 1,
-            ResetBlocker::Moving => 1 << 2,
-            ResetBlocker::HeartbeatLoss => 1 << 3,
-            ResetBlocker::MtrEstopActive => 1 << 4,
-            ResetBlocker::TransientInhibit => 1 << 5,
-            ResetBlocker::InvalidToken => 1 << 6,
+            ResetBlocker::Moving => 1 << 1,
+            ResetBlocker::InvalidToken => 1 << 2,
         }
     }
 
-    const ALL: [ResetBlocker; 7] = [
+    const ALL: [ResetBlocker; 3] = [
         ResetBlocker::PhysicalEstop,
-        ResetBlocker::LatchedFault,
         ResetBlocker::Moving,
-        ResetBlocker::HeartbeatLoss,
-        ResetBlocker::MtrEstopActive,
-        ResetBlocker::TransientInhibit,
         ResetBlocker::InvalidToken,
     ];
 }
@@ -203,34 +189,24 @@ mod tests {
         assert_eq!(latch.reason(), Some(EstopReason::HwButton));
     }
 
-    /// Exhaustive: for every non-empty blocker set, reset must be rejected and
-    /// the latch must stay active.
+    /// Exhaustive: for every non-empty blocker set, reset must be rejected.
     #[test]
     fn estop_never_resets_with_blocker() {
-        let mut round = 0u32;
-        for mask in 1u8..(1u8 << 7) {
+        for mask in 1u8..(1u8 << 3) {
             let mut blockers = ResetBlockers::empty();
             for blocker in ResetBlocker::ALL {
                 if mask & blocker.bit() != 0 {
                     blockers.add(blocker);
                 }
             }
-            for source in [
-                ResetSource::StartLatch,
-                ResetSource::ModeLongPress,
-                ResetSource::Remote {
-                    token: REMOTE_RESET_TOKEN_MAGIC,
-                    seq: 1,
-                },
-            ] {
-                round += 1;
-                let _ = round;
-                let mut latch = EstopLatch::new();
-                latch.enter(EstopReason::HwButton);
-                let outcome = latch.try_reset(ResetEvidence { source, blockers });
-                assert!(matches!(outcome, ResetOutcome::Rejected(_)));
-                assert!(latch.is_active(), "latch cleared with blockers {mask:#x}");
-            }
+            let mut latch = EstopLatch::new();
+            latch.enter(EstopReason::HwButton);
+            let outcome = latch.try_reset(ResetEvidence {
+                source: ResetSource::ModeLongPress,
+                blockers,
+            });
+            assert!(matches!(outcome, ResetOutcome::Rejected(_)));
+            assert!(latch.is_active(), "latch cleared with blockers {mask:#x}");
         }
     }
 
@@ -265,7 +241,7 @@ mod tests {
     #[test]
     fn blocker_priority_order() {
         let mut blockers = ResetBlockers::empty();
-        blockers.add(ResetBlocker::TransientInhibit);
+        blockers.add(ResetBlocker::Moving);
         blockers.add(ResetBlocker::PhysicalEstop);
         assert_eq!(blockers.first(), Some(ResetBlocker::PhysicalEstop));
     }

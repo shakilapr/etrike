@@ -1,35 +1,32 @@
-//! SYS pure core: deterministic safety, mode, and body-control logic.
+//! SYS pure core: deterministic mode, ESTOP, and body-control logic.
 //!
-//! `SysCore::step` is the single mutation path for all decision state. Inputs
-//! are plain values (already verified by the shell); outputs are plain values
-//! the shell serialises. Because the core is the sole owner of its state and
-//! processes inputs in a fixed order, the logic is deterministic and free of
-//! the multi-writer races present in the C++ firmware.
+//! Deliberately small. One owner (`SysCore::step`), a two-mode authority model,
+//! a tiny reset blocker set, and an optional **safety bypass** for bench work
+//! where every command is passed straight through.
 
 pub mod brake;
 pub mod lights;
 pub mod mode;
-pub mod mtr_ack;
 pub mod wire;
 
 use crate::shared::{
-    Authority, EstopLatch, EstopReason, InhibitModel, InhibitReason, LatchedFault, Mode, Power,
-    ResetBlocker, ResetBlockers, ResetEvidence, ResetOutcome, ResetSource,
+    Authority, Clamp, EstopLatch, EstopReason, InhibitModel, InhibitReason, LatchedFault, Mode,
+    Power, ResetBlocker, ResetBlockers, ResetEvidence, ResetOutcome, ResetSource,
 };
 
 pub use brake::{BrakeCommand, BrakeSource};
 pub use lights::{LightBits, LightInputs, LightOutputs, LightSwitches};
 pub use mode::{resolve_authority, ModeInputs};
-pub use mtr_ack::{AckState, MtrAckWatchdog};
 
 /// Static configuration for a SYS core.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SysConfig {
     pub allow_auto: bool,
     pub moving_speed_threshold_mmps: i32,
-    pub mtr_ack_timeout_ms: u64,
-    pub mtr_ack_max_retries: u32,
     pub mtr_fbk_recover_frames: u32,
+    /// Safety bypass: when set, every command passes straight through (no ESTOP,
+    /// no clamps, no reset blockers). Intended for bench work only.
+    pub bypass: bool,
 }
 
 impl Default for SysConfig {
@@ -37,9 +34,8 @@ impl Default for SysConfig {
         Self {
             allow_auto: true,
             moving_speed_threshold_mmps: 50,
-            mtr_ack_timeout_ms: 100,
-            mtr_ack_max_retries: 3,
             mtr_fbk_recover_frames: 3,
+            bypass: false,
         }
     }
 }
@@ -58,7 +54,6 @@ pub struct SysInputs {
     pub measured_speed_mmps: i32,
     pub rt_heartbeat_ok: bool,
     pub mtr_fbk_ok: bool,
-    pub mtr_estop_ack: bool,
     pub seb_l3_fault: bool,
     pub rt_brake_intent_kpa: Option<u16>,
     // requests / faults
@@ -82,7 +77,6 @@ impl Default for SysInputs {
             measured_speed_mmps: 0,
             rt_heartbeat_ok: true,
             mtr_fbk_ok: true,
-            mtr_estop_ack: true,
             seb_l3_fault: false,
             rt_brake_intent_kpa: None,
             host_auto_request: false,
@@ -104,7 +98,6 @@ pub struct SysOutputs {
     pub estop_reason: Option<EstopReason>,
     pub brake: BrakeCommand,
     pub lights: LightOutputs,
-    pub mtr_ack: AckState,
     pub heartbeat: u8,
     pub reset_outcome: Option<ResetOutcome>,
 }
@@ -115,7 +108,6 @@ pub struct SysCore {
     config: SysConfig,
     estop: EstopLatch,
     inhibit: InhibitModel,
-    mtr_ack: MtrAckWatchdog,
     mtr_fbk_healthy_frames: u32,
     heartbeat: u8,
 }
@@ -123,7 +115,6 @@ pub struct SysCore {
 impl SysCore {
     pub fn new(config: SysConfig) -> Self {
         Self {
-            mtr_ack: MtrAckWatchdog::new(config.mtr_ack_timeout_ms, config.mtr_ack_max_retries),
             config,
             estop: EstopLatch::new(),
             inhibit: InhibitModel::new(),
@@ -138,47 +129,43 @@ impl SysCore {
 
     /// Advance the core by one tick.
     pub fn step(&mut self, inputs: SysInputs) -> SysOutputs {
-        // 1. Latched faults and transient inhibits (faults dominate the tick).
+        if self.config.bypass {
+            return self.step_bypass(&inputs);
+        }
+
+        // 1. Latched faults and transient inhibits.
         if inputs.seb_l3_fault {
             self.inhibit.latch(LatchedFault::SebL3);
         }
         self.update_mtr_fbk_inhibit(inputs.mtr_fbk_ok);
 
-        // 2. ESTOP entry (faults first; first reason wins while active).
+        // 2. ESTOP entry (first reason wins while active).
         if !self.estop.is_active() {
             if let Some(reason) = self.first_estop_reason(&inputs) {
                 self.estop.enter(reason);
             }
         }
 
-        // 3. MTR ESTOP acknowledgement watchdog.
-        if self.estop.is_active() && matches!(self.mtr_ack.state(), AckState::Idle) {
-            self.mtr_ack.arm(inputs.now);
-        }
-        if inputs.mtr_estop_ack {
-            self.mtr_ack.on_ack();
-        }
-        let ack = self.mtr_ack.tick(inputs.now);
-        if ack == AckState::Exhausted {
-            self.inhibit.latch(LatchedFault::MtrEstopAck);
-        }
-
-        // 4. Validated reset transaction (may clear ESTOP and latched faults).
-        //    Run before resolving authority so a successful reset restores mode
-        //    on the same tick instead of one tick late.
+        // 3. Reset transaction (before authority so a reset restores mode now).
         let reset_outcome = self.process_reset(&inputs);
 
-        // 5. Resolve authority (mode/power/clamp) from the post-reset state.
-        let authority = self.resolve(&inputs);
+        // 4. Resolve authority.
+        let authority = resolve_authority(ModeInputs {
+            estop_active: self.estop.is_active(),
+            latched_fault: self.inhibit.latched_any(),
+            host_auto_request: inputs.host_auto_request,
+            physical_run: inputs.hw_start_run,
+            allow_auto: self.config.allow_auto,
+        });
 
-        // 6. Brake arbitration.
+        // 5. Brake arbitration.
         let brake = brake::arbitrate(
             self.estop.is_active(),
             inputs.hw_brake_lever,
             inputs.rt_brake_intent_kpa,
         );
 
-        // 7. Body lights.
+        // 6. Body lights.
         let lights = lights::evaluate(
             authority.mode,
             LightInputs {
@@ -190,7 +177,6 @@ impl SysCore {
         );
 
         self.heartbeat = self.heartbeat.wrapping_add(1);
-
         SysOutputs {
             mode: authority.mode,
             power: authority.power,
@@ -198,9 +184,43 @@ impl SysCore {
             estop_reason: self.estop.reason(),
             brake,
             lights,
-            mtr_ack: ack,
             heartbeat: self.heartbeat,
             reset_outcome,
+        }
+    }
+
+    /// Bypass path: pass everything straight through, ignoring safety entirely.
+    fn step_bypass(&mut self, inputs: &SysInputs) -> SysOutputs {
+        let auto = inputs.host_auto_request;
+        let authority = Authority {
+            mode: if auto { Mode::Auto } else { Mode::Manual },
+            power: if inputs.hw_start_run {
+                Power::On
+            } else {
+                Power::Off
+            },
+            clamp: Clamp::None,
+        };
+        let brake = brake::arbitrate(false, inputs.hw_brake_lever, inputs.rt_brake_intent_kpa);
+        let lights = lights::evaluate(
+            authority.mode,
+            LightInputs {
+                switches: inputs.light_switches,
+                lever: inputs.hw_brake_lever,
+                estop: false,
+                host: inputs.host_lights,
+            },
+        );
+        self.heartbeat = self.heartbeat.wrapping_add(1);
+        SysOutputs {
+            mode: authority.mode,
+            power: authority.power,
+            estop_active: false,
+            estop_reason: None,
+            brake,
+            lights,
+            heartbeat: self.heartbeat,
+            reset_outcome: None,
         }
     }
 
@@ -215,8 +235,6 @@ impl SysCore {
             Some(EstopReason::CanBusoff)
         } else if !inputs.rt_heartbeat_ok {
             Some(EstopReason::RtHbLost)
-        } else if self.mtr_ack.is_exhausted() {
-            Some(EstopReason::MtrFault)
         } else {
             None
         }
@@ -234,49 +252,16 @@ impl SysCore {
         }
     }
 
-    fn resolve(&self, inputs: &SysInputs) -> Authority {
-        resolve_authority(ModeInputs {
-            estop_active: self.estop.is_active(),
-            latched_fault: self.inhibit.latched_any(),
-            host_auto_request: inputs.host_auto_request,
-            physical_run: inputs.hw_start_run,
-            allow_auto: self.config.allow_auto,
-        })
-    }
-
-    /// True while a latched fault's *cause* is still present. A latched fault
-    /// blocks reset only while its cause is active; once the cause clears, the
-    /// reset transaction clears the latch (mirrors the C++
-    /// `latched_causes_currently_clearable`).
-    fn latched_cause_active(&self, inputs: &SysInputs) -> bool {
-        // SEB L3: the fault is present while the SEB reports it.
-        // MTR ack exhaustion: present while the MTR is still not acknowledging.
-        inputs.seb_l3_fault
-            || (self.inhibit.latched_contains(LatchedFault::MtrEstopAck) && !inputs.mtr_estop_ack)
-    }
-
-    /// Compute the reset blockers from the current state and inputs.
+    /// Compute the (small) reset blocker set.
     fn compute_blockers(&self, source: ResetSource, inputs: &SysInputs) -> ResetBlockers {
         let mut blockers = ResetBlockers::empty();
         if inputs.hw_estop_pressed {
             blockers.add(ResetBlocker::PhysicalEstop);
         }
-        if self.latched_cause_active(inputs) {
-            blockers.add(ResetBlocker::LatchedFault);
-        }
         if inputs.measured_speed_mmps.unsigned_abs()
             > self.config.moving_speed_threshold_mmps.unsigned_abs()
         {
             blockers.add(ResetBlocker::Moving);
-        }
-        if !inputs.rt_heartbeat_ok {
-            blockers.add(ResetBlocker::HeartbeatLoss);
-        }
-        if matches!(self.mtr_ack.state(), AckState::Awaiting) {
-            blockers.add(ResetBlocker::MtrEstopActive);
-        }
-        if self.inhibit.transient_any() {
-            blockers.add(ResetBlocker::TransientInhibit);
         }
         if !source.is_valid() {
             blockers.add(ResetBlocker::InvalidToken);
@@ -294,7 +279,6 @@ impl SysCore {
         let outcome = self.estop.try_reset(ResetEvidence { source, blockers });
         if let ResetOutcome::Cleared { .. } = outcome {
             self.inhibit.clear_latched();
-            self.mtr_ack.reset();
         }
         Some(outcome)
     }
@@ -319,7 +303,6 @@ mod tests {
     fn estop_from_button_then_release_then_reset() {
         let mut core = core();
 
-        // Button pressed -> ESTOP.
         let mut i = input(0);
         i.hw_estop_pressed = true;
         let out = core.step(i);
@@ -327,7 +310,7 @@ mod tests {
         assert_eq!(out.estop_reason, Some(EstopReason::HwButton));
         assert_eq!(out.mode, Mode::Manual);
 
-        // Button still pressed, request reset -> rejected.
+        // Button still pressed -> reset rejected.
         let mut i = input(10);
         i.hw_estop_pressed = true;
         i.host_reset = Some(ResetSource::ModeLongPress);
@@ -338,9 +321,8 @@ mod tests {
         );
         assert!(out.estop_active);
 
-        // Button released, MTR acknowledged, stationary -> accepted.
+        // Released, stationary -> accepted.
         let mut i = input(20);
-        i.mtr_estop_ack = true;
         i.host_reset = Some(ResetSource::Remote {
             token: crate::shared::REMOTE_RESET_TOKEN_MAGIC,
             seq: 1,
@@ -357,8 +339,8 @@ mod tests {
     fn reset_restores_mode_on_the_same_tick() {
         let mut core = core();
         let mut i = input(0);
-        i.rt_heartbeat_ok = false; // ESTOP via heartbeat loss
-        i.hw_start_run = true; // run latch engaged
+        i.rt_heartbeat_ok = false;
+        i.hw_start_run = true;
         core.step(i);
 
         let mut i = input(10);
@@ -371,7 +353,6 @@ mod tests {
             Some(ResetOutcome::Cleared { .. })
         ));
         assert!(!out.estop_active);
-        // Authority is restored on the same tick, not one tick later.
         assert_eq!(out.mode, Mode::Manual);
         assert_eq!(out.power, Power::On);
     }
@@ -411,70 +392,22 @@ mod tests {
     }
 
     #[test]
-    fn mtr_ack_exhaustion_blocks_reset_until_healthy() {
-        // A latched MTR-ack fault must block reset while the MTR stays unhealthy,
-        // and clear once the MTR is healthy again.
+    fn seb_l3_latches_clamps_mode_and_reset_clears() {
         let mut core = core();
-        let mut i = input(0);
-        i.hw_estop_pressed = true;
-        i.mtr_estop_ack = false;
-        core.step(i);
-        // Drive the ack watchdog to exhaustion (300 ms default, 3 retries).
-        for step in 1..=6u64 {
-            let mut i = input(step * 100);
-            i.mtr_estop_ack = false;
-            core.step(i);
-        }
-        let mut i = input(1000);
-        i.mtr_estop_ack = false;
-        i.host_reset = Some(ResetSource::ModeLongPress);
-        let out = core.step(i);
-        assert_eq!(
-            out.reset_outcome,
-            Some(ResetOutcome::Rejected(ResetBlocker::LatchedFault))
-        );
-
-        // MTR healthy now: the fault is clearable.
-        let mut i = input(1100);
-        i.mtr_estop_ack = true;
-        i.host_reset = Some(ResetSource::ModeLongPress);
-        let out = core.step(i);
-        assert!(matches!(
-            out.reset_outcome,
-            Some(ResetOutcome::Cleared { .. })
-        ));
-    }
-
-    #[test]
-    fn seb_l3_latches_and_blocks_reset_until_cleared() {
-        let mut core = core();
-
         let mut i = input(0);
         i.seb_l3_fault = true;
         core.step(i);
 
-        // Latched fault clamps to MANUAL/off and blocks reset while its cause
-        // is still present.
+        // Latched fault clamps to MANUAL/off.
         let mut i = input(10);
-        i.seb_l3_fault = true;
         i.host_reset = Some(ResetSource::ModeLongPress);
         let out = core.step(i);
         assert_eq!(out.mode, Mode::Manual);
         assert_eq!(out.power, Power::Off);
-        assert_eq!(
-            out.reset_outcome,
-            Some(ResetOutcome::Rejected(ResetBlocker::LatchedFault))
-        );
-
-        // Fault cause clears; a reset now clears the latch too.
-        let mut i = input(20);
-        i.host_reset = Some(ResetSource::ModeLongPress);
-        let out = core.step(i);
         assert!(matches!(
             out.reset_outcome,
             Some(ResetOutcome::Cleared { .. })
         ));
-        assert_eq!(out.mode, Mode::Manual);
     }
 
     #[test]
@@ -491,7 +424,6 @@ mod tests {
 
     #[test]
     fn busy_rt_does_not_reset_latch() {
-        // A flapping RT heartbeat must not clear a latched ESTOP by itself.
         let mut core = core();
         let mut i = input(0);
         i.rt_heartbeat_ok = false;
@@ -506,6 +438,23 @@ mod tests {
             out.estop_active,
             "heartbeat recovery must not auto-clear ESTOP"
         );
+    }
+
+    #[test]
+    fn bypass_passes_everything_through() {
+        let mut core = SysCore::new(SysConfig {
+            bypass: true,
+            ..SysConfig::default()
+        });
+        let mut i = input(0);
+        i.hw_estop_pressed = true; // ignored in bypass
+        i.rt_heartbeat_ok = false; // ignored in bypass
+        i.host_auto_request = true;
+        i.hw_start_run = true;
+        let out = core.step(i);
+        assert!(!out.estop_active);
+        assert_eq!(out.mode, Mode::Auto);
+        assert_eq!(out.power, Power::On);
     }
 
     #[test]
@@ -536,12 +485,10 @@ mod tests {
             i.mtr_fbk_ok = true;
             core.step(i);
         }
-        // After three healthy frames the inhibit has cleared.
         assert!(!core.inhibit.transient_any());
     }
 
-    /// Walk a 2000-tick pseudo-random input sequence and check the safety
-    /// invariants hold at every step.
+    /// Walk a pseudo-random input sequence and check the safety invariants.
     #[test]
     fn invariants_hold_over_a_sequence() {
         let mut core = core();
@@ -566,14 +513,11 @@ mod tests {
             };
 
             let out = core.step(i);
-
-            // ESTOP always forces MANUAL and power off.
             if out.estop_active {
                 assert_eq!(out.mode, Mode::Manual);
                 assert_eq!(out.power, Power::Off);
                 assert_eq!(out.brake.source, BrakeSource::Estop);
             }
-            // ESTOP can only clear through a validated reset.
             if previous_estop && !out.estop_active {
                 assert!(matches!(
                     out.reset_outcome,

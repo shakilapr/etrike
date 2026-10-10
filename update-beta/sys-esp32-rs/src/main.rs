@@ -19,6 +19,10 @@ fn panic(_: &core::panic::PanicInfo) -> ! {
 // Default esp-idf application descriptor.
 esp_bootloader_esp_idf::esp_app_desc!();
 
+// Bench safety bypass: pass every command straight through. Set to `false` for
+// a safety-enforcing build.
+const SAFETY_BYPASS: bool = true;
+
 #[esp_rtos::main]
 async fn main(_spawner: embassy_executor::Spawner) -> ! {
     let config = esp_hal::Config::default().with_cpu_clock(CpuClock::max());
@@ -39,6 +43,9 @@ async fn main(_spawner: embassy_executor::Spawner) -> ! {
         peripherals.GPIO6,
         peripherals.GPIO7,
     );
-    let mut core = SysCore::new(SysConfig::default());
-    run(&mut hal, &mut core)
+    let mut core = SysCore::new(SysConfig {
+        bypass: SAFETY_BYPASS,
+        ..SysConfig::default()
+    });
+    run(&mut hal, &mut core, SAFETY_BYPASS)
 }

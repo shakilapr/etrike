@@ -1,12 +1,10 @@
 //! Shared authority value types.
 
-/// Vehicle mode. `Estop` is reported as `Manual` on `0x110` (mode is not the
-/// ESTOP channel); this enum is the internal resolved state.
+/// Vehicle mode. Deliberately just two modes; ESTOP is a separate latch.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Mode {
     Manual,
     Auto,
-    Estop,
 }
 
 /// Resolved power command (`0x113`).

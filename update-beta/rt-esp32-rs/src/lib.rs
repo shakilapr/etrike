@@ -40,6 +40,22 @@ pub struct RtState {
     safety_last: Option<u64>,
     safety_estop: bool,
     mode_last: Option<u64>,
+    /// Bench safety bypass: always allow motion and skip frame verification.
+    pub bypass: bool,
+}
+
+impl RtState {
+    pub const fn new(bypass: bool) -> Self {
+        Self {
+            gate: AuthorityGate::new(),
+            desired_speed_mmps: 0,
+            desired_gear: 0,
+            safety_last: None,
+            safety_estop: false,
+            mode_last: None,
+            bypass,
+        }
+    }
 }
 
 /// Run one control iteration: update authority from SYS frames, capture the
@@ -48,7 +64,9 @@ pub fn step_once<H: RtHal>(hal: &mut H, state: &mut RtState) {
     let now = hal.now_ms();
 
     while let Some(frame) = hal.poll_frame() {
-        if verify(&frame) != CodecStatus::Ok {
+        // Only frames that match the wire contract may influence the core
+        // (unless the bench safety bypass is active).
+        if !state.bypass && verify(&frame) != CodecStatus::Ok {
             continue;
         }
         if let Some(active) = wire::decode_safety_estop(&frame) {
@@ -66,11 +84,13 @@ pub fn step_once<H: RtHal>(hal: &mut H, state: &mut RtState) {
 
     // Authority requires *fresh* safety and mode streams, not merely a frame on
     // this exact tick (otherwise authority would flap at the control rate).
+    // Under bypass, motion is always allowed.
     let safety_valid = is_fresh(state.safety_last, now, SAFETY_FRESH_MS);
     let mode_valid = is_fresh(state.mode_last, now, MODE_FRESH_MS);
-    let allowed = state
-        .gate
-        .observe(safety_valid, mode_valid, state.safety_estop);
+    let allowed = state.bypass
+        || state
+            .gate
+            .observe(safety_valid, mode_valid, state.safety_estop);
     let (speed, gear) = if allowed {
         (state.desired_speed_mmps, state.desired_gear)
     } else {
@@ -204,6 +224,16 @@ mod tests {
         hal.frames.push(safety(2));
         step_once(&mut hal, &mut state);
         assert_eq!(drive(&hal), [0, 0, 0, 0, 0]);
+    }
+
+    #[test]
+    fn bypass_allows_motion_without_authority() {
+        let mut hal = MockHal::new();
+        let mut state = RtState::new(true);
+        host_drive(&mut hal, 1000, 1);
+        // No SYS frames at all, but bypass still emits the commanded motion.
+        step_once(&mut hal, &mut state);
+        assert_eq!(drive(&hal), [0x00, 0x00, 0x03, 0xe8, 0x01]);
     }
 
     #[test]

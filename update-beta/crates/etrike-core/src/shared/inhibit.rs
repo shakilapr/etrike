@@ -24,7 +24,6 @@ impl InhibitReason {
 pub enum LatchedFault {
     BrakeFollowing,
     SebL3,
-    MtrEstopAck,
 }
 
 impl LatchedFault {
@@ -32,7 +31,6 @@ impl LatchedFault {
         match self {
             LatchedFault::BrakeFollowing => 1 << 0,
             LatchedFault::SebL3 => 1 << 1,
-            LatchedFault::MtrEstopAck => 1 << 2,
         }
     }
 }

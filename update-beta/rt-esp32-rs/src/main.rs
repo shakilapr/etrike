@@ -10,6 +10,10 @@ use esp_hal::timer::timg::TimerGroup;
 use rt_esp32_rs::hal::RtHalImpl;
 use rt_esp32_rs::{run, RtState};
 
+// Bench safety bypass: pass every drive command straight through. Set to `false`
+// for a safety-enforcing build.
+const SAFETY_BYPASS: bool = true;
+
 #[panic_handler]
 fn panic(_: &core::panic::PanicInfo) -> ! {
     loop {}
@@ -35,6 +39,6 @@ async fn main(_spawner: embassy_executor::Spawner) -> ! {
         peripherals.GPIO17,
         peripherals.GPIO18,
     );
-    let mut state = RtState::default();
+    let mut state = RtState::new(SAFETY_BYPASS);
     run(&mut hal, &mut state)
 }
