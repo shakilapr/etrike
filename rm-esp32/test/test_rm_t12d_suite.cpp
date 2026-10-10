@@ -482,7 +482,9 @@ void test_can_emitter_three_modes() {
     // ── Test Mode 1: BARE ──
     snap.op_mode = rm::OperatingMode::Bare;
     emitted.clear();
-    emitter.emit_cluster(snap, 0, send_fn); // tick 0 triggers 10Hz messages too
+    for (uint32_t t = 0; t < 10; ++t) {
+        emitter.emit_cluster(snap, t, send_fn); // tick 0..9 captures interleaved frames
+    }
 
     bool has_ses = false;
     bool has_seb = false;
@@ -773,6 +775,184 @@ void test_vra_speed_governor_scaling() {
     ASSERT_EQ(snap.target_speed_mmps, 0);
 }
 
+void test_ses_and_seb_ignition_settling_delay() {
+    rm::CanEmitter emitter;
+    emitter.reset_counters();
+    emitter.set_ses_armed(false);
+    emitter.set_seb_armed(false);
+
+    std::vector<can::Frame> emitted;
+    auto send_fn = [&](const can::Frame& fr) {
+        emitted.push_back(fr);
+        return true;
+    };
+
+    rm::RcSnapshot snap{};
+    snap.signal_valid = true;
+    snap.drive_enable_req = false;
+    snap.park_hold_req = false;
+    snap.op_mode = rm::OperatingMode::Bare;
+    snap.steering_deg = 15.0f;
+    snap.brake_stroke_mm = 10.0f;
+
+    // 1. Before actuators are seen online, both are disarmed
+    emitted.clear();
+    emitter.emit_cluster(snap, 0, 100, send_fn); // tick 0 (SES)
+    emitter.emit_cluster(snap, 1, 100, send_fn); // tick 1 (SEB)
+    can::custom::ses::Command ses_cmd{};
+    can::custom::seb::Command seb_cmd{};
+    for (const auto& fr : emitted) {
+        if (fr.id == 0x169u) can::custom::ses::decode_command(fr.view(), ses_cmd);
+        if (fr.id == 0x7B9u) can::custom::seb::decode_command(fr.view(), seb_cmd);
+    }
+    ASSERT_FALSE(ses_cmd.control_enable);
+    ASSERT_FALSE(seb_cmd.control_enable);
+
+    // 2. Both actuators appear online at t = 1000 ms
+    emitter.on_ses_status_rx(0, 0.0f, 1000);
+    emitter.on_seb_status_rx(true, false, 0.0f, 1000);
+    // Advance 20 ticks (200 ms) so reconnect rearm pulse completes
+    for (uint32_t i = 0; i < 20; ++i) {
+        emitter.emit_cluster(snap, i, 1000 + i * 10, send_fn);
+    }
+    ASSERT_TRUE(emitter.is_ses_online());
+    ASSERT_TRUE(emitter.is_seb_online());
+    ASSERT_FALSE(emitter.is_ses_armed());
+    ASSERT_FALSE(emitter.is_seb_armed());
+
+    // 3. At t = 2000 ms (1000 ms elapsed, < 2500 ms settling delay): still settling/disarmed
+    emitter.on_ses_status_rx(0, 0.0f, 2000);
+    emitter.on_seb_status_rx(true, false, 0.0f, 2000);
+    emitted.clear();
+    emitter.emit_cluster(snap, 0, 2000, send_fn);
+    emitter.emit_cluster(snap, 1, 2000, send_fn);
+    for (const auto& fr : emitted) {
+        if (fr.id == 0x169u) can::custom::ses::decode_command(fr.view(), ses_cmd);
+        if (fr.id == 0x7B9u) can::custom::seb::decode_command(fr.view(), seb_cmd);
+    }
+    ASSERT_FALSE(ses_cmd.control_enable);
+    ASSERT_FALSE(seb_cmd.control_enable);
+    ASSERT_FALSE(emitter.is_ses_armed());
+    ASSERT_FALSE(emitter.is_seb_armed());
+
+    // 4. At t = 3500 ms (2500 ms elapsed >= 2500 ms delay): both arm!
+    emitter.on_ses_status_rx(1, 0.0f, 3500);             // Mode 1: Auto / Angle Control
+    emitter.on_seb_status_rx(true, true, 0.0f, 3500);    // Aligned: true, Enabled: true
+    emitted.clear();
+    emitter.emit_cluster(snap, 0, 3500, send_fn);
+    emitter.emit_cluster(snap, 1, 3500, send_fn);
+    for (const auto& fr : emitted) {
+        if (fr.id == 0x169u) can::custom::ses::decode_command(fr.view(), ses_cmd);
+        if (fr.id == 0x7B9u) can::custom::seb::decode_command(fr.view(), seb_cmd);
+    }
+    ASSERT_TRUE(emitter.is_ses_armed());
+    ASSERT_TRUE(emitter.is_seb_armed());
+    ASSERT_TRUE(ses_cmd.control_enable);
+    ASSERT_TRUE(seb_cmd.control_enable);
+
+    // 5. Link loss: if no 0x721 for >250 ms, SEB drops offline and disarms
+    emitted.clear();
+    // Advance to 3800 ms (300 ms > 250 ms since last 0x721 at 3500 ms)
+    emitter.emit_cluster(snap, 1, 3800, send_fn);
+    ASSERT_FALSE(emitter.is_seb_online());
+    ASSERT_FALSE(emitter.is_seb_armed());
+    for (const auto& fr : emitted) {
+        if (fr.id == 0x7B9u) can::custom::seb::decode_command(fr.view(), seb_cmd);
+    }
+    ASSERT_FALSE(seb_cmd.control_enable);
+}
+
+void test_seb_on_demand_activation_and_retraction() {
+    rm::CanEmitter emitter;
+    emitter.reset_counters();
+
+    std::vector<can::Frame> emitted;
+    auto send_fn = [&](const can::Frame& fr) {
+        emitted.push_back(fr);
+        return true;
+    };
+
+    rm::RcSnapshot snap{};
+    snap.signal_valid = true;
+    snap.drive_enable_req = true;
+    snap.park_hold_req = false;
+    snap.op_mode = rm::OperatingMode::Bare;
+    snap.steering_deg = 0.0f;
+    snap.brake_stroke_mm = 0.0f; // Idle / no brake
+
+    // 1. Arm SEB directly for test
+    emitter.set_seb_armed(true);
+    ASSERT_TRUE(emitter.is_seb_armed());
+
+    // 2. When idle (brake_stroke_mm = 0.0f) or sub-threshold (0.3f < 0.5f), SEB is in Standby
+    snap.brake_stroke_mm = 0.3f; // Below 0.5mm threshold: no activation
+    emitted.clear();
+    emitter.emit_cluster(snap, 1, 3610, send_fn);
+    can::custom::seb::Command seb_cmd{};
+    for (const auto& fr : emitted) {
+        if (fr.id == 0x7B9u) can::custom::seb::decode_command(fr.view(), seb_cmd);
+    }
+    ASSERT_FALSE(seb_cmd.control_enable);
+    ASSERT_EQ(seb_cmd.stroke_request_raw, 600u); // 0.0 mm baseline
+    ASSERT_FALSE(emitter.is_seb_active());
+
+    // 3. Driver applies brake (stroke = 15.0 mm >= 0.5 mm): control_enable rises to true (rising edge 0 -> 1)
+    snap.brake_stroke_mm = 15.0f;
+    emitted.clear();
+    emitter.emit_cluster(snap, 3, 3630, send_fn);
+    for (const auto& fr : emitted) {
+        if (fr.id == 0x7B9u) can::custom::seb::decode_command(fr.view(), seb_cmd);
+    }
+    ASSERT_TRUE(seb_cmd.control_enable);
+    ASSERT_EQ(seb_cmd.stroke_request_raw, 900u); // 15.0 mm
+    ASSERT_TRUE(emitter.is_seb_active());
+
+    // 3b. Driver eases off to 0.3 mm (inside hysteresis band 0.1mm - 0.5mm): remains active without chatter!
+    snap.brake_stroke_mm = 0.3f;
+    emitted.clear();
+    emitter.emit_cluster(snap, 4, 3640, send_fn);
+    for (const auto& fr : emitted) {
+        if (fr.id == 0x7B9u) can::custom::seb::decode_command(fr.view(), seb_cmd);
+    }
+    ASSERT_TRUE(seb_cmd.control_enable); // Retains engagement!
+    ASSERT_TRUE(emitter.is_seb_active());
+
+    // 4. Driver releases brake (stroke = 0.0 mm), pushrod currently at 12.0 mm:
+    // Actively retracts (control_enable remains true, commanding 0.0 mm / 600 raw)
+    snap.brake_stroke_mm = 0.0f;
+    emitter.on_seb_status_rx(true, true, 12.0f, 3650); // Feedback: still at 12mm
+    emitted.clear();
+    emitter.emit_cluster(snap, 5, 3650, send_fn);
+    for (const auto& fr : emitted) {
+        if (fr.id == 0x7B9u) can::custom::seb::decode_command(fr.view(), seb_cmd);
+    }
+    ASSERT_TRUE(seb_cmd.control_enable); // Still true while retracting!
+    ASSERT_EQ(seb_cmd.stroke_request_raw, 600u); // Actively driving to 0 mm
+    ASSERT_TRUE(emitter.is_seb_active());
+
+    // 5. Pushrod arrives home (feedback <= 0.8 mm): transitions back to Standby (control_enable = false)
+    emitter.on_seb_status_rx(true, true, 0.4f, 3670); // Feedback: home at 0.4mm
+    emitted.clear();
+    emitter.emit_cluster(snap, 7, 3670, send_fn);
+    for (const auto& fr : emitted) {
+        if (fr.id == 0x7B9u) can::custom::seb::decode_command(fr.view(), seb_cmd);
+    }
+    ASSERT_FALSE(seb_cmd.control_enable); // Standby!
+    ASSERT_EQ(seb_cmd.stroke_request_raw, 600u);
+    ASSERT_FALSE(emitter.is_seb_active());
+
+    // 6. Driver applies brake AGAIN: generates a fresh rising edge (0 -> 1)
+    snap.brake_stroke_mm = 20.0f;
+    emitted.clear();
+    emitter.emit_cluster(snap, 9, 3690, send_fn);
+    for (const auto& fr : emitted) {
+        if (fr.id == 0x7B9u) can::custom::seb::decode_command(fr.view(), seb_cmd);
+    }
+    ASSERT_TRUE(seb_cmd.control_enable); // Fresh rising edge!
+    ASSERT_EQ(seb_cmd.stroke_request_raw, 1000u); // 20.0 mm
+    ASSERT_TRUE(emitter.is_seb_active());
+}
+
 } // namespace
 
 int main() {
@@ -792,6 +972,8 @@ int main() {
     test_operating_mode_switch_decoding();
     test_vra_speed_governor_scaling();
     test_can_emitter_three_modes();
+    test_ses_and_seb_ignition_settling_delay();
+    test_seb_on_demand_activation_and_retraction();
     test_gear_emitted_before_throttle_idle();
     test_can_frame_encoding();
 

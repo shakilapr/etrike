@@ -105,6 +105,8 @@ static bool send_can_frame(can::Frame& fr) {
                 g_seb_enabled.store(enabled, std::memory_order_relaxed);
                 g_seb_error.store(err, std::memory_order_relaxed);
                 g_seb_seen.store(true, std::memory_order_relaxed);
+
+                g_emitter.on_seb_status_rx(aligned, enabled, stroke_mm, now_ms);
             } else if (rx_fr.id == 0x731) { // 0x731 SEB_ErrInfo
                 uint32_t err_map = static_cast<uint32_t>(rx_fr.data[0]) |
                                   (static_cast<uint32_t>(rx_fr.data[1]) << 8) |

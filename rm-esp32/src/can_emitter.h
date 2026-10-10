@@ -44,6 +44,34 @@ public:
         ses_online_ = armed;
     }
 
+    // Called from CAN RX when 0x721 SEB_STATUS is received
+    void on_seb_status_rx(bool aligned, bool control_enabled, float actual_stroke_mm, uint32_t now_ms) noexcept {
+        if (!seb_online_) {
+            // Reconnected! Trigger 200ms disarm pulse to force a fresh rising edge
+            rearm_seb_ticks_ = 20;
+            // Pre-seed commanded stroke to actual physical stroke to prevent sudden yank
+            if (!seb_armed_) {
+                filtered_brake_stroke_mm_ = actual_stroke_mm;
+            }
+        }
+        seb_online_ = true;
+        seb_aligned_ = aligned;
+        seb_enabled_status_ = control_enabled;
+        seb_actual_stroke_ = actual_stroke_mm;
+        last_0x721_ms_ = now_ms;
+    }
+
+    void set_seb_armed(bool armed = true) noexcept {
+        seb_armed_ = armed;
+        seb_online_ = armed;
+    }
+
+    bool is_ses_armed() const noexcept { return ses_armed_; }
+    bool is_seb_armed() const noexcept { return seb_armed_; }
+    bool is_seb_active() const noexcept { return seb_active_; }
+    bool is_ses_online() const noexcept { return ses_online_; }
+    bool is_seb_online() const noexcept { return seb_online_; }
+
     template <typename SendFn>
     void emit_cluster(const RcSnapshot& snap, uint32_t tick_10ms, SendFn&& send) {
         emit_cluster(snap, tick_10ms, 0, send);
@@ -65,14 +93,38 @@ public:
         const bool drive_active = raw_drive_active && throttle_zero_latched_;
 
 #if !(defined(TESTING) || defined(CONFIG_BENCH_SOLO))
-        // Auto-detect link loss: if no 0x201 for >250ms, mark offline
+        process_actuator_settling(now_ms, drive_active);
+#else
+        if (now_ms > 0) {
+            process_actuator_settling(now_ms, drive_active);
+        } else {
+            if (rearm_ses_ticks_ > 0) --rearm_ses_ticks_;
+            if (rearm_seb_ticks_ > 0) --rearm_seb_ticks_;
+        }
+#endif
+
+        switch (snap.op_mode) {
+            case OperatingMode::Bare:
+                emit_bare(snap, drive_active, raw_drive_active, tick_10ms, send);
+                break;
+            case OperatingMode::Sys:
+                emit_sys(snap, drive_active, raw_drive_active, tick_10ms, send);
+                break;
+            case OperatingMode::Rt:
+                emit_rt(snap, drive_active, raw_drive_active, tick_10ms, send);
+                break;
+        }
+    }
+
+    void process_actuator_settling(uint32_t now_ms, bool drive_active) noexcept {
+        // Auto-detect SES link loss: if no 0x201 for >250ms, mark offline
         if (now_ms > 0 && last_0x201_ms_ > 0 && (now_ms - last_0x201_ms_ > 250)) {
             ses_online_ = false;
             ses_armed_ = false;
             ses_online_start_ms_ = 0;
         }
 
-        // Automatic Ignition / Startup Delay:
+        // Automatic Ignition / Startup Delay (SES):
         // When SES first appears online, wait 2.5 seconds (2500ms) in manual/assist mode
         // (control_enable = 0) so the actuator ECU completes self-tests and zero-datum
         // checks. Track actual feedback angle so initial error is 0.
@@ -90,7 +142,32 @@ public:
             ses_online_start_ms_ = 0;
             ses_armed_ = false;
         }
-#endif
+
+        // Auto-detect SEB link loss: if no 0x721 for >250ms, mark offline
+        if (now_ms > 0 && last_0x721_ms_ > 0 && (now_ms - last_0x721_ms_ > 250)) {
+            seb_online_ = false;
+            seb_armed_ = false;
+            seb_online_start_ms_ = 0;
+        }
+
+        // Automatic Ignition / Startup Delay (SEB):
+        // When SEB first appears online, wait 2.5 seconds (2500ms) with control_enable = 0
+        // so the actuator ECU completes self-tests and zero-datum checks.
+        // Track actual feedback stroke so initial error is 0.
+        if (seb_online_) {
+            if (seb_online_start_ms_ == 0) {
+                seb_online_start_ms_ = now_ms;
+                filtered_brake_stroke_mm_ = seb_actual_stroke_;
+            } else if (!seb_armed_) {
+                filtered_brake_stroke_mm_ = seb_actual_stroke_; // Keep tracking physical stroke
+                if (now_ms - seb_online_start_ms_ >= 2500) {
+                    seb_armed_ = true; // Automatically arm after 2.5s ignition settling
+                }
+            }
+        } else {
+            seb_online_start_ms_ = 0;
+            seb_armed_ = false;
+        }
 
         // Auto re-arm if actuator fell out of Auto mode (e.g. power cycle/reconnect) while drive active
         if (ses_online_ && drive_active && (ses_mode_status_ == 0) && (rearm_ses_ticks_ == 0)) {
@@ -101,32 +178,36 @@ public:
             --rearm_ses_ticks_;
         }
 
-        switch (snap.op_mode) {
-            case OperatingMode::Bare:
-                emit_bare(snap, drive_active, raw_drive_active, tick_10ms, send);
-                break;
-            case OperatingMode::Sys:
-                emit_sys(snap, drive_active, raw_drive_active, tick_10ms, send);
-                break;
-            case OperatingMode::Rt:
-                emit_rt(snap, drive_active, raw_drive_active, tick_10ms, send);
-                break;
+        if (rearm_seb_ticks_ > 0) {
+            --rearm_seb_ticks_;
         }
     }
 
     void reset_counters() noexcept {
         rearm_ses_ticks_ = 0;
+        rearm_seb_ticks_ = 0;
 #if defined(TESTING) || defined(CONFIG_BENCH_SOLO)
         ses_online_ = true;
         ses_armed_ = true;
+        seb_online_ = true;
+        seb_armed_ = true;
 #else
         ses_online_ = false;
         ses_armed_ = false;
+        seb_online_ = false;
+        seb_armed_ = false;
 #endif
         ses_online_start_ms_ = 0;
         ses_actual_angle_ = 0.0f;
         last_0x201_ms_ = 0;
         ses_mode_status_ = 0;
+        seb_online_start_ms_ = 0;
+        seb_actual_stroke_ = 0.0f;
+        last_0x721_ms_ = 0;
+        seb_enabled_status_ = false;
+        filtered_brake_stroke_mm_ = 0.0f;
+        seb_active_ = false;
+        seb_retract_ticks_ = 0;
         roll_ses_ = 0;
         roll_seb_ = 0;
         roll_sys_mode_ = 0;
@@ -148,18 +229,31 @@ private:
     uint32_t last_0x201_ms_{0};       // Timestamp of last received 0x201 SES_STATUS
     uint32_t ses_online_start_ms_{0}; // Timestamp when SES was first seen online
     uint8_t  ses_mode_status_{0};     // 0 = Manual/Assist, 1 = Auto/Angle Control
+    uint32_t rearm_seb_ticks_{0};   // Countdown ticks for Control_Enable rising edge (200ms)
+    uint32_t last_0x721_ms_{0};       // Timestamp of last received 0x721 SEB_STATUS
+    uint32_t seb_online_start_ms_{0}; // Timestamp when SEB was first seen online
+    bool     seb_aligned_{false};     // Hardware alignment bit (0x721 byte 0 bit 0)
+    bool     seb_enabled_status_{false};
 #if defined(TESTING) || defined(CONFIG_BENCH_SOLO)
     bool     ses_online_{true};
     bool     ses_armed_{true};
+    bool     seb_online_{true};
+    bool     seb_armed_{true};
 #else
     bool     ses_online_{false};
     bool     ses_armed_{false};       // True when 2.5s post-ignition delay completes
+    bool     seb_online_{false};
+    bool     seb_armed_{false};       // True when 2.5s post-ignition delay completes
 #endif
     float    ses_actual_angle_{0.0f}; // Actual angle from 0x201 feedback
     float    filtered_steer_deg_{0.0f};   // Low-pass filtered target angle
     float    prev_steer_deg_{0.0f};       // Previous angle setpoint for velocity calculation
     float    steer_spd_filtered_{126.0f}; // Dynamic slew velocity (deg/s)
     bool     throttle_zero_latched_{false}; // Zero-throttle gate on startup/arming
+    float    seb_actual_stroke_{0.0f};    // Actual stroke from 0x721 feedback
+    float    filtered_brake_stroke_mm_{0.0f}; // Low-pass / settled stroke setpoint
+    bool     seb_active_{false};      // True while braking or actively retracting
+    uint32_t seb_retract_ticks_{0};   // Timeout ticks for pushrod active retraction to 0mm
     // ── Mode 1: BARE (Direct Actuator Control on Low-CAN) ────────────
     template <typename SendFn>
     void emit_bare(const RcSnapshot& snap, bool drive_active, bool gear_active, uint32_t tick_10ms, SendFn&& send) {
@@ -202,14 +296,48 @@ private:
         if (tick_10ms % 2 == 1) {
             can::custom::seb::Command seb_cmd{};
             seb_cmd.alignment_enable = false; // Normal braking: alignment MUST be false (true resets zero datum)
-            seb_cmd.control_enable   = true;
             seb_cmd.control_mode     = can::custom::seb::ControlMode::Stroke;
             seb_cmd.auto_brake       = false;
 
-            // Stroke encoding: raw = (mm + 30.0) / 0.05; released (0 mm) = 600, full (27 mm) = 1140
-            float commanded_stroke = snap.brake_stroke_mm;
+            // On-demand braking logic:
+            // Actuator is kept in Standby (control_enable = 0) with motor unpowered when idle at 0mm.
+            // When braking is demanded (service brake or park hold), control_enable asserts to 1,
+            // providing a clean 0 -> 1 rising edge. When released, control_enable stays 1 while
+            // actively driving stroke back to 0mm, then disengages back to 0 (Standby).
+            // Hysteresis: Engage at >= kMinActiveBrakeStrokeMm (0.5 mm), release when < kReleaseBrakeStrokeMm (0.1 mm).
+            const bool brake_demanded = (snap.brake_stroke_mm >= kMinActiveBrakeStrokeMm) || snap.park_hold_req;
+            const bool brake_released = (snap.brake_stroke_mm < kReleaseBrakeStrokeMm) && !snap.park_hold_req;
+
+            if (seb_armed_) {
+                if (brake_demanded || (seb_active_ && !brake_released)) {
+                    seb_active_ = true;
+                    seb_retract_ticks_ = 0;
+                    filtered_brake_stroke_mm_ = std::clamp(snap.brake_stroke_mm, 0.0f, kMaxBrakeStrokeMm);
+                } else if (seb_active_) {
+                    // Driver released brake: actively drive stroke back to 0 mm before going to Standby
+                    filtered_brake_stroke_mm_ = 0.0f;
+                    // Retraction completes when actual stroke is back at rest (<= 0.5 mm) or timeout (25 ticks = 500ms)
+                    if (seb_actual_stroke_ <= 0.5f || ++seb_retract_ticks_ >= 25) {
+                        seb_active_ = false;
+                        seb_retract_ticks_ = 0;
+                    }
+                } else {
+                    // Standby: relaxed at 0 mm, motor unpowered
+                    filtered_brake_stroke_mm_ = 0.0f;
+                }
+            } else {
+                // While disarmed/settling, hold at physical feedback stroke
+                filtered_brake_stroke_mm_ = seb_actual_stroke_;
+                seb_active_ = false;
+                seb_retract_ticks_ = 0;
+            }
+
+            seb_cmd.control_enable = seb_armed_ && seb_active_ && (rearm_seb_ticks_ == 0);
+
+            // Stroke encoding: raw = (mm + 30.0) / 0.05; released (0 mm) = 600, full (23 mm) = 1060
+            constexpr float kMaxBrakeRaw = (kMaxBrakeStrokeMm + 30.0f) * 20.0f; // 1060 raw for 23.0 mm
             uint16_t stroke_raw = static_cast<uint16_t>(
-                std::clamp(std::round((commanded_stroke + 30.0f) * 20.0f), 500.0f, 1140.0f));
+                std::clamp(std::round((filtered_brake_stroke_mm_ + 30.0f) * 20.0f), 500.0f, kMaxBrakeRaw));
             seb_cmd.stroke_request_raw   = stroke_raw;
             seb_cmd.pressure_request_raw = 0;
             seb_cmd.rolling_counter      = 0;
