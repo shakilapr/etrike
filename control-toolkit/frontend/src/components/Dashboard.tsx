@@ -26,10 +26,7 @@ import { WorkspaceShell } from './WorkspaceShell'
 import { StatusPill } from './primitives'
 
 export function Dashboard() {
-  const streamQuality = useAppStore((s) => s.streamQuality)
-  const isStreamLost = streamQuality === 'lost'
-  const rawMessages = useAppStore((s) => s.messages)
-  const messages = isStreamLost ? [] : rawMessages
+  const messages = useAppStore((s) => s.messages)
   const status = useAppStore((s) => s.status)
 
   const [unitMode, setUnitMode] = useState<'kmh' | 'mmps'>('kmh')
@@ -175,7 +172,7 @@ export function Dashboard() {
   const mtrGear = isDemo ? 'D' : (speed.mtrGear ?? '—')
 
   // 2. Steering values (deg & dynamics)
-  const sesAngleVal = isDemo ? 12.4 : (steer.sesAngleDeg ?? null)
+  const sesAngleVal = isDemo ? 12.4 : (steer.sesAngleDeg ?? steer.diagAngle ?? null)
   const hostSteerVal = isDemo
     ? 14.0
     : (steer.hostSteerDeg ?? (steer.hostYawRate != null ? steer.hostYawRate * 0.05 : null))
@@ -581,7 +578,7 @@ export function Dashboard() {
             {(chassisView === 'both' || chassisView === 'steer') && (
               <SteeringMeter
                 title="Steering"
-                badge={steer.sesMode && steer.sesMode !== '—' ? steer.sesMode : (hasFrames && steer.sesStatus && frameRecent(steer.sesStatus) ? 'Active' : undefined)}
+                badge={steer.sesMode && steer.sesMode !== '—' ? steer.sesMode : (hasFrames && ((steer.sesStatus && frameRecent(steer.sesStatus)) || (steer.steerDiag && frameRecent(steer.steerDiag))) ? 'Active' : undefined)}
                 badgeTone="info"
                 actualAngle={sesAngleVal}
                 hostAngle={hostSteerVal}

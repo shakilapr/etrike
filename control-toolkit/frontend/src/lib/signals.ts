@@ -373,12 +373,12 @@ export function getSpeedPipeline(messages: MessageState[]) {
 
 /** 3-Tier Steering Pipeline Signals */
 export function getSteeringPipeline(messages: MessageState[]) {
-  const hostDrive = findMsg(messages, 'HOST_DRIVE_CMD')
-  const hostSteer = findMsg(messages, 'HOST_STEER_CMD')
-  const rtSesReq = findMsg(messages, 'VCU_SES_REQ')
+  const hostDrive = findMsg(messages, 'HOST_DRIVE_CMD', 'high') ?? findMsg(messages, 'HOST_DRIVE_CMD')
+  const hostSteer = findMsg(messages, 'HOST_STEER_CMD', 'high') ?? findMsg(messages, 'HOST_STEER_CMD')
+  const rtSesReq = findMsg(messages, 'VCU_SES_REQ', 'low') ?? findMsg(messages, 'VCU_SES_REQ')
   const rtState = findMsg(messages, 'RT_STATE_RPT')
-  const sesStatus = findMsg(messages, 'SES_STATUS')
-  const steerDiag = findMsg(messages, 'STEER_DIAG')
+  const sesStatus = findMsg(messages, 'SES_STATUS', 'low') ?? findMsg(messages, 'SES_STATUS')
+  const steerDiag = findMsg(messages, 'STEER_DIAG', 'high') ?? findMsg(messages, 'STEER_DIAG')
 
   const hostYawRate = frameRecent(hostDrive) ? signalNum(hostDrive, 'yaw_rate_mrad_s') : null
   const hostAngleRaw = frameRecent(hostSteer) ? signalNum(hostSteer, 'steer_angle_0_1deg') : null
@@ -405,7 +405,10 @@ export function getSteeringPipeline(messages: MessageState[]) {
       : '—'
 
   const isSesRecent = frameRecent(sesStatus)
-  const sesAngleDeg = isSesRecent
+  const isDiagRecent = frameRecent(steerDiag)
+  const diagAngle = isDiagRecent ? signalNum(steerDiag, 'angle_0_1deg') : null
+
+  const directSesAngle = isSesRecent
     ? (signalNum(sesStatus, 'angle_deg') ??
        signalNum(sesStatus, 'steer_angle_deg') ??
        signalNum(sesStatus, 'angle') ??
@@ -413,6 +416,8 @@ export function getSteeringPipeline(messages: MessageState[]) {
          ? (signalNum(sesStatus, 'steering_angle_raw')! * 0.1 - 3000.0)
          : null))
     : null
+  const sesAngleDeg = directSesAngle ?? diagAngle
+
   const sesTorqueNm = isSesRecent
     ? (signalNum(sesStatus, 'torque_nm') ??
        signalNum(sesStatus, 'steering_torque_raw'))
@@ -420,7 +425,6 @@ export function getSteeringPipeline(messages: MessageState[]) {
   const sesModeCode = isSesRecent ? signalNum(sesStatus, 'control_mode') : null
   const sesMode = isSesRecent ? (sesModeCode === 1 ? 'AUTO' : sesModeCode === 0 ? 'MANUAL' : '—') : '—'
   const sesErrorCode = isSesRecent ? signalNum(sesStatus, 'error_status') : null
-  const diagAngle = frameRecent(steerDiag) ? signalNum(steerDiag, 'angle_0_1deg') : null
 
   return {
     hostDrive,
