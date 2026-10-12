@@ -49,9 +49,17 @@ export function encodeSesCommand(values: Readonly<Record<string, unknown>>): Enc
 }
 
 export function decodeSesCommand(input: CanFrame): DecodeResult<Record<string, unknown>> {
-  const status = validate(input, SES_COMMAND_ID, true);
+  const status = validate(input, SES_COMMAND_ID, false);
   if (status !== "ok") return [status];
-  if ((input.data[5] & 0x03) !== 0x03) return ["constant_mismatch"];
+  const zeroSecurity = (input.data[5] & 0x03) === 0x00;
+  if (!zeroSecurity) {
+    let sum8 = 0;
+    for (let i = 0; i < 7; i++) sum8 = (sum8 + input.data[i]) & 0xff;
+    if (!verify(input.data.subarray(0, 7), input.data[7]) && input.data[7] !== sum8) {
+      return ["checksum_mismatch"];
+    }
+    if ((input.data[5] & 0x03) !== 0x03) return ["constant_mismatch"];
+  }
   const view = new DataView(input.data.buffer, input.data.byteOffset, input.data.byteLength);
   const targetSpeed = view.getUint16(3, false);
   if (targetSpeed < 125 || targetSpeed > 525) return ["value_out_of_range"];
@@ -66,8 +74,16 @@ export function decodeSesCommand(input: CanFrame): DecodeResult<Record<string, u
 }
 
 export function decodeSesStatus(input: CanFrame): DecodeResult<Record<string, unknown>> {
-  const status = validate(input, SES_STATUS_ID, true);
+  const status = validate(input, SES_STATUS_ID, false);
   if (status !== "ok") return [status];
+  const checksumEnabled = (input.data[6] & 2) !== 0;
+  if (checksumEnabled) {
+    let sum8 = 0;
+    for (let i = 0; i < 7; i++) sum8 = (sum8 + input.data[i]) & 0xff;
+    if (!verify(input.data.subarray(0, 7), input.data[7]) && input.data[7] !== sum8) {
+      return ["checksum_mismatch"];
+    }
+  }
   const view = new DataView(input.data.buffer, input.data.byteOffset, input.data.byteLength);
   return ["ok", {
     angle_aligned: (input.data[0] & 1) !== 0,
@@ -77,7 +93,7 @@ export function decodeSesStatus(input: CanFrame): DecodeResult<Record<string, un
     target_angle_speed_raw: view.getInt16(3, false),
     steering_torque_raw: input.data[5],
     rolling_counter_enabled: (input.data[6] & 1) !== 0,
-    checksum_enabled: (input.data[6] & 2) !== 0,
+    checksum_enabled: checksumEnabled,
     rolling_counter: input.data[6] >> 4,
   }];
 }

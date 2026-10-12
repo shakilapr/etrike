@@ -102,8 +102,16 @@ struct Status {
 };
 
 inline CodecStatus decode_status(FrameView frame, Status& out) noexcept {
-    const CodecStatus status = detail::validate_xor_frame(frame, kStatusId);
+    const CodecStatus status = detail::validate_frame(frame, kStatusId, false, kDlc);
     if (status != CodecStatus::Ok) return status;
+    const bool checksum_enabled = (frame[6] & 0x02u) != 0;
+    if (checksum_enabled) {
+        std::uint8_t sum8 = 0;
+        for (std::size_t i = 0; i < 7; ++i) sum8 = static_cast<std::uint8_t>(sum8 + frame[i]);
+        if (frame[7] != profiles::xor8_ff_v1(frame.data(), 7) && frame[7] != sum8) {
+            return CodecStatus::ChecksumMismatch;
+        }
+    }
     Status value{};
     value.angle_aligned = (frame[0] & 0x01u) != 0;
     value.control_mode = static_cast<std::uint8_t>((frame[0] >> 1u) & 0x03u);
@@ -112,7 +120,7 @@ inline CodecStatus decode_status(FrameView frame, Status& out) noexcept {
     value.target_angle_speed_raw = read_be_i16(frame.data() + 3);
     value.steering_torque_raw = frame[5];
     value.rolling_counter_enabled = (frame[6] & 0x01u) != 0;
-    value.checksum_enabled = (frame[6] & 0x02u) != 0;
+    value.checksum_enabled = checksum_enabled;
     value.rolling_counter = static_cast<std::uint8_t>(frame[6] >> 4u);
     out = value;
     return CodecStatus::Ok;

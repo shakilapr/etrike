@@ -19,8 +19,10 @@ def _validate(frame: Frame, can_id: int, *, checksum: bool = False) -> CodecStat
     status = validate_frame(frame, bus=BUS, can_id=can_id, frame_format="standard", dlc=DLC)
     if status != "ok":
         return status
-    if checksum and not verify(frame.data[:7], frame.data[7]):
-        return "checksum_mismatch"
+    if checksum:
+        sum8 = sum(frame.data[:7]) & 0xFF
+        if not verify(frame.data[:7], frame.data[7]) and frame.data[7] != sum8:
+            return "checksum_mismatch"
     return "ok"
 
 
@@ -55,11 +57,16 @@ def encode_command(values: Mapping[str, object]) -> tuple[CodecStatus, Frame | N
 
 
 def decode_command(frame: Frame) -> tuple[CodecStatus, dict[str, object] | None]:
-    status = _validate(frame, COMMAND_ID, checksum=True)
+    status = validate_frame(frame, bus=BUS, can_id=COMMAND_ID, frame_format="standard", dlc=DLC)
     if status != "ok":
         return status, None
-    if frame.data[5] & 0x03 != 0x03:
-        return "constant_mismatch", None
+    zero_security = (frame.data[5] & 0x03) == 0x00
+    if not zero_security:
+        sum8 = sum(frame.data[:7]) & 0xFF
+        if not verify(frame.data[:7], frame.data[7]) and frame.data[7] != sum8:
+            return "checksum_mismatch", None
+        if frame.data[5] & 0x03 != 0x03:
+            return "constant_mismatch", None
     target_speed = int.from_bytes(frame.data[3:5], "big", signed=False)
     if not 125 <= target_speed <= 525:
         return "value_out_of_range", None
@@ -74,9 +81,14 @@ def decode_command(frame: Frame) -> tuple[CodecStatus, dict[str, object] | None]
 
 
 def decode_status(frame: Frame) -> tuple[CodecStatus, dict[str, object] | None]:
-    status = _validate(frame, STATUS_ID, checksum=True)
+    status = validate_frame(frame, bus=BUS, can_id=STATUS_ID, frame_format="standard", dlc=DLC)
     if status != "ok":
         return status, None
+    checksum_enabled = bool(frame.data[6] & 0x02)
+    if checksum_enabled:
+        sum8 = sum(frame.data[:7]) & 0xFF
+        if not verify(frame.data[:7], frame.data[7]) and frame.data[7] != sum8:
+            return "checksum_mismatch", None
     return "ok", {
         "angle_aligned": bool(frame.data[0] & 0x01),
         "control_mode": (frame.data[0] >> 1) & 0x03,
@@ -85,7 +97,7 @@ def decode_status(frame: Frame) -> tuple[CodecStatus, dict[str, object] | None]:
         "target_angle_speed_raw": int.from_bytes(frame.data[3:5], "big", signed=True),
         "steering_torque_raw": frame.data[5],
         "rolling_counter_enabled": bool(frame.data[6] & 0x01),
-        "checksum_enabled": bool(frame.data[6] & 0x02),
+        "checksum_enabled": checksum_enabled,
         "rolling_counter": frame.data[6] >> 4,
     }
 
