@@ -30,12 +30,38 @@ constexpr uint16_t kI2cSdaPin        = 0x0080;  // PA7: I2C Data (Open-drain)
 // ── Status LED ─────────────────────────────────────────────────────
 constexpr uint16_t kLedPin           = 0x0040;  // PC6: Status LED (Active-Low)
 
+// ── Throttle Voltage Calibration (Volts) ──────────────────────────
+// EDIT HERE: Set desired forward and reverse throttle limits directly in Volts.
+constexpr float kDacVref             = 5.0f;   // MCP4725 VCC reference voltage
+
+constexpr float kDacFwdMinVolts      = 1.45f;  // Forward min voltage (at 50 mm/s)
+constexpr float kDacFwdMaxVolts      = 1.80f;  // Forward max voltage (at 3000 mm/s)
+
+constexpr float kDacRevMinVolts      = 1.55f;  // Reverse min voltage (at 50 mm/s)
+constexpr float kDacRevMaxVolts      = 2.00f;  // Reverse max voltage (at 500 mm/s)
+
+// Helper: compile-time conversion from Volts to 12-bit DAC code (0 .. 4095)
+constexpr uint16_t volts_to_dac_code(float volts) {
+    if (volts <= 0.0f) return 0;
+    float code = (volts / kDacVref) * 4096.0f;
+    return static_cast<uint16_t>(code + 0.5f);
+}
+
 // ── MCP4725 DAC Limits (at 5.0 V VCC reference) ───────────────────
+// Absolute hardware safety clamp window:
 // 0.8 V -> Code 655
-// 2.4 V -> Code 1966 (Safety limit)
+// 2.4 V -> Code 1966 (Hardware absolute maximum)
 constexpr uint16_t kDacMinCode       =  655;
 constexpr uint16_t kDacMaxCode       = 1966;
 constexpr uint16_t kDacZeroCode      =    0;  // 0.0 V output
+
+// Forward drive throttle window (automatically computed from Volts above)
+constexpr uint16_t kDacFwdMinCode    = volts_to_dac_code(kDacFwdMinVolts);
+constexpr uint16_t kDacFwdMaxCode    = volts_to_dac_code(kDacFwdMaxVolts);
+
+// Reverse drive throttle window (automatically computed from Volts above)
+constexpr uint16_t kDacRevMinCode    = volts_to_dac_code(kDacRevMinVolts);
+constexpr uint16_t kDacRevMaxCode    = volts_to_dac_code(kDacRevMaxVolts);
 
 // Speed scaling
 constexpr int32_t  kMaxForwardSpeedMmps = 3000; // 3.0 m/s maximum speed setpoint

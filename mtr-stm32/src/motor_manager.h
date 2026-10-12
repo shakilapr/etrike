@@ -543,20 +543,20 @@ private:
         if (speed_mmps <= 0) return 0;
 
         // Treat speeds below the shared low-speed threshold as zero to avoid
-        // requesting the 0.8 V motor idle voltage (kDacMinCode) for tiny setpoints,
+        // requesting active throttle voltage for tiny setpoints,
         // which would produce deadband jitter or no motion at all.
         if (speed_mmps < static_cast<int32_t>(shared::kLowSpeedThreshMmps)) return 0;
 
-        int32_t max_speed = (gear == can::Gear::R) ? kMaxReverseSpeedMmps : kMaxForwardSpeedMmps;
+        const uint16_t min_code  = (gear == can::Gear::R) ? kDacRevMinCode : kDacFwdMinCode;
+        const uint16_t max_code  = (gear == can::Gear::R) ? kDacRevMaxCode : kDacFwdMaxCode;
+        const int32_t  max_speed = (gear == can::Gear::R) ? kMaxReverseSpeedMmps : kMaxForwardSpeedMmps;
+
         float norm = static_cast<float>(speed_mmps) / static_cast<float>(max_speed);
         norm = std::clamp(norm, 0.0f, 1.0f);
 
-        // Use a motion-floor slightly above kDacMinCode to clear the actuator deadband.
-        // kDacMinCode (655 = 0.8 V) is the idle threshold; true motion begins at ~0.85 V.
-        static constexpr uint16_t kDacActiveFloor = 700; // ~0.855 V
-        float code_f = static_cast<float>(kDacActiveFloor)
-                     + norm * static_cast<float>(kDacMaxCode - kDacActiveFloor);
-        return std::clamp(static_cast<uint16_t>(code_f), kDacMinCode, kDacMaxCode);
+        float code_f = static_cast<float>(min_code)
+                     + norm * static_cast<float>(max_code - min_code);
+        return std::clamp(static_cast<uint16_t>(code_f), min_code, max_code);
     }
 
     RelayController& relays_;
